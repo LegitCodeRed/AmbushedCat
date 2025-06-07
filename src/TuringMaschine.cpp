@@ -62,10 +62,13 @@ struct TuringMaschine : Module {
 	enum InputId {
 		CLOCK_INPUT,
 		RESET_INPUT,
+		CHANGE_CV_INPUT,
+		LENGTH_CV_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
 		SEQUENCE_OUTPUT,
+		NOISE_OUTPUT,
 		OUTPUTS_LEN
 	};
 	enum LightId {
@@ -74,6 +77,9 @@ struct TuringMaschine : Module {
 		NUM_LIGHTS = BIT_LIGHTS + 16,
 		LIGHTS_LEN
 	};
+
+	float pitchScale = 5.0f; 
+	float blinkTimer = 0.f;
 
 	BitShiftRegister shiftReg;
 	dsp::SchmittTrigger clockTrigger;
@@ -84,12 +90,17 @@ struct TuringMaschine : Module {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 		configParam(CHANGE_PARAM, 0.f, 1.f, 0.f, "Change");
 		configParam(LENGTH_PARAM, 1.f, 16.f, 16.f, "Length");
+
+		configInput(CHANGE_CV_INPUT, "Change CV");
+		configInput(LENGTH_CV_INPUT, "Length CV");
+
 		paramQuantities[LENGTH_PARAM]->snapEnabled = true;
 		configParam(SCALE_PARAM, 0.f, 1.f, 0.f, "Scale");
 
 		configInput(CLOCK_INPUT, "Clock");
 		configInput(RESET_INPUT, "Reset");
 		configOutput(SEQUENCE_OUTPUT, "Sequence");
+		configOutput(NOISE_OUTPUT, "Noise");
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -123,13 +134,28 @@ struct TuringMaschine : Module {
 			shiftReg.shift(allowMutation, change);
 		}
 
-		int bitCount = static_cast<int>(params[LENGTH_PARAM].getValue());
+		if (inputs[CHANGE_CV_INPUT].isConnected()) {
+			change += inputs[CHANGE_CV_INPUT].getVoltage() / 10.f; // Normalize -5V to +5V → -0.5 to +0.5
+		}
+		change = clamp(change, 0.f, 1.f);
+
+
+		float lengthParam = params[LENGTH_PARAM].getValue(); // 1 to 16 from knob
+		float lengthCV = inputs[LENGTH_CV_INPUT].getVoltage(); // -5V to +5V typically
+		float modulatedLength = lengthParam + lengthCV * 1.6f;
+		modulatedLength = clamp(modulatedLength, 1.f, 16.f);
+
+
+		int bitCount = static_cast<int>(modulatedLength);
 		int value = shiftReg.getTopBitsAsInt(bitCount);
 		int maxValue = (1 << bitCount) - 1;
-
-		float voltage = (value / (float)maxValue) * 5.f;
+		
+		float voltage = (value / (float)maxValue) * pitchScale; 
 
 		outputs[SEQUENCE_OUTPUT].setVoltage(voltage);
+
+		bool noiseBit = random::u32() % 2 == 0;
+		outputs[NOISE_OUTPUT].setVoltage(noiseBit ? 5.f : 0.f);
 
 		if (blinkTimer > 0.f) {
 			blinkTimer -= args.sampleTime;
@@ -138,20 +164,70 @@ struct TuringMaschine : Module {
 			lights[BLINK_LIGHT].setBrightness(0.f);
 		}
 
-
 		// Update lights based on the current state of the shift register
 		for (int i = 0; i < 16; ++i) {
-			int bitCount = static_cast<int>(params[LENGTH_PARAM].getValue());
 			if (i < bitCount) {
 				// Active bits (top N)
 				lights[BIT_LIGHTS + i].setBrightness(shiftReg.bits[15 - i] ? 1.f : 0.f);
 			} else {
-				// Bits not used — dimmed or off
+				// Bits not used — off
 				lights[BIT_LIGHTS + i].setBrightness(0.f);
 			}
 		}
 	}
-	float blinkTimer = 0.f;
+
+	json_t* dataToJson() override {
+		json_t* root = json_object();
+
+		// Save shiftReg.bits
+		uint32_t bitsLow = (uint32_t)(shiftReg.bits.to_ullong() & 0xFFFFFFFF);
+		uint32_t bitsHigh = (uint32_t)(shiftReg.bits.to_ullong() >> 32);
+		json_object_set_new(root, "bitsLow", json_integer(bitsLow));
+		json_object_set_new(root, "bitsHigh", json_integer(bitsHigh));
+
+		// Save seedBits the same way
+		uint32_t seedLow = (uint32_t)(shiftReg.seedBits.to_ullong() & 0xFFFFFFFF);
+		uint32_t seedHigh = (uint32_t)(shiftReg.seedBits.to_ullong() >> 32);
+		json_object_set_new(root, "seedLow", json_integer(seedLow));
+		json_object_set_new(root, "seedHigh", json_integer(seedHigh));
+
+		// Save pitch scale
+		json_object_set_new(root, "pitchScale", json_real(pitchScale));
+
+		return root;
+	}
+
+	void dataFromJson(json_t* root) override {
+		// Restore shiftReg.bits
+		uint32_t bitsLow = 0;
+		uint32_t bitsHigh = 0;
+		json_t* jBitsLow = json_object_get(root, "bitsLow");
+		json_t* jBitsHigh = json_object_get(root, "bitsHigh");
+		if (jBitsLow && jBitsHigh) {
+			bitsLow = json_integer_value(jBitsLow);
+			bitsHigh = json_integer_value(jBitsHigh);
+			uint64_t fullBits = ((uint64_t)bitsHigh << 32) | bitsLow;
+			shiftReg.bits = std::bitset<16>(fullBits);
+		}
+
+		// Restore shiftReg.seedBits
+		uint32_t seedLow = 0;
+		uint32_t seedHigh = 0;
+		json_t* jSeedLow = json_object_get(root, "seedLow");
+		json_t* jSeedHigh = json_object_get(root, "seedHigh");
+		if (jSeedLow && jSeedHigh) {
+			seedLow = json_integer_value(jSeedLow);
+			seedHigh = json_integer_value(jSeedHigh);
+			uint64_t fullSeed = ((uint64_t)seedHigh << 32) | seedLow;
+			shiftReg.seedBits = std::bitset<16>(fullSeed);
+		}
+
+		// Restore pitch scale
+		json_t* jsonPitchScale = json_object_get(root, "pitchScale");
+		if (jsonPitchScale) {
+			pitchScale = json_number_value(j);
+		}
+	}
 };
 
 struct TuringMaschineWidget : ModuleWidget {
@@ -174,7 +250,11 @@ struct TuringMaschineWidget : ModuleWidget {
 		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 90.478)), module, TuringMaschine::CLOCK_INPUT));
 		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 100.478)), module, TuringMaschine::RESET_INPUT));
 
+		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(25.0, 46.0)), module, TuringMaschine::CHANGE_CV_INPUT));
+		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(25.0, 61.0)), module, TuringMaschine::LENGTH_CV_INPUT));
+
 		addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 108.713)), module, TuringMaschine::SEQUENCE_OUTPUT));
+		addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(25.24, 108.713)), module, TuringMaschine::NOISE_OUTPUT));
 
 		for (int i = 0; i < 16; ++i) {
 			float x = mm2px(Vec(4.0f, 20.0f)).x;  // adjust X as needed
@@ -182,6 +262,17 @@ struct TuringMaschineWidget : ModuleWidget {
 			addChild(createLight<SmallLight<GreenLight>>(Vec(x, y), module, TuringMaschine::BIT_LIGHTS + i));
 		}
 		addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(15.24, 25.81)), module, TuringMaschine::BLINK_LIGHT));
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		TuringMaschine* module = getModule<TuringMaschine>();
+		menu->addChild(createSubmenuItem("Pitch Output Range", "",
+			[=](Menu* menu) {
+				menu->addChild(createMenuItem("5V", "", [=]() {module->pitchScale = 5.f;}));
+				menu->addChild(createMenuItem("3V", "", [=]() {module->pitchScale = 3.f;}));
+				menu->addChild(createMenuItem("1V", "", [=]() {module->pitchScale = 1.f;}));
+			}
+		));
 	}
 };
 
