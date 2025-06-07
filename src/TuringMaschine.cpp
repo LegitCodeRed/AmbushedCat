@@ -91,6 +91,9 @@ struct TuringMaschine : Module {
 		configParam(CHANGE_PARAM, 0.f, 1.f, 0.f, "Change");
 		configParam(LENGTH_PARAM, 1.f, 16.f, 16.f, "Length");
 
+		configParam(WRITE_PARAM, 0.f, 1.f, 0.f, "Write");
+		configParam(SEED_PARAM, 0.f, 1.f, 0.f, "Generate Seed");
+
 		configInput(CHANGE_CV_INPUT, "Change CV");
 		configInput(LENGTH_CV_INPUT, "Length CV");
 
@@ -155,7 +158,7 @@ struct TuringMaschine : Module {
 		outputs[SEQUENCE_OUTPUT].setVoltage(voltage);
 
 		bool noiseBit = random::u32() % 2 == 0;
-		outputs[NOISE_OUTPUT].setVoltage(noiseBit ? 5.f : 0.f);
+		outputs[NOISE_OUTPUT].setVoltage(noiseBit ? 10.f : 0.f);
 
 		if (blinkTimer > 0.f) {
 			blinkTimer -= args.sampleTime;
