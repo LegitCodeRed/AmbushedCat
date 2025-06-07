@@ -225,7 +225,7 @@ struct TuringMaschine : Module {
 		// Restore pitch scale
 		json_t* jsonPitchScale = json_object_get(root, "pitchScale");
 		if (jsonPitchScale) {
-			pitchScale = json_number_value(j);
+			pitchScale = json_number_value(jsonPitchScale);
 		}
 	}
 };
