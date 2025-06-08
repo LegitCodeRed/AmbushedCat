@@ -24,11 +24,12 @@ struct BitShiftRegister {
 		bits = seedBits;
 	}
 
-	void shift(bool allowMutation, float changeProbability) {
+	void shift(bool allowMutation, float changeProbability, float bias) {
 		bool newBit;
 
 		if (allowMutation && random::uniform() < changeProbability) {
-			newBit = (random::u32() % 2 == 0);  // random bit
+			// Biased bit generation
+			newBit = (random::uniform() < bias);  // bias toward 1
 		} else {
 			newBit = bits[15];  // copy MSB
 		}
@@ -36,7 +37,7 @@ struct BitShiftRegister {
 		bits <<= 1;
 		bits.set(0, newBit);
 
-		// Optional: inject entropy only if mutation is on
+		// Optional entropy injection: avoid dead sequences
 		if (allowMutation && bits.none()) {
 			bits.set(0, 1);
 		}
@@ -56,7 +57,7 @@ struct TuringMaschine : Module {
 	enum ParamId {
 		CHANGE_PARAM,
 		LENGTH_PARAM,
-		SCALE_PARAM,
+		BIAS_PARAM,
 		WRITE_PARAM,
 		SEED_PARAM,
 		PARAMS_LEN
@@ -66,6 +67,7 @@ struct TuringMaschine : Module {
 		RESET_INPUT,
 		CHANGE_CV_INPUT,
 		LENGTH_CV_INPUT,
+		BIAS_CV_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
@@ -100,7 +102,7 @@ struct TuringMaschine : Module {
 		configInput(LENGTH_CV_INPUT, "Length CV");
 
 		paramQuantities[LENGTH_PARAM]->snapEnabled = true;
-		configParam(SCALE_PARAM, 0.f, 1.f, 0.f, "Scale");
+		configParam(BIAS_PARAM, 0.f, 1.f, 0.5f, "Bias");
 
 		configInput(CLOCK_INPUT, "Clock");
 		configInput(RESET_INPUT, "Reset");
@@ -136,7 +138,13 @@ struct TuringMaschine : Module {
 
 		if (clockPulse) {
 			blinkTimer = 0.05f;
-			shiftReg.shift(allowMutation, change);
+			float knobValue = params[BIAS_PARAM].getValue();       // 0.0 to 1.0
+			float cvInput   = inputs[BIAS_CV_INPUT].getVoltage();  // -5V to +5V typical
+			float cvNormalized = clamp(cvInput / 10.0f + 0.5f, 0.0f, 1.0f);  // Normalize to 0.0–1.0
+
+			float bias = clamp(knobValue + cvNormalized - 0.5f, 0.0f, 1.0f);
+
+			shiftReg.shift(allowMutation, change, bias);
 		}
 
 		if (inputs[CHANGE_CV_INPUT].isConnected()) {
@@ -274,7 +282,7 @@ struct TuringMaschineWidget : ModuleWidget {
 
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15.24, 50.063)), module, TuringMaschine::LENGTH_PARAM));
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15.24, 60.063)), module, TuringMaschine::CHANGE_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15.24, 70.063)), module, TuringMaschine::SCALE_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15.24, 70.063)), module, TuringMaschine::BIAS_PARAM));
 
 		addParam(createParamCentered<TL1105>(mm2px(Vec(15.24, 30.81)), module, TuringMaschine::SEED_PARAM));
 		addParam(createParamCentered<CKSS>(mm2px(Vec(15.24, 40.81)), module, TuringMaschine::WRITE_PARAM));
@@ -284,6 +292,7 @@ struct TuringMaschineWidget : ModuleWidget {
 
 		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(25.0, 46.0)), module, TuringMaschine::CHANGE_CV_INPUT));
 		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(25.0, 61.0)), module, TuringMaschine::LENGTH_CV_INPUT));
+		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(25.0, 75.0)), module, TuringMaschine::BIAS_CV_INPUT));
 
 		addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 108.713)), module, TuringMaschine::SEQUENCE_OUTPUT));
 		addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(25.24, 108.713)), module, TuringMaschine::NOISE_OUTPUT));
