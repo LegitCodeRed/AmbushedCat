@@ -33,9 +33,12 @@ jobs:
 
     - name: Download Rack SDK 2.6.4
       run: |
-        OS_SHORT=$([ "${{ runner.os }}" == "Windows" ] && echo "win" || ([ "${{ runner.os }}" == "macOS" ] && echo "mac" || echo "linux"))
-        curl -L -o rack-sdk.zip https://vcvrack.com/downloads/Rack-SDK-2.6.4-${OS_SHORT}.zip
-        rm -rf rack-sdk
+        case "${{ runner.os }}" in
+          "Windows") SDKPLATFORM="win-x64" ;;
+          "macOS")   SDKPLATFORM="mac-x64" ;;  # or mac-arm64 if you prefer
+          "Linux")   SDKPLATFORM="lin-x64" ;;
+        esac
+        curl -L -o rack-sdk.zip https://vcvrack.com/downloads/Rack-SDK-2.6.4-${SDKPLATFORM}.zip
         unzip -q rack-sdk.zip
         mv Rack-SDK-2.6.4* rack-sdk
         echo "RACK_DIR=${{ github.workspace }}/rack-sdk" >> $GITHUB_ENV
