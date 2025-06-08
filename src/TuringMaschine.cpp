@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "../TuringGateExpander/src/TuringGateExpander.cpp"
 #include <bitset>
 
 struct BitShiftRegister {
@@ -159,6 +160,15 @@ struct TuringMaschine : Module {
 
 		bool noiseBit = random::u32() % 2 == 0;
 		outputs[NOISE_OUTPUT].setVoltage(noiseBit ? 10.f : 0.f);
+
+		Module* rightModule = getRightExpander().module;
+		if (rightModule && rightModule->getModel()->slug == "TuringGateExpander") {
+			float* value = (float*)rightModule->getLeftExpander().producerMessage;
+			if (value) {
+				*value = (float)shiftReg.getTopBitsAsInt(8); // 8-bit value as float
+				rightModule->getLeftExpander().requestMessageFlip();
+			}
+		}
 
 		if (blinkTimer > 0.f) {
 			blinkTimer -= args.sampleTime;
