@@ -348,7 +348,7 @@ struct TuringMaschineWidget : ModuleWidget {
 	void appendContextMenu(Menu* menu) override {
 		TuringMaschine* module = getModule<TuringMaschine>();
 		menu->addChild(createIndexPtrSubmenuItem("Mode",
-			{"Normal", "Techno"},
+			{"Normal", "Poly Ryhtmic"},
 			&module->mode
 		));
 
