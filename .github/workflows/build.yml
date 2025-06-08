@@ -40,7 +40,6 @@ jobs:
         esac
         curl -L -o rack-sdk.zip https://vcvrack.com/downloads/Rack-SDK-2.6.4-${SDKPLATFORM}.zip
         unzip -q rack-sdk.zip
-        mv Rack-SDK-2.6.4* rack-sdk
         echo "RACK_DIR=${{ github.workspace }}/rack-sdk" >> $GITHUB_ENV
       shell: bash
 
