@@ -116,8 +116,8 @@ struct TuringMaschine : Module {
 
 	TuringMaschine() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
-		configParam(CHANGE_PARAM, 0.f, 1.f, 0.f, "Change");
-		configParam(LENGTH_PARAM, 1.f, 16.f, 16.f, "Length");
+		configParam(CHANGE_PARAM, 0.f, 1.f, 0.5f, "Change");
+		configParam(LENGTH_PARAM, 1.f, 16.f, 8.f, "Length");
 
 		configParam(WRITE_PARAM, 0.f, 1.f, 0.f, "Write");
 		configParam(SEED_PARAM, 0.f, 1.f, 0.f, "Generate Seed");
