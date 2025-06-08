@@ -2,7 +2,7 @@ name: Build VCV Rack Plugin
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master ]  # change to 'main' if your branch is named that
   pull_request:
     branches: [ master ]
 
@@ -15,7 +15,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Set up dependencies for Linux/macOS
       if: runner.os != 'Windows'
@@ -33,7 +33,8 @@ jobs:
 
     - name: Download Rack SDK 2.6.4
       run: |
-        curl -L -o rack-sdk.zip https://vcvrack.com/downloads/Rack-SDK-2.6.4-${{ runner.os == 'Windows' && 'win' || (runner.os == 'macOS' && 'mac' || 'linux') }}.zip
+        OS_SHORT=$([ "${{ runner.os }}" == "Windows" ] && echo "win" || ([ "${{ runner.os }}" == "macOS" ] && echo "mac" || echo "linux"))
+        curl -L -o rack-sdk.zip https://vcvrack.com/downloads/Rack-SDK-2.6.4-${OS_SHORT}.zip
         unzip -q rack-sdk.zip
         mv Rack-SDK-2.6.4* rack-sdk
         echo "RACK_DIR=${{ github.workspace }}/rack-sdk" >> $GITHUB_ENV
@@ -53,7 +54,7 @@ jobs:
       shell: bash
 
     - name: Upload plugin artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ runner.os }}-plugin
         path: dist/
