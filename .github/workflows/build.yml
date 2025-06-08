@@ -2,7 +2,7 @@ name: Build VCV Rack Plugin
 
 on:
   push:
-    branches: [ master ]  # change to 'main' if your branch is named that
+    branches: [ master ]  # change if needed
   pull_request:
     branches: [ master ]
 
@@ -23,7 +23,7 @@ jobs:
         if [ "$RUNNER_OS" == "Linux" ]; then
           sudo apt update && sudo apt install -y build-essential cmake curl zip
         elif [ "$RUNNER_OS" == "macOS" ]; then
-          brew install cmake zip || true
+          brew install --formula cmake zip || true
         fi
       shell: bash
 
@@ -35,6 +35,7 @@ jobs:
       run: |
         OS_SHORT=$([ "${{ runner.os }}" == "Windows" ] && echo "win" || ([ "${{ runner.os }}" == "macOS" ] && echo "mac" || echo "linux"))
         curl -L -o rack-sdk.zip https://vcvrack.com/downloads/Rack-SDK-2.6.4-${OS_SHORT}.zip
+        rm -rf rack-sdk
         unzip -q rack-sdk.zip
         mv Rack-SDK-2.6.4* rack-sdk
         echo "RACK_DIR=${{ github.workspace }}/rack-sdk" >> $GITHUB_ENV
