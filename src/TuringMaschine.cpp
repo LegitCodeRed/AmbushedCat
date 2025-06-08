@@ -1,6 +1,4 @@
 #include "plugin.hpp"
-#include "../TuringGateExpander/src/TuringGateExpander.cpp"
-#include "../TuringVoltsExpander/src/TuringVoltsExpander.cpp"
 #include <bitset>
 
 struct BitShiftRegister {
@@ -209,11 +207,12 @@ struct TuringMaschine : Module {
 			exp = exp->rightExpander.module;
 
 			if (exp->model && exp->model->slug == "TuringVoltsExpander") {
-				if (exp->leftExpander.producerMessage == NULL) {
-					exp->leftExpander.producerMessage = malloc(sizeof(TuringVoltsExpander::ExpanderMessage));
+				if (!exp->leftExpander.producerMessage) {
+					exp->leftExpander.producerMessage = malloc(sizeof(TuringVoltsExpanderMessage));
 				}
+
 				if (exp->leftExpander.producerMessage) {
-					auto* msg = (TuringVoltsExpander::ExpanderMessage*)exp->leftExpander.producerMessage;
+					auto* msg = static_cast<TuringVoltsExpanderMessage*>(exp->leftExpander.producerMessage);
 					msg->bits = shiftReg.getTopBitsAsInt(5);
 					exp->leftExpander.requestMessageFlip();
 				}

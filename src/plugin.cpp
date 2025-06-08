@@ -6,6 +6,8 @@ Plugin* pluginInstance;
 void init(Plugin* p) {
 	pluginInstance = p;
  	p->addModel(modelTuringMaschine);
+ 	p->addModel(modelTuringGateExpander);
+ 	p->addModel(modelTuringVoltsExpander);
 	
 	// Add modules here
 	// p->addModel(modelMyModule);
