@@ -35,7 +35,7 @@ jobs:
       run: |
         case "${{ runner.os }}" in
           "Windows") SDKPLATFORM="win-x64" ;;
-          "macOS")   SDKPLATFORM="mac-x64" ;;  # or mac-arm64 if you prefer
+          "macOS") SDKPLATFORM="mac-arm64" ;;  # or mac-arm64 if you prefer
           "Linux")   SDKPLATFORM="lin-x64" ;;
         esac
         curl -L -o rack-sdk.zip https://vcvrack.com/downloads/Rack-SDK-2.6.4-${SDKPLATFORM}.zip
