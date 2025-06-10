@@ -30,6 +30,12 @@
       "name": "TuringVoltsExpander",
       "description": "",
       "tags": []
-   }
+    },
+    {
+      "slug": "Tape",
+      "name": "Tape",
+      "description": "",
+      "tags": []
+    }
   ]
 }
