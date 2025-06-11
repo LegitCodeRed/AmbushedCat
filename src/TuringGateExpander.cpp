@@ -29,7 +29,13 @@ struct TuringGateExpander : Module {
 		LIGHTS_LEN
 	};
 
-	float value[2] = {};
+       float value[2] = {};
+       uint8_t prevBits = 0;
+       float stepTimer = 0.f;
+       float lastStep = 1.f;
+       float phase = 0.f;
+       int subStep = 0;
+       bool firstStep = true;
 
        TuringGateExpander() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -64,41 +70,68 @@ struct TuringGateExpander : Module {
                float rateParam = params[RATE_PARAM].getValue();
                float rate = std::round(rateParam * 2.f) / 2.f; // Quantize to 0.5 steps
 
+               stepTimer += args.sampleTime;
+
                if (getLeftExpander().module && getLeftExpander().module->model && getLeftExpander().module->model->slug == "TuringMaschine") {
-                       float* value = (float*) getLeftExpander().consumerMessage;
-                       if (value) {
-				uint8_t bits = (uint8_t)value[0];
-				for (int i = 0; i < 8; i++) {
-					bool bit = (bits >> i) & 0x1;
-					outputs[GATE_OUTPUTS + i].setVoltage(bit ? 10.f : 0.f);
-					lights[GATE_LIGHTS + i].setBrightness(bit ? 1.f : 0.f);
-				}
+                       float* valPtr = (float*) getLeftExpander().consumerMessage;
+                       if (valPtr) {
+                                uint8_t bits = (uint8_t)valPtr[0];
 
-				bool g1 = (bits >> 1) & 0x1;
-				bool g2 = (bits >> 2) & 0x1;
-				bool g4 = (bits >> 4) & 0x1;
-				bool g7 = (bits >> 7) & 0x1;
+                                if (firstStep || bits != prevBits) {
+                                        if (!firstStep) {
+                                                lastStep = stepTimer;
+                                        }
+                                        stepTimer = 0.f;
+                                        phase = 0.f;
+                                        subStep = 0;
+                                        prevBits = bits;
+                                        firstStep = false;
+                                }
 
-				// Define new gate outputs as combinations
-				bool outA = g1 || g2;               // 1 + 2
-				bool outB = g2 || g4;               // 2 + 4
-				bool outC = g4 || g7;               // 4 + 7
-				bool outD = g1 || g2 || g4 || g7;   // 1 + 2 + 4 + 7
+                                float subStepTime = (lastStep > 1e-6f ? lastStep : args.sampleTime) / rate;
+                                phase += args.sampleTime;
+                                if (phase >= subStepTime) {
+                                        phase -= subStepTime;
+                                        subStep++;
+                                }
 
-				outputs[GATE_OUTPUT_COMBO_1].setVoltage(outA ? 10.f : 0.f);
-				outputs[GATE_OUTPUT_COMBO_2].setVoltage(outB ? 10.f : 0.f);
-				outputs[GATE_OUTPUT_COMBO_3].setVoltage(outC ? 10.f : 0.f);
-				outputs[GATE_OUTPUT_COMBO_4].setVoltage(outD ? 10.f : 0.f);
+                                float pulseWidth = subStepTime * 0.5f;
+                                float offset = (subStep % 2 ? swing * subStepTime * 0.5f : 0.f);
 
-				lights[COMBO_LIGHT_1].setBrightness(outA ? 1.f : 0.f);
-				lights[COMBO_LIGHT_2].setBrightness(outB ? 1.f : 0.f);
-				lights[COMBO_LIGHT_3].setBrightness(outC ? 1.f : 0.f);
-				lights[COMBO_LIGHT_4].setBrightness(outD ? 1.f : 0.f);
-			}
-			return;
-		}
-		ClearOutputs();
-	}
+                                bool states[8];
+                                for (int i = 0; i < 8; i++) {
+                                        bool bit = (bits >> i) & 0x1;
+                                        float localTime = phase - offset;
+                                        bool gateHigh = bit && localTime >= 0.f && localTime < pulseWidth;
+                                        states[i] = gateHigh;
+                                        outputs[GATE_OUTPUTS + i].setVoltage(gateHigh ? 10.f : 0.f);
+                                        lights[GATE_LIGHTS + i].setBrightness(gateHigh ? 1.f : 0.f);
+                                }
+
+                                bool g1 = states[1];
+                                bool g2 = states[2];
+                                bool g4 = states[4];
+                                bool g7 = states[7];
+
+                                bool outA = g1 || g2;               // 1 + 2
+                                bool outB = g2 || g4;               // 2 + 4
+                                bool outC = g4 || g7;               // 4 + 7
+                                bool outD = g1 || g2 || g4 || g7;   // 1 + 2 + 4 + 7
+
+                                outputs[GATE_OUTPUT_COMBO_1].setVoltage(outA ? 10.f : 0.f);
+                                outputs[GATE_OUTPUT_COMBO_2].setVoltage(outB ? 10.f : 0.f);
+                                outputs[GATE_OUTPUT_COMBO_3].setVoltage(outC ? 10.f : 0.f);
+                                outputs[GATE_OUTPUT_COMBO_4].setVoltage(outD ? 10.f : 0.f);
+
+                                lights[COMBO_LIGHT_1].setBrightness(outA ? 1.f : 0.f);
+                                lights[COMBO_LIGHT_2].setBrightness(outB ? 1.f : 0.f);
+                                lights[COMBO_LIGHT_3].setBrightness(outC ? 1.f : 0.f);
+                                lights[COMBO_LIGHT_4].setBrightness(outD ? 1.f : 0.f);
+                        }
+                        return;
+                }
+                ClearOutputs();
+        }
 };
 
 
