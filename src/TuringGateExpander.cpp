@@ -144,13 +144,13 @@ struct TuringGateExpanderWidget : ModuleWidget {
 		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		for (int i = 0; i < 8; i++) {
-            addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(5.0, 20.0 + i * 12.5)), module, TuringGateExpander::GATE_OUTPUTS + i));
-			addChild(createLightCentered<SmallLight<RedLight>>(
-				mm2px(Vec(2.5, 20.0 + i * 12.5 - 6)),
-				module,
-				TuringGateExpander::GATE_LIGHTS + i
-			));
-        }
+                        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(5.0, 20.0 + i * 12.5)), module, TuringGateExpander::GATE_OUTPUTS + i));
+                                addChild(createLightCentered<SmallLight<RedLight>>(
+                                        mm2px(Vec(2.5, 20.0 + i * 12.5 - 6)),
+                                        module,
+                                        TuringGateExpander::GATE_LIGHTS + i
+                        ));
+                }
 
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(15.0,  20.0 + 1 * 12.5 - 5)), module, TuringGateExpander::GATE_OUTPUT_COMBO_1));
 		addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(15-2.5, 20.0 + 1 * 12.5 - 11)), module, TuringGateExpander::COMBO_LIGHT_1));
