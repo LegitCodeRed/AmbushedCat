@@ -3,8 +3,6 @@
 
 struct TuringGateExpander : Module {
        enum ParamId {
-               SWING_PARAM,
-               RATE_PARAM,
                PARAMS_LEN
        };
 	enum InputId {
@@ -33,8 +31,6 @@ struct TuringGateExpander : Module {
 
        TuringGateExpander() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
-		configParam(SWING_PARAM, -1.f, 1.f, 0.f, "Swing");
-		configParam(RATE_PARAM, 0.5f, 8.f, 2.f, "Rate", "x", 0.f, 0.5f);
 		getLeftExpander().producerMessage = &value[0];
 		getLeftExpander().consumerMessage = &value[1];
 		paramQuantities[RATE_PARAM]->snapEnabled = true;
@@ -60,10 +56,6 @@ struct TuringGateExpander : Module {
 	}
 
        void process(const ProcessArgs& args) override {
-               float swing = params[SWING_PARAM].getValue();
-               float rateParam = params[RATE_PARAM].getValue();
-               float rate = std::round(rateParam * 2.f) / 2.f; // Quantize to 0.5 steps
-
                if (getLeftExpander().module && getLeftExpander().module->model && getLeftExpander().module->model->slug == "TuringMaschine") {
                        float* value = (float*) getLeftExpander().consumerMessage;
                        if (value) {
@@ -110,12 +102,9 @@ struct TuringGateExpanderWidget : ModuleWidget {
 		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-                addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(5.0, 10.0)), module, TuringGateExpander::SWING_PARAM));
-                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15.0, 10.0)), module, TuringGateExpander::RATE_PARAM));
-
-                for (int i = 0; i < 8; i++) {
+		for (int i = 0; i < 8; i++) {
             addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(5.0, 20.0 + i * 12.5)), module, TuringGateExpander::GATE_OUTPUTS + i));
 			addChild(createLightCentered<SmallLight<RedLight>>(
 				mm2px(Vec(2.5, 20.0 + i * 12.5 - 6)),
