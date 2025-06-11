@@ -33,7 +33,6 @@ struct TuringGateExpander : Module {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 		getLeftExpander().producerMessage = &value[0];
 		getLeftExpander().consumerMessage = &value[1];
-		paramQuantities[RATE_PARAM]->snapEnabled = true;
        }
 
 	
