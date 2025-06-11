@@ -60,57 +60,23 @@ struct TuringGateExpander : Module {
 		lights[COMBO_LIGHT_4].setBrightness(0.f);
 	}
 
-       void process(const ProcessArgs& args) override {
-<<<<<<< HEAD
-               float swing = params[SWING_PARAM].getValue();
-               float rateParam = params[RATE_PARAM].getValue();
-               float rate = std::round(rateParam * 2.f) / 2.f; // Quantize to 0.5 steps
-
-               stepTimer += args.sampleTime;
-
-=======
->>>>>>> remove-knobs
-               if (getLeftExpander().module && getLeftExpander().module->model && getLeftExpander().module->model->slug == "TuringMaschine") {
-                       float* valPtr = (float*) getLeftExpander().consumerMessage;
-                       if (valPtr) {
-                                uint8_t bits = (uint8_t)valPtr[0];
-
-                                if (firstStep || bits != prevBits) {
-                                        if (!firstStep) {
-                                                lastStep = stepTimer;
-                                        }
-                                        stepTimer = 0.f;
-                                        phase = 0.f;
-                                        subStep = 0;
-                                        prevBits = bits;
-                                        firstStep = false;
-                                }
-
-                                float subStepTime = (lastStep > 1e-6f ? lastStep : args.sampleTime) / rate;
-                                phase += args.sampleTime;
-                                if (phase >= subStepTime) {
-                                        phase -= subStepTime;
-                                        subStep++;
-                                }
-
-                                float pulseWidth = subStepTime * 0.5f;
-                                float offset = (subStep % 2 ? swing * subStepTime * 0.5f : 0.f);
-
-                                bool states[8];
+        void process(const ProcessArgs& args) override {
+                if (getLeftExpander().module && getLeftExpander().module->model && getLeftExpander().module->model->slug == "TuringMaschine") {
+                        float* value = (float*) getLeftExpander().consumerMessage;
+                        if (value) {
+                                uint8_t bits = (uint8_t)value[0];
                                 for (int i = 0; i < 8; i++) {
                                         bool bit = (bits >> i) & 0x1;
-                                        float localTime = phase - offset;
-                                        bool gateHigh = bit && localTime >= 0.f && localTime < pulseWidth;
-                                        states[i] = gateHigh;
-                                        outputs[GATE_OUTPUTS + i].setVoltage(gateHigh ? 10.f : 0.f);
-                                        lights[GATE_LIGHTS + i].setBrightness(gateHigh ? 1.f : 0.f);
+                                        outputs[GATE_OUTPUTS + i].setVoltage(bit ? 10.f : 0.f);
+                                        lights[GATE_LIGHTS + i].setBrightness(bit ? 1.f : 0.f);
                                 }
 
-                                bool g1 = states[1];
-                                bool g2 = states[2];
-                                bool g4 = states[4];
-                                bool g7 = states[7];
+                                bool g1 = (bits >> 1) & 0x1;
+                                bool g2 = (bits >> 2) & 0x1;
+                                bool g4 = (bits >> 4) & 0x1;
+                                bool g7 = (bits >> 7) & 0x1;
 
+                                // Define new gate outputs as combinations
                                 bool outA = g1 || g2;               // 1 + 2
                                 bool outB = g2 || g4;               // 2 + 4
                                 bool outC = g4 || g7;               // 4 + 7
@@ -145,10 +111,10 @@ struct TuringGateExpanderWidget : ModuleWidget {
 
 		for (int i = 0; i < 8; i++) {
                         addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(5.0, 20.0 + i * 12.5)), module, TuringGateExpander::GATE_OUTPUTS + i));
-                                addChild(createLightCentered<SmallLight<RedLight>>(
-                                        mm2px(Vec(2.5, 20.0 + i * 12.5 - 6)),
-                                        module,
-                                        TuringGateExpander::GATE_LIGHTS + i
+                        addChild(createLightCentered<SmallLight<RedLight>>(
+                                mm2px(Vec(2.5, 20.0 + i * 12.5 - 6)),
+                                module,
+                                TuringGateExpander::GATE_LIGHTS + i
                         ));
                 }
 
