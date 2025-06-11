@@ -109,8 +109,9 @@ struct TuringMaschine : Module {
 	dsp::SchmittTrigger resetTrigger;
 	dsp::SchmittTrigger seedTrigger;
 
-	int mode = 0; // 0: Normal, 1: Techno
-	int pitchMode = 0;
+        int mode = 0; // 0: Normal, 1: Techno
+        int pitchMode = 0;
+        int writeMode = 0; // 0: Standard, 1: Evolving
 
 	TuringMaschine() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -173,10 +174,17 @@ struct TuringMaschine : Module {
 			float cvInput   = inputs[BIAS_CV_INPUT].getVoltage();  // -5V to +5V typical
 			float cvNormalized = clamp(cvInput / 10.0f + 0.5f, 0.0f, 1.0f);  // Normalize to 0.0–1.0
 
-			float bias = clamp(knobValue + cvNormalized - 0.5f, 0.0f, 1.0f);
+                        float bias = clamp(knobValue + cvNormalized - 0.5f, 0.0f, 1.0f);
 
-			shiftReg.shift(allowMutation, change, bias, mode);
-		}
+                        float evolveChange = change;
+                        bool mutate = allowMutation;
+                        if (writeMode == 1) {
+                                // Gradually evolve the pattern
+                                evolveChange *= 0.1f;
+                                mutate = true;
+                        }
+                        shiftReg.shift(mutate, evolveChange, bias, mode);
+                }
 
 		if (inputs[CHANGE_CV_INPUT].isConnected()) {
 			change += inputs[CHANGE_CV_INPUT].getVoltage() / 10.f; // Normalize -5V to +5V → -0.5 to +0.5
@@ -265,8 +273,9 @@ struct TuringMaschine : Module {
 		json_object_set_new(root, "seedHigh", json_integer(seedHigh));
 
 		// Save pitch scale
-		json_object_set_new(root, "pitchMode", json_integer(pitchMode));
-		json_object_set_new(root, "mode", json_integer(mode));
+                json_object_set_new(root, "pitchMode", json_integer(pitchMode));
+                json_object_set_new(root, "mode", json_integer(mode));
+                json_object_set_new(root, "writeMode", json_integer(writeMode));
 
 		return root;
 	}
@@ -302,11 +311,16 @@ struct TuringMaschine : Module {
 			pitchMode = json_integer_value(jsonPitchMode);
 		}
 
-		json_t* modeJ = json_object_get(root, "mode");
-		if (modeJ) {
-			mode = json_integer_value(modeJ);
-		}
-	}
+                json_t* modeJ = json_object_get(root, "mode");
+                if (modeJ) {
+                        mode = json_integer_value(modeJ);
+                }
+
+                json_t* writeJ = json_object_get(root, "writeMode");
+                if (writeJ) {
+                        writeMode = json_integer_value(writeJ);
+                }
+        }
 };
 
 struct TuringMaschineWidget : ModuleWidget {
@@ -351,11 +365,16 @@ struct TuringMaschineWidget : ModuleWidget {
 			&module->mode
 		));
 
-		menu->addChild(createIndexPtrSubmenuItem("Pitch Output Range",
-			{"5V", "3V", "1V"},
-			&module->pitchMode
-		));
-	}
+                menu->addChild(createIndexPtrSubmenuItem("Pitch Output Range",
+                        {"5V", "3V", "1V"},
+                        &module->pitchMode
+                ));
+
+                menu->addChild(createIndexPtrSubmenuItem("Write Mode",
+                        {"Standard", "Evolving"},
+                        &module->writeMode
+                ));
+        }
 };
 
 Model* modelTuringMaschine = createModel<TuringMaschine, TuringMaschineWidget>("TuringMaschine");
