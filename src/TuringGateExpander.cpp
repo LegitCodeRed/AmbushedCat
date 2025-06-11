@@ -1,7 +1,6 @@
 #include "plugin.hpp"
 #include <cmath>
 
-
 struct TuringGateExpander : Module {
        enum ParamId {
                SWING_PARAM,
@@ -33,11 +32,12 @@ struct TuringGateExpander : Module {
 	float value[2] = {};
 
        TuringGateExpander() {
-               config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
-               configParam(SWING_PARAM, -1.f, 1.f, 0.f, "Swing");
-               configParam(RATE_PARAM, 0.5f, 4.f, 1.f, "Rate");
-               getLeftExpander().producerMessage = &value[0];
-               getLeftExpander().consumerMessage = &value[1];
+		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
+		configParam(SWING_PARAM, -1.f, 1.f, 0.f, "Swing");
+		configParam(RATE_PARAM, 0.5f, 8.f, 2.f, "Rate", "x", 0.f, 0.5f);
+		getLeftExpander().producerMessage = &value[0];
+		getLeftExpander().consumerMessage = &value[1];
+		paramQuantities[RATE_PARAM]->snapEnabled = true;
        }
 
 	
