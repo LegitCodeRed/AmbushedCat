@@ -28,39 +28,46 @@ struct BitShiftRegister {
 	}
 
 	void shift(bool allowMutation, float changeProbability, float bias, int mode) {
-		// Increment step counter
 		if (mode == 1) {
+			// 🔁 Polyrhythmic mode: each output rotates at its own interval
+			bool doRotate = false;
+
 			for (int i = 0; i < NUM_OUTPUTS; ++i) {
 				rotateCounters[i]++;
 				if (rotateCounters[i] >= rotateEvery[i]) {
 					rotateCounters[i] = 0;
-
-					// Rotate bits left once (shared register)
-					bool msb = bits[15];
-					bits <<= 1;
-					bits.set(0, msb);
+					doRotate = true;
 				}
 			}
-			return;  // Skip normal mutation
+
+			if (!doRotate)
+				return;  // No rotation needed this tick
+
+			// Rotate shared register once safely
+			bool newBit = bits[15];
+			bits <<= 1;
+			bits.set(0, newBit);
+
+			return;  // Skip mutation in polyrhythmic mode
 		}
 
-		// 🔁 Normal Turing mutation logic
+		// 🎲 Standard Turing machine mode (normal mode)
+
 		bool newBit;
 		if (allowMutation && random::uniform() < changeProbability) {
 			newBit = (random::uniform() < bias);  // biased mutation
 		} else {
-			newBit = bits[15];  // copy MSB to preserve loop
+			newBit = bits[15];  // preserve MSB
 		}
 
 		bits <<= 1;
 		bits.set(0, newBit);
 
-		// 👻 Optional: prevent all-zero deadlock
+		// 👻 Deadlock prevention
 		if (allowMutation && bits.none()) {
-			bits.set(0, 1);  // inject life
+			bits.set(random::u32() % 16, true);  // Inject a single live bit
 		}
 	}
-
 	// Converts top N bits into an integer (default: top 8 bits)
 	int getTopBitsAsInt(int bitCount) const {
 		int value = 0;
@@ -174,17 +181,17 @@ struct TuringMaschine : Module {
 			float cvInput   = inputs[BIAS_CV_INPUT].getVoltage();  // -5V to +5V typical
 			float cvNormalized = clamp(cvInput / 10.0f + 0.5f, 0.0f, 1.0f);  // Normalize to 0.0–1.0
 
-                        float bias = clamp(knobValue + cvNormalized - 0.5f, 0.0f, 1.0f);
+			float bias = clamp(knobValue + cvNormalized - 0.5f, 0.0f, 1.0f);
 
-                        float evolveChange = change;
-                        bool mutate = allowMutation;
-                        if (writeMode == 1) {
-                                // Gradually evolve the pattern
-                                evolveChange *= 0.1f;
-                                mutate = true;
-                        }
-                        shiftReg.shift(mutate, evolveChange, bias, mode);
-                }
+			float evolveChange = change;
+			bool mutate = allowMutation;
+			if (writeMode == 1) {
+					// Gradually evolve the pattern
+					evolveChange *= 0.1f;
+					mutate = true;
+			}
+			shiftReg.shift(mutate, evolveChange, bias, mode);
+			}
 
 		if (inputs[CHANGE_CV_INPUT].isConnected()) {
 			change += inputs[CHANGE_CV_INPUT].getVoltage() / 10.f; // Normalize -5V to +5V → -0.5 to +0.5
