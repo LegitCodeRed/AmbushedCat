@@ -379,13 +379,22 @@ struct Tape : Module {
                st.biasState = biasFiltered;
                float preFiltered = in + biasFiltered * biasAmount * biasMod;
 
-               float driven = preFiltered * inputGain;
+               float preDriven = preFiltered * inputGain;
+
+               // Input gain drives a gentle pre-saturation for warmth
+               float warm = saturateSingle(preDriven, 1.f);
+
+               // Glue compression responds to the input level
+               float glueAmount = std::max(0.f, inputGain - 1.f) * modeGlue[tapeMode];
+               float glued = st.glue.process(warm, glueAmount, driveMode);
+
+               // Drive knob controls additional tape saturation
                float driveScaled = drive * modeDrive[tapeMode];
                float satDrive = (driveScaled <= 0.f) ? 1.f : driveScaled;
 
                float upBuf[OS_FACTOR];
                float satBuf[OS_FACTOR];
-               st.driveUpsampler.process(driven, upBuf);
+               st.driveUpsampler.process(glued, upBuf);
                for (int i = 0; i < OS_FACTOR; i++) {
                        switch (driveMode) {
                                default:
@@ -407,9 +416,6 @@ struct Tape : Module {
                st.prevSaturated = saturated;
                float saturatedWithTail = saturated + warmTail;
 
-               float glueAmount = std::max(0.f, inputGain - 1.f) * modeGlue[tapeMode];
-               float glued = st.glue.process(saturatedWithTail, glueAmount, driveMode);
-
                float wowAmount = params[WOW_PARAM].getValue() * modeWF[tapeMode];
                float flutterAmount = params[FLUTTER_PARAM].getValue() * modeWF[tapeMode];
                float rawMod = wowFlutter.compute(args.sampleRate, wowAmount, flutterAmount);
@@ -420,7 +426,7 @@ struct Tape : Module {
                float modDepth = 0.02f * speedModScale[tapeSpeed];
                float delaySamples = st.modSmoothed2 * modDepth * args.sampleRate;
 
-               float delayed = st.delay.readModulated(glued, delaySamples, 0, args.sampleRate);
+               float delayed = st.delay.readModulated(saturatedWithTail, delaySamples, 0, args.sampleRate);
 
                float tone = params[TONE_PARAM].getValue() * modeTone[tapeMode];
                tone = clamp(tone, 0.f, 1.f);
@@ -449,7 +455,7 @@ struct Tape : Module {
 
                float bassRestore = lowBump + 0.1f * (lowBump - st.lowpassState);
 
-               float toneTrim = 1.0f - 0.02f * std::tanh(driven * 0.3f);
+               float toneTrim = 1.0f - 0.02f * std::tanh(preDriven * 0.3f);
                float signal = bassRestore * toneTrim;
 
                float highComponent = signal - st.brightnessState;
