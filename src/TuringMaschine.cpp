@@ -28,39 +28,46 @@ struct BitShiftRegister {
 	}
 
 	void shift(bool allowMutation, float changeProbability, float bias, int mode) {
-		// Increment step counter
 		if (mode == 1) {
+			// 🔁 Polyrhythmic mode: each output rotates at its own interval
+			bool doRotate = false;
+
 			for (int i = 0; i < NUM_OUTPUTS; ++i) {
 				rotateCounters[i]++;
 				if (rotateCounters[i] >= rotateEvery[i]) {
 					rotateCounters[i] = 0;
-
-					// Rotate bits left once (shared register)
-					bool msb = bits[15];
-					bits <<= 1;
-					bits.set(0, msb);
+					doRotate = true;
 				}
 			}
-			return;  // Skip normal mutation
+
+			if (!doRotate)
+				return;  // No rotation needed this tick
+
+			// Rotate shared register once safely
+			bool newBit = bits[15];
+			bits <<= 1;
+			bits.set(0, newBit);
+
+			return;  // Skip mutation in polyrhythmic mode
 		}
 
-		// 🔁 Normal Turing mutation logic
+		// 🎲 Standard Turing machine mode (normal mode)
+
 		bool newBit;
 		if (allowMutation && random::uniform() < changeProbability) {
 			newBit = (random::uniform() < bias);  // biased mutation
 		} else {
-			newBit = bits[15];  // copy MSB to preserve loop
+			newBit = bits[15];  // preserve MSB
 		}
 
 		bits <<= 1;
 		bits.set(0, newBit);
 
-		// 👻 Optional: prevent all-zero deadlock
+		// 👻 Deadlock prevention
 		if (allowMutation && bits.none()) {
-			bits.set(0, 1);  // inject life
+			bits.set(random::u32() % 16, true);  // Inject a single live bit
 		}
 	}
-
 	// Converts top N bits into an integer (default: top 8 bits)
 	int getTopBitsAsInt(int bitCount) const {
 		int value = 0;
@@ -109,8 +116,9 @@ struct TuringMaschine : Module {
 	dsp::SchmittTrigger resetTrigger;
 	dsp::SchmittTrigger seedTrigger;
 
-	int mode = 0; // 0: Normal, 1: Techno
-	int pitchMode = 0;
+        int mode = 0; // 0: Normal, 1: Techno
+        int pitchMode = 0;
+        int writeMode = 0; // 0: Standard, 1: Evolving
 
 	TuringMaschine() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -175,8 +183,15 @@ struct TuringMaschine : Module {
 
 			float bias = clamp(knobValue + cvNormalized - 0.5f, 0.0f, 1.0f);
 
-			shiftReg.shift(allowMutation, change, bias, mode);
-		}
+			float evolveChange = change;
+			bool mutate = allowMutation;
+			if (writeMode == 1) {
+					// Gradually evolve the pattern
+					evolveChange *= 0.1f;
+					mutate = true;
+			}
+			shiftReg.shift(mutate, evolveChange, bias, mode);
+			}
 
 		if (inputs[CHANGE_CV_INPUT].isConnected()) {
 			change += inputs[CHANGE_CV_INPUT].getVoltage() / 10.f; // Normalize -5V to +5V → -0.5 to +0.5
@@ -202,23 +217,23 @@ struct TuringMaschine : Module {
 		outputs[NOISE_OUTPUT].setVoltage(noiseBit ? 10.f : 0.f);
 
 		
-		Module* exp = this;
-		while (exp->rightExpander.module) {
-			exp = exp->rightExpander.module;
+                Module* exp = this;
+                while (exp->rightExpander.module) {
+                        exp = exp->rightExpander.module;
 
-			if (exp->model && exp->model->slug == "TuringVoltsExpander") {
-				if (!exp->leftExpander.producerMessage) {
-					exp->leftExpander.producerMessage = malloc(sizeof(TuringVoltsExpanderMessage));
-				}
+                        if (exp->model && exp->model->slug == "TuringVoltsExpander") {
+                                if (!exp->leftExpander.producerMessage) {
+                                        exp->leftExpander.producerMessage = malloc(sizeof(TuringVoltsExpanderMessage));
+                                }
 
-				if (exp->leftExpander.producerMessage) {
-					auto* msg = static_cast<TuringVoltsExpanderMessage*>(exp->leftExpander.producerMessage);
-					msg->bits = shiftReg.getTopBitsAsInt(5);
-					exp->leftExpander.requestMessageFlip();
-				}
-				break; // stop once found
-			}
-		}
+                                if (exp->leftExpander.producerMessage) {
+                                        auto* msg = static_cast<TuringVoltsExpanderMessage*>(exp->leftExpander.producerMessage);
+                                        msg->bits = shiftReg.getTopBitsAsInt(5);
+                                        exp->leftExpander.requestMessageFlip();
+                                }
+                                // continue searching to support multiple Volts expanders
+                        }
+                }
 
 		Module* rightModule = getRightExpander().module;
 		if (rightModule && rightModule->getModel()->slug == "TuringGateExpander") {
@@ -265,8 +280,9 @@ struct TuringMaschine : Module {
 		json_object_set_new(root, "seedHigh", json_integer(seedHigh));
 
 		// Save pitch scale
-		json_object_set_new(root, "pitchMode", json_integer(pitchMode));
-		json_object_set_new(root, "mode", json_integer(mode));
+                json_object_set_new(root, "pitchMode", json_integer(pitchMode));
+                json_object_set_new(root, "mode", json_integer(mode));
+                json_object_set_new(root, "writeMode", json_integer(writeMode));
 
 		return root;
 	}
@@ -302,11 +318,16 @@ struct TuringMaschine : Module {
 			pitchMode = json_integer_value(jsonPitchMode);
 		}
 
-		json_t* modeJ = json_object_get(root, "mode");
-		if (modeJ) {
-			mode = json_integer_value(modeJ);
-		}
-	}
+                json_t* modeJ = json_object_get(root, "mode");
+                if (modeJ) {
+                        mode = json_integer_value(modeJ);
+                }
+
+                json_t* writeJ = json_object_get(root, "writeMode");
+                if (writeJ) {
+                        writeMode = json_integer_value(writeJ);
+                }
+        }
 };
 
 struct TuringMaschineWidget : ModuleWidget {
@@ -351,11 +372,16 @@ struct TuringMaschineWidget : ModuleWidget {
 			&module->mode
 		));
 
-		menu->addChild(createIndexPtrSubmenuItem("Pitch Output Range",
-			{"5V", "3V", "1V"},
-			&module->pitchMode
-		));
-	}
+                menu->addChild(createIndexPtrSubmenuItem("Pitch Output Range",
+                        {"5V", "3V", "1V"},
+                        &module->pitchMode
+                ));
+
+                menu->addChild(createIndexPtrSubmenuItem("Write Mode",
+                        {"Standard", "Evolving"},
+                        &module->writeMode
+                ));
+        }
 };
 
 Model* modelTuringMaschine = createModel<TuringMaschine, TuringMaschineWidget>("TuringMaschine");
