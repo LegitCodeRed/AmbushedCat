@@ -207,15 +207,17 @@ public:
         float env = 0.f;
         float hpState = 0.f;        // sidechain high-pass state
 
-        float process(float x, float amount, int algo) {
-			// High-pass sidechain so bass passes more freely
-			float hp = x - hpState;
-			hpState += 0.01f * hp;
+        // x: signal to compress
+        // sc: sidechain signal used for level detection
+        float process(float x, float amount, int algo, float sc) {
+                        // High-pass sidechain so bass passes more freely
+                        float hp = sc - hpState;
+                        hpState += 0.01f * hp;
 
-			float rect = std::fabs(hp);
-			env += 0.01f * (rect - env);
-			// raise compression threshold so small signals stay uncompressed
-			float compEnv = std::max(0.f, env - 0.4f);
+                        float rect = std::fabs(hp);
+                        env += 0.01f * (rect - env);
+                        // Lower threshold so compression engages at more typical levels
+                        float compEnv = std::max(0.f, env - 0.2f);
 
 			float gain = 1.f;
 			switch (algo) {
@@ -411,7 +413,7 @@ struct Tape : Module {
 
                // Glue compression responds to the input level
                float glueAmount = std::max(0.f, inputGain - 1.f) * modeGlue[tapeMode];
-               float glued = st.glue.process(saturatedWithTail, glueAmount, driveMode);
+               float glued = st.glue.process(saturatedWithTail, glueAmount, driveMode, driven);
 
                float wowAmount = params[WOW_PARAM].getValue() * modeWF[tapeMode];
                float flutterAmount = params[FLUTTER_PARAM].getValue() * modeWF[tapeMode];
