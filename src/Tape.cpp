@@ -216,8 +216,9 @@ public:
 
                         float rect = std::fabs(hp);
                         env += 0.01f * (rect - env);
+                        float threshold = 0.4f; 
                         // Lower threshold so compression engages at more typical levels
-                        float compEnv = std::max(0.f, env - 0.2f);
+                        float compEnv = std::max(0.f, env - threshold);
 
 			float gain = 1.f;
 			switch (algo) {
@@ -550,17 +551,20 @@ struct Tape : Module {
 
                 float inL = inputs[LEFT_INPUT].getVoltage() * VOLT_SCALE;
                 float inR = inputs[RIGHT_INPUT].isConnected() ? inputs[RIGHT_INPUT].getVoltage() * VOLT_SCALE : inL;
+                bool stereo = outputs[RIGHT_OUTPUT].isConnected();
 
-               float left = processChannel(channels[0], inL, args, 0);
-               float right = processChannel(channels[1], inR, args, 1);
-
-                bool rightConn = outputs[RIGHT_OUTPUT].isConnected();
-                if (!rightConn) {
-                        left = 0.5f * (left + right);
+                // SAFER: average pre-process if mono
+                if (!stereo) {
+                        float mono = 0.5f * (inL + inR);
+                        float out = processChannel(channels[0], mono, args, 0);
+                        outputs[LEFT_OUTPUT].setVoltage(out / VOLT_SCALE);
+                        outputs[RIGHT_OUTPUT].setVoltage(0.f); // optional mute
+                } else {
+                        float outL = processChannel(channels[0], inL, args, 0);
+                        float outR = processChannel(channels[1], inR, args, 1);
+                        outputs[LEFT_OUTPUT].setVoltage(outL / VOLT_SCALE);
+                        outputs[RIGHT_OUTPUT].setVoltage(outR / VOLT_SCALE);
                 }
-
-                outputs[LEFT_OUTPUT].setVoltage(left / VOLT_SCALE);
-                outputs[RIGHT_OUTPUT].setVoltage(right / VOLT_SCALE);
         }
 
         json_t* dataToJson() override {
