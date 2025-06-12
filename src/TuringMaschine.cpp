@@ -217,23 +217,23 @@ struct TuringMaschine : Module {
 		outputs[NOISE_OUTPUT].setVoltage(noiseBit ? 10.f : 0.f);
 
 		
-		Module* exp = this;
-		while (exp->rightExpander.module) {
-			exp = exp->rightExpander.module;
+                Module* exp = this;
+                while (exp->rightExpander.module) {
+                        exp = exp->rightExpander.module;
 
-			if (exp->model && exp->model->slug == "TuringVoltsExpander") {
-				if (!exp->leftExpander.producerMessage) {
-					exp->leftExpander.producerMessage = malloc(sizeof(TuringVoltsExpanderMessage));
-				}
+                        if (exp->model && exp->model->slug == "TuringVoltsExpander") {
+                                if (!exp->leftExpander.producerMessage) {
+                                        exp->leftExpander.producerMessage = malloc(sizeof(TuringVoltsExpanderMessage));
+                                }
 
-				if (exp->leftExpander.producerMessage) {
-					auto* msg = static_cast<TuringVoltsExpanderMessage*>(exp->leftExpander.producerMessage);
-					msg->bits = shiftReg.getTopBitsAsInt(5);
-					exp->leftExpander.requestMessageFlip();
-				}
-				break; // stop once found
-			}
-		}
+                                if (exp->leftExpander.producerMessage) {
+                                        auto* msg = static_cast<TuringVoltsExpanderMessage*>(exp->leftExpander.producerMessage);
+                                        msg->bits = shiftReg.getTopBitsAsInt(5);
+                                        exp->leftExpander.requestMessageFlip();
+                                }
+                                // continue searching to support multiple Volts expanders
+                        }
+                }
 
 		Module* rightModule = getRightExpander().module;
 		if (rightModule && rightModule->getModel()->slug == "TuringGateExpander") {
