@@ -312,7 +312,9 @@ struct Tape : Module {
                float modSmoothed2 = 0.f;
 
                dspext::Saturator<OS_FACTOR> saturator;
-               P42Circuit transformer;
+               P42Circuit transformerDark;
+               P42Circuit::MixTransformer transformerMix;
+               P42Circuit::P42CircuitSimple transformerSimple;
        };
 
        ChannelState channels[2];
@@ -325,6 +327,7 @@ struct Tape : Module {
        int tapeSpeed = 1; // 0: 7.5 IPS, 1: 15 IPS (default), 2: 30 IPS
 
        int eqCurve = 0; // 0: Bass, 1: Highs, 2: Mix
+       int transformerMode = 0; // 0: Standard, 1: Dark, 2: Iron
 
 
        float processChannel(ChannelState& st, float in, const ProcessArgs& args, int channel) {
@@ -465,7 +468,18 @@ struct Tape : Module {
                st.aging.storePrint(glued);
                float printEcho = st.aging.getPrintEcho();
                float xformDrive = params[TRANSFORM_PARAM].getValue();
-               float transformed = st.transformer.process(hfProcessed, 1.f + xformDrive, args.sampleRate);
+               float transformed = 0.f;
+               switch (transformerMode) {
+                       case 1:
+                               transformed = st.transformerDark.process(hfProcessed, 1.f + xformDrive, args.sampleRate);
+                               break;
+                       case 2:
+                               transformed = st.transformerMix.process(hfProcessed, 1.f + xformDrive, args.sampleRate);
+                               break;
+                       default:
+                               transformed = st.transformerSimple.process(hfProcessed, 1.f + xformDrive, args.sampleRate);
+                               break;
+               }
                return transformed * level + hissSignal + tapeStatic + printEcho;
        }
 	
@@ -520,6 +534,7 @@ struct Tape : Module {
                 json_object_set_new(root, "driveMode", json_integer(driveMode));
                 json_object_set_new(root, "tapeSpeed", json_integer(tapeSpeed));
                 json_object_set_new(root, "eqCurve", json_integer(eqCurve));
+                json_object_set_new(root, "transformerMode", json_integer(transformerMode));
 
                 return root;
         }
@@ -545,6 +560,10 @@ struct Tape : Module {
                 json_t* eqJ = json_object_get(root, "eqCurve");
                 if (eqJ) {
                                 eqCurve = json_integer_value(eqJ);
+                }
+                json_t* xformJ = json_object_get(root, "transformerMode");
+                if (xformJ) {
+                                transformerMode = json_integer_value(xformJ);
                 }
         }
 };
@@ -601,6 +620,10 @@ struct TapeWidget : ModuleWidget {
                 menu->addChild(createIndexPtrSubmenuItem("EQ Curve",
                         {"Bass", "Highs", "Mix"},
                         &module->eqCurve
+                ));
+                menu->addChild(createIndexPtrSubmenuItem("Transformer",
+                        {"Standard", "Dark", "Iron"},
+                        &module->transformerMode
                 ));
         }
 };
