@@ -489,7 +489,7 @@ struct Tape : Module {
 		configParam(HISS_PARAM, 0.0f, 6.0f, 0.12f, "Hiss Amount");           // extended range
 		configParam(NOISE_PARAM, 0.0f, 6.0f, 0.2f, "Tape Static");           // extended range
                configParam(SWEETSPOT_PARAM, -1.f, 1.f, 0.3f, "Sweetspot Drive");
-               configParam(TRANSFORM_PARAM, 0.f, 3.f, 0.f, "Transformer Drive");
+               configParam(TRANSFORM_PARAM, 0.f, 5.f, 0.f, "Transformer Load");
        }
 
         void process(const ProcessArgs& args) override {
