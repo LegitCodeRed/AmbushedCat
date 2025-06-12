@@ -591,7 +591,7 @@ struct TapeWidget : ModuleWidget {
                         &module->tapeStyle
                 ));
                 menu->addChild(createIndexPtrSubmenuItem("Drive and Glue Mode",
-                        {"Single", "Bus", "Mix"},
+                        {"Single", "Mix", "Dark"},
                         &module->driveMode
                 ));
                 menu->addChild(createIndexPtrSubmenuItem("Tape Speed",
