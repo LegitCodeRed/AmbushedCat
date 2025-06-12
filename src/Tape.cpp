@@ -257,60 +257,67 @@ struct Tape : Module {
                 TRANSFORM_PARAM,
                 PARAMS_LEN
         };
-	enum InputId {
-		AUDIO_INPUT,
-		INPUTS_LEN
-	};
-	enum OutputId {
-		AUDIO_OUTPUT,
-		OUTPUTS_LEN
-	};
+       enum InputId {
+               LEFT_INPUT,
+               RIGHT_INPUT,
+               INPUTS_LEN
+       };
+        enum OutputId {
+                LEFT_OUTPUT,
+                RIGHT_OUTPUT,
+                OUTPUTS_LEN
+        };
 	enum LightId {
 		LIGHTS_LEN
 	};
 
-	float biasState = 0.f;
-	float toneState = 0.f;
-	float deEmphasisState = 0.f;
-	float lowpassState = 0.f;
-	float brightnessState = 0.f;
-	float prevSaturated = 0.f;
+       static const int OS_FACTOR = 2;
 
-	float hissHPState = 0.f;
-	float hissBPState = 0.f;
+       struct ChannelState {
+               float biasState = 0.f;
+               float toneState = 0.f;
+               float deEmphasisState = 0.f;
+               float lowpassState = 0.f;
+               float brightnessState = 0.f;
+               float prevSaturated = 0.f;
 
-	float tapeNoiseHP = 0.f;
-	float tapeNoiseBP = 0.f;
+               float hissHPState = 0.f;
+               float hissBPState = 0.f;
 
-	TapeAging aging;
-	TapeDelayBuffer delay;
-	WowFlutterModulator wowFlutter;
-	TapeGlue glue;
+               float tapeNoiseHP = 0.f;
+               float tapeNoiseBP = 0.f;
 
-	// per-instance noise smoothing states (were previously static locals)
-	float hissLP = 0.f;
-	float staticLP = 0.f;
+               TapeAging aging;
+               TapeDelayBuffer delay;
+               TapeGlue glue;
 
-	// High-pass state for mix mode saturation
-	float mixHPState = 0.f;
+               float hissLP = 0.f;
+               float staticLP = 0.f;
 
-	int tapeMode = 0; // 0: I, 1: II, 2: IV
-	int tapeStyle = 2; // 0: Vintage, 1: Classic, 2: Modern (default)
-	int driveMode = 0; // 0: Single, 1: Bus, 2: Mix
-	int tapeSpeed = 1; // 0: 7.5 IPS, 1: 15 IPS (default), 2: 30 IPS
+               float mixHPState = 0.f;
 
-	int eqCurve = 0; // 0: Bass, 1: Highs, 2: Mix
-	Biquad eqLow;
-	Biquad eqHigh;
-	bool eqInit = false;
+               Biquad eqLow;
+               Biquad eqHigh;
+               bool eqInit = false;
 
-	float modSmoothed1 = 0.f;
-	float modSmoothed2 = 0.f;
+               float modSmoothed1 = 0.f;
+               float modSmoothed2 = 0.f;
 
-	static const int OS_FACTOR = 2;
-	dsp::Upsampler<OS_FACTOR, 8> driveUpsampler;
-	dsp::Decimator<OS_FACTOR, 8> driveDecimator;
-	P42Circuit transformer;
+               dsp::Upsampler<OS_FACTOR, 8> driveUpsampler;
+               dsp::Decimator<OS_FACTOR, 8> driveDecimator;
+               P42Circuit transformer;
+       };
+
+       ChannelState channels[2];
+
+       WowFlutterModulator wowFlutter;
+
+       int tapeMode = 0; // 0: I, 1: II, 2: IV
+       int tapeStyle = 2; // 0: Vintage, 1: Classic, 2: Modern (default)
+       int driveMode = 0; // 0: Single, 1: Bus, 2: Mix
+       int tapeSpeed = 1; // 0: 7.5 IPS, 1: 15 IPS (default), 2: 30 IPS
+
+       int eqCurve = 0; // 0: Bass, 1: Highs, 2: Mix
 
 	static float saturateSingle(float x, float drive) {
 		// Gentler "tape" saturation using a soft knee curve
@@ -338,10 +345,10 @@ struct Tape : Module {
 		return 0.5f * stage2 + 0.5f * x;
 	}
 
-	static float saturateMix(float x, float drive, float& hpState, float sampleRate) {
-		// Multi-stage saturation tailored for full mixes.
-		// Apply a gentle high-pass to preserve low frequencies and
-		// let the higher frequencies drive the nonlinearity harder.
+        static float saturateMix(float x, float drive, float& hpState, float sampleRate) {
+                // Multi-stage saturation tailored for full mixes.
+                // Apply a gentle high-pass to preserve low frequencies and
+                // let the higher frequencies drive the nonlinearity harder.
 		if (drive <= 0.f)
 						return x;
 
@@ -357,8 +364,157 @@ struct Tape : Module {
 
 		// Emphasise the processed highs a bit and mix back with lows
 		float highSat = 0.4f * stage3 + 0.6f * high;
-		return low + 1.05f * highSat;
-	}
+                return low + 1.05f * highSat;
+        }
+
+       float processChannel(ChannelState& st, float in, const ProcessArgs& args) {
+               float inputGain = params[INPUT_PARAM].getValue();
+               float drive = params[DRIVE_PARAM].getValue();
+
+               float userBias = params[BIAS_PARAM].getValue();
+               float biasAmount = modeBias[tapeMode] * userBias;
+
+               float biasMod = 0.9f + 0.1f * std::sin(2.f * M_PI * wowFlutter.getFlutterPhase() * 2.0f);
+               float biasFiltered = st.biasState + 0.2f * (in - st.biasState);
+               st.biasState = biasFiltered;
+               float preFiltered = in + biasFiltered * biasAmount * biasMod;
+
+               float driven = preFiltered * inputGain;
+               float driveScaled = drive * modeDrive[tapeMode];
+               float satDrive = (driveScaled <= 0.f) ? 1.f : driveScaled;
+
+               float upBuf[OS_FACTOR];
+               float satBuf[OS_FACTOR];
+               st.driveUpsampler.process(driven, upBuf);
+               for (int i = 0; i < OS_FACTOR; i++) {
+                       switch (driveMode) {
+                               default:
+                               case 0:
+                                       satBuf[i] = saturateSingle(upBuf[i], satDrive);
+                                       break;
+                               case 1:
+                                       satBuf[i] = saturateBus(upBuf[i], satDrive);
+                                       break;
+                               case 2:
+                                       satBuf[i] = saturateMix(upBuf[i], satDrive, st.mixHPState, args.sampleRate * OS_FACTOR);
+                                       break;
+                       }
+               }
+
+               float saturated = st.driveDecimator.process(satBuf);
+
+               float warmTail = 0.02f * st.prevSaturated;
+               st.prevSaturated = saturated;
+               float saturatedWithTail = saturated + warmTail;
+
+               float glueAmount = std::max(0.f, inputGain - 1.f) * modeGlue[tapeMode];
+               float glued = st.glue.process(saturatedWithTail, glueAmount, driveMode);
+
+               float wowAmount = params[WOW_PARAM].getValue() * modeWF[tapeMode];
+               float flutterAmount = params[FLUTTER_PARAM].getValue() * modeWF[tapeMode];
+               float rawMod = wowFlutter.compute(args.sampleRate, wowAmount, flutterAmount);
+
+               st.modSmoothed1 += 0.001f * (rawMod - st.modSmoothed1);
+               st.modSmoothed2 += 0.001f * (st.modSmoothed1 - st.modSmoothed2);
+
+               float modDepth = 0.02f * speedModScale[tapeSpeed];
+               float delaySamples = st.modSmoothed2 * modDepth * args.sampleRate;
+
+               float delayed = st.delay.readModulated(glued, delaySamples, 0, args.sampleRate);
+
+               float tone = params[TONE_PARAM].getValue() * modeTone[tapeMode];
+               tone = clamp(tone, 0.f, 1.f);
+               float cutoff = 200.f + 20000.f * tone;
+               cutoff *= speedCutoffScale[tapeSpeed];
+               float alpha = std::exp(-2.f * M_PI * cutoff / args.sampleRate);
+               alpha = clamp(alpha, 0.0001f, 0.9999f);
+               st.toneState = alpha * st.toneState + (1.f - alpha) * delayed;
+
+               float deEmphasized = st.toneState * st.aging.eqDrift + 0.04f * (st.deEmphasisState - st.toneState);
+               st.deEmphasisState = st.toneState;
+
+               float bumpSensitivity = 0.4f * modeBump[tapeMode];
+               float bumpThreshold = 1.2f;
+
+               float bumpIntensity = std::max(0.f, (inputGain * drive - bumpThreshold) * bumpSensitivity);
+               st.lowpassState += 0.05f * (deEmphasized - st.lowpassState);
+
+               float highpassEstimate = deEmphasized - st.lowpassState;
+               if (std::abs(highpassEstimate) < 0.1f)
+                       bumpIntensity *= 0.5f;
+
+               bumpIntensity = rack::math::clamp(bumpIntensity, 0.f, 1.f);
+
+               float lowBump = deEmphasized + (st.lowpassState - deEmphasized) * bumpIntensity;
+
+               float bassRestore = lowBump + 0.1f * (lowBump - st.lowpassState);
+
+               float toneTrim = 1.0f - 0.02f * std::tanh(driven * 0.3f);
+               float signal = bassRestore * toneTrim;
+
+               float highComponent = signal - st.brightnessState;
+               float biasTilt = userBias - 1.f;
+               float highBoost = fmaxf(biasTilt, 0.f) * 3.6f;
+               float lowBoost  = fmaxf(-biasTilt, 0.f) * 1.6f;
+
+               float finalBrightness = signal + (0.1f + highBoost) * highComponent;
+               finalBrightness += lowBoost * (st.lowpassState - signal);
+               st.brightnessState = signal;
+
+               if (!st.eqInit) {
+                       st.eqLow.reset();
+                       st.eqHigh.reset();
+                       st.eqInit = true;
+               }
+               float sweetDrive = params[SWEETSPOT_PARAM].getValue();
+               float lowGain = eqCurves[eqCurve].lowGainDb * sweetDrive;
+               float highGain = eqCurves[eqCurve].highGainDb * sweetDrive;
+               st.eqLow.setLowShelf(args.sampleRate, eqCurves[eqCurve].lowFreq, lowGain);
+               st.eqHigh.setHighShelf(args.sampleRate, eqCurves[eqCurve].highFreq, highGain);
+               float eqProcessed = st.eqHigh.process(st.eqLow.process(finalBrightness));
+
+               float hissAmount = params[HISS_PARAM].getValue();
+               float white = 2.f * random::uniform() - 1.f;
+
+               float hp = white - st.hissHPState;
+               st.hissHPState = white;
+
+               float bp = hp - st.hissBPState * 0.9f;
+               st.hissBPState = bp;
+
+               float hissShaped = bp * 1.5f;
+               float hissScale = modeHiss[tapeMode];
+               float hissSignal = hissShaped * hissAmount * hissScale * 2.f * styleNoiseScale[tapeStyle] * speedNoiseScale[tapeSpeed];
+
+               st.hissLP += 0.05f * (hissSignal - st.hissLP);
+               hissSignal = st.hissLP;
+               if (std::abs(eqProcessed) < 0.01f)
+                       hissSignal *= 0.25f;
+
+               float hissToneTrim = 1.0f - 0.6f * (1.0f - tone);
+               hissSignal *= hissToneTrim;
+
+               float noiseAmount = params[NOISE_PARAM].getValue();
+               float tapeWhite = 2.f * random::uniform() - 1.f;
+               float noiseHP = tapeWhite - st.tapeNoiseHP;
+               st.tapeNoiseHP = tapeWhite;
+               float noiseBP = noiseHP - st.tapeNoiseBP * 0.85f;
+               st.tapeNoiseBP = noiseBP;
+
+               float wowNoiseMod = 1.f + 0.05f * std::sin(2.f * M_PI * wowFlutter.getWowPhase() * 1.5f);
+               float tapeStatic = noiseBP * 0.8f * wowNoiseMod * noiseAmount * modeStatic[tapeMode] * 2.f * styleNoiseScale[tapeStyle] * speedNoiseScale[tapeSpeed];
+
+               st.staticLP += 0.03f * (tapeStatic - st.staticLP);
+               tapeStatic = st.staticLP;
+               tapeStatic *= 0.9f;
+
+               float level = params[LEVEL_PARAM].getValue();
+               st.aging.storePrint(glued);
+               float printEcho = st.aging.getPrintEcho();
+               float xformDrive = params[TRANSFORM_PARAM].getValue();
+               float transformed = st.transformer.process(eqProcessed, 1.f + xformDrive, args.sampleRate);
+               return transformed * level + hissSignal + tapeStatic + printEcho;
+       }
 	
 
 	Tape() {
@@ -383,190 +539,22 @@ struct Tape : Module {
 		configParam(TRANSFORM_PARAM, 0.f, 3.f, 0.f, "Transformer Drive");
         }
 
-
         void process(const ProcessArgs& args) override {
-			// Rack uses +/-5V audio signals. Most of the internal DSP
-			// code in this module expects a nominal range of +/-1.
-			// Scale the input down and scale the output back up so the
-			// processing behaves as intended and does not over-compress
-			// typical Rack level signals.
-			constexpr float VOLT_SCALE = 0.2f; // 5V -> 1.0
-			// === SMART TAPE AGING ===
-			aging.tickDrift();
-			// === INPUT ===
-			// Bring Rack's +/-5V range to the +/-1 range expected by the DSP
-			float in = inputs[AUDIO_INPUT].getVoltage() * VOLT_SCALE;
-			float inputGain = params[INPUT_PARAM].getValue();
-			float drive = params[DRIVE_PARAM].getValue();
+                constexpr float VOLT_SCALE = 0.2f;
 
-			// === BIAS EQ (10kHz pre-emphasis with tape-mode response) ===
-			float userBias = params[BIAS_PARAM].getValue();
-			float biasAmount = modeBias[tapeMode] * userBias;
+                float inL = inputs[LEFT_INPUT].getVoltage() * VOLT_SCALE;
+                float inR = inputs[RIGHT_INPUT].isConnected() ? inputs[RIGHT_INPUT].getVoltage() * VOLT_SCALE : inL;
 
-			float biasMod = 0.9f + 0.1f * std::sin(2.f * M_PI * wowFlutter.getFlutterPhase() * 2.0f);
-			float biasFiltered = biasState + 0.2f * (in - biasState);
-			biasState = biasFiltered;
-			float preFiltered = in + biasFiltered * biasAmount * biasMod;
+                float left = processChannel(channels[0], inL, args);
+                float right = processChannel(channels[1], inR, args);
 
-			// === GAIN & SATURATION ===
-			float driven = preFiltered * inputGain;
-			float driveScaled = drive * modeDrive[tapeMode];
-			float satDrive = (driveScaled <= 0.f) ? 1.f : driveScaled;
+                bool rightConn = outputs[RIGHT_OUTPUT].isConnected();
+                if (!rightConn) {
+                        left = 0.5f * (left + right);
+                }
 
-			float upBuf[OS_FACTOR];
-			float satBuf[OS_FACTOR];
-			driveUpsampler.process(driven, upBuf);
-			for (int i = 0; i < OS_FACTOR; i++) {
-					switch (driveMode) {
-							default:
-							case 0:
-									satBuf[i] = saturateSingle(upBuf[i], satDrive);
-									break;
-							case 1:
-									satBuf[i] = saturateBus(upBuf[i], satDrive);
-									break;
-							case 2:
-									satBuf[i] = saturateMix(upBuf[i], satDrive, mixHPState, args.sampleRate * OS_FACTOR);
-									break;
-					}
-			}
-
-			float saturated = driveDecimator.process(satBuf);
-
-			// === HYSTERESIS TAIL ===
-			float warmTail = 0.02f * prevSaturated;
-			prevSaturated = saturated;
-			float saturatedWithTail = saturated + warmTail;
-
-			// === GLUE COMPRESSION ===
-			float glueAmount = std::max(0.f, inputGain - 1.f) * modeGlue[tapeMode];
-			float glued = glue.process(saturatedWithTail, glueAmount, driveMode);
-
-			// === WOW & FLUTTER ===
-			float wowAmount = params[WOW_PARAM].getValue() * modeWF[tapeMode];
-			float flutterAmount = params[FLUTTER_PARAM].getValue() * modeWF[tapeMode];
-			float rawMod = wowFlutter.compute(args.sampleRate, wowAmount, flutterAmount);
-
-			// Strong smoothing before delay modulation to prevent artifacts
-			modSmoothed1 += 0.001f * (rawMod - modSmoothed1);
-			modSmoothed2 += 0.001f * (modSmoothed1 - modSmoothed2);
-
-			// Increase modulation depth for a more pronounced effect
-			float modDepth = 0.02f * speedModScale[tapeSpeed];  // ~20ms max
-			float delaySamples = modSmoothed2 * modDepth * args.sampleRate;
-
-			float delayed = delay.readModulated(glued, delaySamples, 0, args.sampleRate);
-			// removed: writeIndex increment now handled inside TapeDelayBuffer
-
-			// === TONE FILTER ===
-			float tone = params[TONE_PARAM].getValue() * modeTone[tapeMode];
-			tone = clamp(tone, 0.f, 1.f);
-			float cutoff = 200.f + 20000.f * tone;
-			cutoff *= speedCutoffScale[tapeSpeed];
-			float alpha = std::exp(-2.f * M_PI * cutoff / args.sampleRate);
-			alpha = clamp(alpha, 0.0001f, 0.9999f);
-			toneState = alpha * toneState + (1.f - alpha) * delayed;
-
-			// === DE-EMPHASIS (playback softening) ===
-			float deEmphasized = toneState * aging.eqDrift + 0.04f * (deEmphasisState - toneState);
-			deEmphasisState = toneState;
-
-			// === LOW-FREQ BUMP (only under load) ===
-			float bumpSensitivity = 0.4f * modeBump[tapeMode];
-			float bumpThreshold = 1.2f;
-
-			float bumpIntensity = std::max(0.f, (inputGain * drive - bumpThreshold) * bumpSensitivity);
-			lowpassState += 0.05f * (deEmphasized - lowpassState);  // slow LP shelf movement
-
-			// reduce bump if signal already very bassy (highpass = small)
-			float highpassEstimate = deEmphasized - lowpassState;
-			if (std::abs(highpassEstimate) < 0.1f)
-					bumpIntensity *= 0.5f;
-
-			bumpIntensity = rack::math::clamp(bumpIntensity, 0.f, 1.f);
-
-			float lowBump = deEmphasized + (lowpassState - deEmphasized) * bumpIntensity;
-
-			// optional: bass shelf boost to restore fundamentals
-			float bassRestore = lowBump + 0.1f * (lowBump - lowpassState);
-
-			// === NONLINEAR TONE TRIM ===
-			float toneTrim = 1.0f - 0.02f * std::tanh(driven * 0.3f);
-			float signal = bassRestore * toneTrim;
-
-			// === FINAL BRIGHTNESS RESTORE ===
-			// Boost high frequencies when bias is increased
-			float highComponent = signal - brightnessState;
-			float biasTilt = userBias - 1.f;
-			float highBoost = fmaxf(biasTilt, 0.f) * 3.6f; // up to +0.3 gain at max bias
-			float lowBoost  = fmaxf(-biasTilt, 0.f) * 1.6f;
-
-			float finalBrightness = signal + (0.1f + highBoost) * highComponent;
-			finalBrightness += lowBoost * (lowpassState - signal);
-			brightnessState = signal;
-
-			if (!eqInit) {
-					eqLow.reset();
-					eqHigh.reset();
-					eqInit = true;
-			}
-			float sweetDrive = params[SWEETSPOT_PARAM].getValue();
-			float lowGain = eqCurves[eqCurve].lowGainDb * sweetDrive;
-			float highGain = eqCurves[eqCurve].highGainDb * sweetDrive;
-			eqLow.setLowShelf(args.sampleRate, eqCurves[eqCurve].lowFreq, lowGain);
-			eqHigh.setHighShelf(args.sampleRate, eqCurves[eqCurve].highFreq, highGain);
-			float eqProcessed = eqHigh.process(eqLow.process(finalBrightness));
-
-			// === HISS (tape-style EQ, deeper lowpass added + gating) ===
-			float hissAmount = params[HISS_PARAM].getValue();
-			float white = 2.f * random::uniform() - 1.f;
-
-			float hp = white - hissHPState;
-			hissHPState = white;
-
-			float bp = hp - hissBPState * 0.9f;
-			hissBPState = bp;
-
-			float hissShaped = bp * 1.5f;
-			float hissScale = modeHiss[tapeMode];
-			float hissSignal = hissShaped * hissAmount * hissScale * 2.f * styleNoiseScale[tapeStyle] * speedNoiseScale[tapeSpeed];
-
-			// Extra hiss LPF smoothing
-			hissLP += 0.05f * (hissSignal - hissLP);
-			hissSignal = hissLP;
-			if (std::abs(eqProcessed) < 0.01f)
-					hissSignal *= 0.25f;
-
-			// Tone-dependent hiss reduction
-			float hissToneTrim = 1.0f - 0.6f * (1.0f - tone);  // more tone = less hiss damp
-			hissSignal *= hissToneTrim;
-
-			// === STATIC NOISE (constant tape noise, not crackle) ===
-			float noiseAmount = params[NOISE_PARAM].getValue();
-			float tapeWhite = 2.f * random::uniform() - 1.f;
-			float noiseHP = tapeWhite - tapeNoiseHP;
-			tapeNoiseHP = tapeWhite;
-			float noiseBP = noiseHP - tapeNoiseBP * 0.85f;
-			tapeNoiseBP = noiseBP;
-
-			float wowNoiseMod = 1.f + 0.05f * std::sin(2.f * M_PI * wowFlutter.getWowPhase() * 1.5f);
-			float tapeStatic = noiseBP * 0.8f * wowNoiseMod * noiseAmount * modeStatic[tapeMode] * 2.f * styleNoiseScale[tapeStyle] * speedNoiseScale[tapeSpeed];
-
-			// Deeper static smoothing
-			staticLP += 0.03f * (tapeStatic - staticLP);
-			tapeStatic = staticLP;
-			tapeStatic *= 0.9f; // mild extra LPF shaping
-
-			// === FINAL OUTPUT ===
-			// moved above
-			float level = params[LEVEL_PARAM].getValue();
-				aging.storePrint(glued);
-			float printEcho = aging.getPrintEcho();
-			float xformDrive = params[TRANSFORM_PARAM].getValue();
-			float transformed = transformer.process(eqProcessed, 1.f + xformDrive, args.sampleRate);
-			float finalOut = transformed * level + hissSignal + tapeStatic + printEcho;
-			// Scale back up to Rack's voltage range
-			outputs[AUDIO_OUTPUT].setVoltage(finalOut / VOLT_SCALE);
+                outputs[LEFT_OUTPUT].setVoltage(left / VOLT_SCALE);
+                outputs[RIGHT_OUTPUT].setVoltage(right / VOLT_SCALE);
         }
 
         json_t* dataToJson() override {
@@ -616,8 +604,10 @@ struct TapeWidget : ModuleWidget {
 		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10, 20)), module, Tape::AUDIO_INPUT));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(10, 100)), module, Tape::AUDIO_OUTPUT));
+               addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10, 20)), module, Tape::LEFT_INPUT));
+               addInput(createInputCentered<PJ301MPort>(mm2px(Vec(20, 20)), module, Tape::RIGHT_INPUT));
+                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(10, 100)), module, Tape::LEFT_OUTPUT));
+                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(20, 100)), module, Tape::RIGHT_OUTPUT));
 
 		
                 addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(50, 40)), module, Tape::INPUT_PARAM));
