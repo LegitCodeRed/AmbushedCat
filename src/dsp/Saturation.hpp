@@ -17,6 +17,8 @@ public:
     float mix = 1.f;
 
     float process(float in, float drive, float sampleRate) {
+        if (drive <= 0.f)
+            return in;
         float norm = rack::math::clamp(in, -1.f, 1.f);
         float upBuf[OS];
         float satBuf[OS];

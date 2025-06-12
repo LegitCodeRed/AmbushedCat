@@ -337,7 +337,7 @@ struct Tape : Module {
 
                // Drive knob controls additional tape saturation
                float driveScaled = drive * modeDrive[tapeMode];
-               float satDrive = (driveScaled <= 0.f) ? 1.f : driveScaled;
+               float satDrive = driveScaled;
 
                float saturated = st.saturator.process(driven, satDrive, args.sampleRate);
 
