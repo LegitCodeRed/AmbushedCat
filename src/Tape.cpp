@@ -408,19 +408,18 @@ struct Tape : Module {
 			biasState = biasFiltered;
 			float preFiltered = in + biasFiltered * biasAmount * biasMod;
 
-			// === GAIN & SATURATION ===
-			float driven = preFiltered * inputGain;
-			float driveScaled = drive * modeDrive[tapeMode];
-			float satDrive = (driveScaled <= 0.f) ? 1.f : driveScaled;
+                        // === GAIN & SATURATION ===
+                        float driveScaled = drive * modeDrive[tapeMode];
+                        float satDrive = (driveScaled <= 0.f) ? 1.f : driveScaled;
 
-			float upBuf[OS_FACTOR];
-			float satBuf[OS_FACTOR];
-			driveUpsampler.process(driven, upBuf);
-			for (int i = 0; i < OS_FACTOR; i++) {
-					switch (driveMode) {
-							default:
-							case 0:
-									satBuf[i] = saturateSingle(upBuf[i], satDrive);
+                        float upBuf[OS_FACTOR];
+                        float satBuf[OS_FACTOR];
+                        driveUpsampler.process(preFiltered, upBuf);
+                        for (int i = 0; i < OS_FACTOR; i++) {
+                                        switch (driveMode) {
+                                                        default:
+                                                        case 0:
+                                                                        satBuf[i] = saturateSingle(upBuf[i], satDrive);
 									break;
 							case 1:
 									satBuf[i] = saturateBus(upBuf[i], satDrive);
@@ -431,16 +430,18 @@ struct Tape : Module {
 					}
 			}
 
-			float saturated = driveDecimator.process(satBuf);
+                        float saturated = driveDecimator.process(satBuf);
 
-			// === HYSTERESIS TAIL ===
-			float warmTail = 0.02f * prevSaturated;
-			prevSaturated = saturated;
-			float saturatedWithTail = saturated + warmTail;
+                        // === HYSTERESIS TAIL ===
+                        float warmTail = 0.02f * prevSaturated;
+                        prevSaturated = saturated;
+                        float saturatedWithTail = saturated + warmTail;
 
-			// === GLUE COMPRESSION ===
-			float glueAmount = std::max(0.f, inputGain - 1.f) * modeGlue[tapeMode];
-			float glued = glue.process(saturatedWithTail, glueAmount, driveMode);
+                        float driven = saturatedWithTail * inputGain;
+
+                        // === GLUE COMPRESSION ===
+                        float glueAmount = std::max(0.f, inputGain - 1.f) * modeGlue[tapeMode];
+                        float glued = glue.process(driven, glueAmount, driveMode);
 
 			// === WOW & FLUTTER ===
 			float wowAmount = params[WOW_PARAM].getValue() * modeWF[tapeMode];
