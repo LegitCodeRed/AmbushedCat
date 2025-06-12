@@ -19,7 +19,8 @@ public:
     float process(float in, float drive, float sampleRate) {
         if (drive <= 0.f)
             return in;
-        float norm = rack::math::clamp(in, -1.f, 1.f);
+        // Soft limit the input to avoid digital clipping when input and drive are high
+        float norm = std::tanh(in);
         float upBuf[OS];
         float satBuf[OS];
         upsampler.process(norm, upBuf);

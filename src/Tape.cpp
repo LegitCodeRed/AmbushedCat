@@ -274,6 +274,7 @@ struct Tape : Module {
 		LIGHTS_LEN
 	};
 
+       // 2× oversampling is a good CPU compromise
        static const int OS_FACTOR = 2;
 
        struct ChannelState {
