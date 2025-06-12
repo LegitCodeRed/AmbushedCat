@@ -369,7 +369,7 @@ struct Tape : Module {
                 return low + 1.05f * highSat;
         }
 
-       float processChannel(ChannelState& st, float in, const ProcessArgs& args) {
+       float processChannel(ChannelState& st, float in, const ProcessArgs& args, int channel) {
                float inputGain = params[INPUT_PARAM].getValue();
                float drive = params[DRIVE_PARAM].getValue();
 
@@ -425,7 +425,8 @@ struct Tape : Module {
                float modDepth = 0.02f * speedModScale[tapeSpeed];
                float delaySamples = st.modSmoothed2 * modDepth * args.sampleRate;
 
-               float delayed = st.delay.readModulated(glued, delaySamples, 0, args.sampleRate);
+               // Use separate delay lines per channel to avoid cross-talk
+               float delayed = st.delay.readModulated(glued, delaySamples, channel, args.sampleRate);
 
                float tone = params[TONE_PARAM].getValue() * modeTone[tapeMode];
                tone = clamp(tone, 0.f, 1.f);
@@ -550,8 +551,8 @@ struct Tape : Module {
                 float inL = inputs[LEFT_INPUT].getVoltage() * VOLT_SCALE;
                 float inR = inputs[RIGHT_INPUT].isConnected() ? inputs[RIGHT_INPUT].getVoltage() * VOLT_SCALE : inL;
 
-                float left = processChannel(channels[0], inL, args);
-                float right = processChannel(channels[1], inR, args);
+               float left = processChannel(channels[0], inL, args, 0);
+               float right = processChannel(channels[1], inR, args, 1);
 
                 bool rightConn = outputs[RIGHT_OUTPUT].isConnected();
                 if (!rightConn) {
