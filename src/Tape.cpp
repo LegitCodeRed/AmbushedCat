@@ -1,7 +1,7 @@
 #include "plugin.hpp"
 #include "dsp/dsp.hpp"
 #include "dsp/p42.hpp"
-#include <dsp/resampler.hpp>
+#include "dsp/Saturation.hpp"
 #include <cmath>
 #define MAX_DELAY_SAMPLES 512
 #define TAPE_DELAY_BUFFER_SIZE 2048
@@ -297,7 +297,6 @@ struct Tape : Module {
                float hissLP = 0.f;
                float staticLP = 0.f;
 
-               float mixHPState = 0.f;
 
                Biquad eqLow;
                Biquad eqHigh;
@@ -306,8 +305,7 @@ struct Tape : Module {
                float modSmoothed1 = 0.f;
                float modSmoothed2 = 0.f;
 
-               dsp::Upsampler<OS_FACTOR, 8> driveUpsampler;
-               dsp::Decimator<OS_FACTOR, 8> driveDecimator;
+               dspext::Saturator<OS_FACTOR> saturator;
                P42Circuit transformer;
        };
 
@@ -322,53 +320,6 @@ struct Tape : Module {
 
        int eqCurve = 0; // 0: Bass, 1: Highs, 2: Mix
 
-	static float saturateSingle(float x, float drive) {
-		// Gentler "tape" saturation using a soft knee curve
-		// Distortion engages gradually above ~3 dB
-		if (drive <= 0.f)
-						return x;
-		float driveAdj = std::max(0.f, drive - 1.f);
-		float k = driveAdj * 2.f;
-		float shaped = (1.f + k) * x / (1.f + k * std::fabs(x));
-		const float blend = 0.7f;  // keep some dry signal
-		float saturated = blend * shaped + (1.f - blend) * x;
-
-		const float start = 1.41254f;  // 3 dB
-		const float end = 1.58489f;    // 4 dB
-		float mix = rack::math::clamp((std::fabs(x) - start) / (end - start), 0.f, 1.f);
-		return saturated * mix + x * (1.f - mix);
-	}
-
-	static float saturateBus(float x, float drive) {
-		// Two-stage saturation for bus processing
-		if (drive <= 0.f)
-						return x;
-		float stage1 = saturateSingle(x, drive);
-		float stage2 = 0.6f * std::tanh(stage1 * drive * 0.8f) + 0.4f * stage1;
-		return 0.5f * stage2 + 0.5f * x;
-	}
-
-        static float saturateMix(float x, float drive, float& hpState, float sampleRate) {
-                // Multi-stage saturation tailored for full mixes.
-                // Apply a gentle high-pass to preserve low frequencies and
-                // let the higher frequencies drive the nonlinearity harder.
-		if (drive <= 0.f)
-						return x;
-
-		// Simple first order high-pass filter around 120 Hz
-		float hpAlpha = std::exp(-2.f * M_PI * 120.f / sampleRate);
-		hpState = hpAlpha * hpState + (1.f - hpAlpha) * x;
-		float low  = hpState;
-		float high = x - low;
-
-		float stage1 = std::tanh(high * drive * 0.8f);
-		float stage2 = std::tanh(stage1 * drive * 0.6f);
-		float stage3 = saturateSingle(stage2, drive * 0.6f);
-
-		// Emphasise the processed highs a bit and mix back with lows
-		float highSat = 0.4f * stage3 + 0.6f * high;
-                return low + 1.05f * highSat;
-        }
 
        float processChannel(ChannelState& st, float in, const ProcessArgs& args, int channel) {
                float inputGain = params[INPUT_PARAM].getValue();
@@ -388,25 +339,7 @@ struct Tape : Module {
                float driveScaled = drive * modeDrive[tapeMode];
                float satDrive = (driveScaled <= 0.f) ? 1.f : driveScaled;
 
-               float upBuf[OS_FACTOR];
-               float satBuf[OS_FACTOR];
-               st.driveUpsampler.process(driven, upBuf);
-               for (int i = 0; i < OS_FACTOR; i++) {
-                       switch (driveMode) {
-                               default:
-                               case 0:
-                                       satBuf[i] = saturateSingle(upBuf[i], satDrive);
-                                       break;
-                               case 1:
-                                       satBuf[i] = saturateBus(upBuf[i], satDrive);
-                                       break;
-                               case 2:
-                                       satBuf[i] = saturateMix(upBuf[i], satDrive, st.mixHPState, args.sampleRate * OS_FACTOR);
-                                       break;
-                       }
-               }
-
-               float saturated = st.driveDecimator.process(satBuf);
+               float saturated = st.saturator.process(driven, satDrive, args.sampleRate);
 
                float warmTail = 0.02f * st.prevSaturated;
                st.prevSaturated = saturated;
