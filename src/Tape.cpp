@@ -17,6 +17,10 @@ static const float modeBump[3] = {1.2f, 1.0f, 0.7f};
 // Amount of "glue" compression for each tape mode
 static const float modeGlue[3] = {1.0f, 0.8f, 0.6f};
 
+// Map drive modes to saturation circuits
+static const int modeSaturatorCircuit[3] = {1, 2, 0};
+static const float modeSaturatorMix[3] = {1.f, 1.f, 0.6f};
+
 // Tape style noise scaling: index 0 = Vintage (no noise floor),
 // index 1 = Classic (moderate noise floor),
 // index 2 = Modern (very quiet noise floor),
@@ -340,7 +344,9 @@ struct Tape : Module {
                float driveScaled = drive * modeDrive[tapeMode];
                float satDrive = driveScaled;
 
-               float saturated = st.saturator.process(driven, satDrive, args.sampleRate);
+               st.saturator.mix = modeSaturatorMix[driveMode];
+               auto circuit = static_cast<dspext::Saturator<OS_FACTOR>::Circuit>(modeSaturatorCircuit[driveMode]);
+               float saturated = st.saturator.process(driven, satDrive, args.sampleRate, circuit);
 
                float warmTail = 0.02f * st.prevSaturated;
                st.prevSaturated = saturated;

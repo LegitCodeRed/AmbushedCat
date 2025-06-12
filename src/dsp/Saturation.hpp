@@ -16,7 +16,13 @@ public:
     float env = 0.f;
     float mix = 1.f;
 
-    float process(float in, float drive, float sampleRate) {
+    enum Circuit {
+        EASY,
+        MODERATE,
+        HEAVY
+    };
+
+    float process(float in, float drive, float sampleRate, Circuit circuit) {
         if (drive <= 0.f)
             return in;
         // Soft limit the input to avoid digital clipping when input and drive are high
@@ -38,7 +44,19 @@ public:
             float dynDrive = drive * (1.f + 0.2f * env);
             float cubic = x - (x * x * x) / 3.f;
             float rational = x * (27.f + x * x) / (27.f + 9.f * x * x);
-            float shaped = 0.5f * cubic + 0.5f * rational;
+            float shaped = 0.f;
+            switch (circuit) {
+                default:
+                case HEAVY:
+                    shaped = 0.4f * cubic + 0.6f * rational;
+                    break;
+                case MODERATE:
+                    shaped = 0.5f * x + 0.5f * cubic;
+                    break;
+                case EASY:
+                    shaped = 0.8f * x + 0.2f * cubic;
+                    break;
+            }
             float saturated = shaped * dynDrive;
             // simple soft compression
             float comp = 1.f / (1.f + 0.5f * dynDrive * env);
