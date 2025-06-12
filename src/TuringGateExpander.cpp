@@ -32,7 +32,8 @@ struct TuringGateExpander : Module {
        uint8_t prevBits = 0;
        int gateMode = 0; // 0 = Gate, 1 = Tap
        float tapTimers[12] = {};
-       const float tapTime = 0.005f;
+       // Duration of LED flash when in Tap mode
+       const float tapTime = 0.05f;
 
        TuringGateExpander() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
