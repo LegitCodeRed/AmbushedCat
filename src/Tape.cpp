@@ -261,9 +261,9 @@ struct Tape : Module {
                 HISS_PARAM,
                 NOISE_PARAM,
                 SWEETSPOT_PARAM,
-                TRANSFORM_PARAM,
-                PARAMS_LEN
-        };
+               TRANSFORM_PARAM,
+               PARAMS_LEN
+       };
        enum InputId {
                LEFT_INPUT,
                RIGHT_INPUT,
@@ -305,6 +305,7 @@ struct Tape : Module {
 
                Biquad eqLow;
                Biquad eqHigh;
+               Biquad hfComp;
                bool eqInit = false;
 
                float modSmoothed1 = 0.f;
@@ -411,6 +412,7 @@ struct Tape : Module {
                if (!st.eqInit) {
                        st.eqLow.reset();
                        st.eqHigh.reset();
+                       st.hfComp.reset();
                        st.eqInit = true;
                }
                float sweetDrive = params[SWEETSPOT_PARAM].getValue();
@@ -419,6 +421,10 @@ struct Tape : Module {
                st.eqLow.setLowShelf(args.sampleRate, eqCurves[eqCurve].lowFreq, lowGain);
                st.eqHigh.setHighShelf(args.sampleRate, eqCurves[eqCurve].highFreq, highGain);
                float eqProcessed = st.eqHigh.process(st.eqLow.process(finalBrightness));
+
+               float hfCompGain = (driveMode == 2) ? 3.f : 0.f;
+               st.hfComp.setHighShelf(args.sampleRate, 12000.f, hfCompGain);
+               float hfProcessed = st.hfComp.process(eqProcessed);
 
                float hissAmount = params[HISS_PARAM].getValue();
                float white = 2.f * random::uniform() - 1.f;
@@ -459,7 +465,7 @@ struct Tape : Module {
                st.aging.storePrint(glued);
                float printEcho = st.aging.getPrintEcho();
                float xformDrive = params[TRANSFORM_PARAM].getValue();
-               float transformed = st.transformer.process(eqProcessed, 1.f + xformDrive, args.sampleRate);
+               float transformed = st.transformer.process(hfProcessed, 1.f + xformDrive, args.sampleRate);
                return transformed * level + hissSignal + tapeStatic + printEcho;
        }
 	
@@ -482,9 +488,9 @@ struct Tape : Module {
 		// === NOISES ===
 		configParam(HISS_PARAM, 0.0f, 6.0f, 0.12f, "Hiss Amount");           // extended range
 		configParam(NOISE_PARAM, 0.0f, 6.0f, 0.2f, "Tape Static");           // extended range
-		configParam(SWEETSPOT_PARAM, -1.f, 1.f, 0.3f, "Sweetspot Drive");
-		configParam(TRANSFORM_PARAM, 0.f, 3.f, 0.f, "Transformer Drive");
-        }
+               configParam(SWEETSPOT_PARAM, -1.f, 1.f, 0.3f, "Sweetspot Drive");
+               configParam(TRANSFORM_PARAM, 0.f, 3.f, 0.f, "Transformer Drive");
+       }
 
         void process(const ProcessArgs& args) override {
                 constexpr float VOLT_SCALE = 0.2f;
@@ -566,12 +572,12 @@ struct TapeWidget : ModuleWidget {
                 addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10, 80)), module, Tape::LEVEL_PARAM));
                 addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(50, 60)), module, Tape::BIAS_PARAM));
                 addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(50, 80)), module, Tape::SWEETSPOT_PARAM));
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(50, 100)), module, Tape::TRANSFORM_PARAM));
+               addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(50, 100)), module, Tape::TRANSFORM_PARAM));
 
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(30, 40)), module, Tape::FLUTTER_PARAM));
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(30, 60)), module, Tape::WOW_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(30, 80)), module, Tape::HISS_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(30, 100)), module, Tape::NOISE_PARAM));
+               addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(30, 80)), module, Tape::HISS_PARAM));
+               addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(30, 100)), module, Tape::NOISE_PARAM));
 	}
 
         void appendContextMenu(Menu* menu) override {
