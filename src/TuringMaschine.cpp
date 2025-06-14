@@ -381,21 +381,41 @@ struct BackgroundImage : Widget {
 	}
 };
 
+struct OldBastardsLabel : Widget {
+	void draw(const DrawArgs& args) override {
+		std::string fontPath = asset::plugin(pluginInstance, "res/Oldbastards.otf");
+		std::shared_ptr<Font> font = APP->window->loadFont(fontPath);
+		if (font) {
+			nvgFontFaceId(args.vg, font->handle);
+			nvgFontSize(args.vg, 12.0);
+			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+			nvgFillColor(args.vg, nvgRGB(255, 255, 255));
+
+			nvgText(args.vg, 5.0f, 20.0f, "Turing", NULL);
+			nvgText(args.vg, 5.0f, 36.0f, "Machine", NULL);  // Adjust Y offset
+		}
+	}
+};
 
 struct TuringMaschineWidget : ModuleWidget {
 	TuringMaschineWidget(TuringMaschine* module) {
 		setModule(module);
 		setPanel(createPanel(asset::plugin(pluginInstance, "res/TuringMaschine.svg")));
-		
+
 		auto bg = new BackgroundImage();
 		bg->box.pos = Vec(0, 0);
 		bg->box.size = box.size; // Match panel size (e.g., 128.5 x 380 or 115 x 485)
 		addChild(bg);
 
-		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		auto label = new OldBastardsLabel();
+		label->box.pos = Vec(10, 5);
+		label->box.size = Vec(50, 20);
+		addChild(label);
+
+		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15.24, 50.063)), module, TuringMaschine::LENGTH_PARAM));
 		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15.24, 60.063)), module, TuringMaschine::CHANGE_PARAM));
@@ -405,20 +425,20 @@ struct TuringMaschineWidget : ModuleWidget {
 		addParam(createParamCentered<TL1105>(mm2px(Vec(15.24, 30.81)), module, TuringMaschine::SEED_PARAM));
 		addParam(createParamCentered<CKSS>(mm2px(Vec(15.24, 40.81)), module, TuringMaschine::WRITE_PARAM));
 
-		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 98.713)), module, TuringMaschine::CLOCK_INPUT));
-		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(5.24, 108.713)), module, TuringMaschine::RESET_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(15.24, 98.713)), module, TuringMaschine::CLOCK_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.24, 108.713)), module, TuringMaschine::RESET_INPUT));
 
-		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(5.24, 88.713)), module, TuringMaschine::CHANGE_CV_INPUT));
-		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 88.713)), module, TuringMaschine::LENGTH_CV_INPUT));
-		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(25.24, 88.713)), module, TuringMaschine::BIAS_CV_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.24, 88.713)), module, TuringMaschine::CHANGE_CV_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(15.24, 88.713)), module, TuringMaschine::LENGTH_CV_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(25.24, 88.713)), module, TuringMaschine::BIAS_CV_INPUT));
 
-		addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(25.24, 108.713)), module, TuringMaschine::SEQUENCE_OUTPUT));
-		addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 108.713)), module, TuringMaschine::NOISE_OUTPUT));
-		addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(25.24, 98.713)), module, TuringMaschine::PULSE_OUTPUT));
+		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(25.24, 108.713)), module, TuringMaschine::SEQUENCE_OUTPUT));
+		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(15.24, 108.713)), module, TuringMaschine::NOISE_OUTPUT));
+		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(25.24, 98.713)), module, TuringMaschine::PULSE_OUTPUT));
 
 		for (int i = 0; i < 16; ++i) {
 			float x = mm2px(Vec(4.0f, 20.0f)).x;  // adjust X as needed
-			float y = mm2px(Vec(0.0f, 10.0f + i * 4.0f)).y;  // vertical stack
+			float y = mm2px(Vec(0.0f, 20.0f + i * 4.0f)).y;  // vertical stack
 			addChild(createLight<SmallLight<GreenLight>>(Vec(x, y), module, TuringMaschine::BIT_LIGHTS + i));
 		}
 		
@@ -427,26 +447,26 @@ struct TuringMaschineWidget : ModuleWidget {
 
 	void appendContextMenu(Menu* menu) override {
 		TuringMaschine* module = getModule<TuringMaschine>();
-		menu->addChild(createIndexPtrSubmenuItem("Mode",
-			{"Normal", "Poly Ryhtmic"},
-			&module->mode
-		));
+			menu->addChild(createIndexPtrSubmenuItem("Mode",
+				{"Normal", "Poly Ryhtmic"},
+				&module->mode
+			));
 
-		menu->addChild(createIndexPtrSubmenuItem("Pitch Output Range",
-				{"5V", "3V", "1V"},
-				&module->pitchMode
-		));
+			menu->addChild(createIndexPtrSubmenuItem("Pitch Output Range",
+					{"5V", "3V", "1V"},
+					&module->pitchMode
+			));
 
-                menu->addChild(createIndexPtrSubmenuItem("Write Mode",
-                                {"Standard", "Evolving"},
-                                &module->writeMode
-                ));
+			menu->addChild(createIndexPtrSubmenuItem("Write Mode",
+							{"Standard", "Evolving"},
+							&module->writeMode
+			));
 
-                menu->addChild(createIndexPtrSubmenuItem("Pulse Mode",
-                                {"Gate", "Tap"},
-                                &module->pulseMode
-                ));
-        }
+			menu->addChild(createIndexPtrSubmenuItem("Pulse Mode",
+							{"Gate", "Tap"},
+							&module->pulseMode
+			));
+	}
 };
 
 Model* modelTuringMaschine = createModel<TuringMaschine, TuringMaschineWidget>("TuringMaschine");

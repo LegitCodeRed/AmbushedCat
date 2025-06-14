@@ -82,12 +82,17 @@ struct TuringVoltsExpanderWidget : ModuleWidget {
 		bg->box.size = box.size; // Match panel size (e.g., 128.5 x 380 or 115 x 485)
 		addChild(bg);
 
+		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
 		for (int i = 0; i < 5; i++) {
 			addParam(createParamCentered<RoundSmallBlackKnob>(
 				mm2px(Vec(15.0, 20.0 + i * 15.0)), module, i));
 		}
 
-		addOutput(createOutputCentered<PJ301MPort>(
+		addOutput(createOutputCentered<DarkPJ301MPort>(
 			mm2px(Vec(15.0, 100.0)), module, TuringVoltsExpander::VOLTS_OUTPUT));
 	}
 };

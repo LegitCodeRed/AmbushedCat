@@ -185,13 +185,13 @@ struct TuringGateExpanderWidget : ModuleWidget {
 		bg->box.size = box.size; // Match panel size (e.g., 128.5 x 380 or 115 x 485)
 		addChild(bg);
 
-		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		for (int i = 0; i < 8; i++) {
-                        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(5.0, 20.0 + i * 12.5)), module, TuringGateExpander::GATE_OUTPUTS + i));
+                        addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(5.0, 20.0 + i * 12.5)), module, TuringGateExpander::GATE_OUTPUTS + i));
                         addChild(createLightCentered<SmallLight<RedLight>>(
                                 mm2px(Vec(2.5, 20.0 + i * 12.5 - 6)),
                                 module,
@@ -199,16 +199,16 @@ struct TuringGateExpanderWidget : ModuleWidget {
                         ));
                 }
 
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(15.0,  20.0 + 1 * 12.5 - 5)), module, TuringGateExpander::GATE_OUTPUT_COMBO_1));
+		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(15.0,  20.0 + 1 * 12.5 - 5)), module, TuringGateExpander::GATE_OUTPUT_COMBO_1));
 		addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(15-2.5, 20.0 + 1 * 12.5 - 11)), module, TuringGateExpander::COMBO_LIGHT_1));
 
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(15.0, 20.0 + 2 * 12.5 -5)), module, TuringGateExpander::GATE_OUTPUT_COMBO_2));
+		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(15.0, 20.0 + 2 * 12.5 -5)), module, TuringGateExpander::GATE_OUTPUT_COMBO_2));
 		addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(15-2.5, 20.0 + 2 * 12.5 - 11)), module, TuringGateExpander::COMBO_LIGHT_2));
 
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(15.0, 20.0 + 6 * 12.5 - 5)), module, TuringGateExpander::GATE_OUTPUT_COMBO_3));
+		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(15.0, 20.0 + 6 * 12.5 - 5)), module, TuringGateExpander::GATE_OUTPUT_COMBO_3));
 		addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(15-2.5, 20.0 + 6 * 12.5 - 11)), module, TuringGateExpander::COMBO_LIGHT_3));
 
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(15.0, 20.0 + 7 * 12.5 - 5)), module, TuringGateExpander::GATE_OUTPUT_COMBO_4));
+		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(15.0, 20.0 + 7 * 12.5 - 5)), module, TuringGateExpander::GATE_OUTPUT_COMBO_4));
                 addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(15-2.5, 20.0 + 7 * 12.5 - 11)), module, TuringGateExpander::COMBO_LIGHT_4));
         }
 
