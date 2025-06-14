@@ -113,13 +113,18 @@ struct TuringMaschine : Module {
 	float blinkTimer = 0.f;
 
 	BitShiftRegister shiftReg;
-	dsp::SchmittTrigger clockTrigger;
-	dsp::SchmittTrigger resetTrigger;
-	dsp::SchmittTrigger seedTrigger;
+        dsp::SchmittTrigger clockTrigger;
+        dsp::SchmittTrigger resetTrigger;
+        dsp::SchmittTrigger seedTrigger;
 
         int mode = 0; // 0: Normal, 1: Techno
         int pitchMode = 0;
         int writeMode = 0; // 0: Standard, 1: Evolving
+        int pulseMode = 0; // 0: Gate, 1: Tap
+
+        bool prevPulseBit = false;
+        float pulseTapTimer = 0.f;
+        const float tapTime = 0.05f;
 
 	TuringMaschine() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -218,7 +223,22 @@ struct TuringMaschine : Module {
 
                // Alan 3U-style pulse output from the MSB
                bool pulseBit = shiftReg.bits[15];
-               outputs[PULSE_OUTPUT].setVoltage(pulseBit ? 10.f : 0.f);
+               if (pulseMode == 0) {
+                       outputs[PULSE_OUTPUT].setVoltage(pulseBit ? 10.f : 0.f);
+                       prevPulseBit = pulseBit;
+               }
+               else {
+                       if (pulseBit != prevPulseBit)
+                               pulseTapTimer = tapTime;
+                       if (pulseTapTimer > 0.f) {
+                               pulseTapTimer -= args.sampleTime;
+                               outputs[PULSE_OUTPUT].setVoltage(10.f);
+                       }
+                       else {
+                               outputs[PULSE_OUTPUT].setVoltage(0.f);
+                       }
+                       prevPulseBit = pulseBit;
+               }
 
                bool noiseBit = random::u32() % 2 == 0;
                outputs[NOISE_OUTPUT].setVoltage(noiseBit ? 10.f : 0.f);
@@ -290,9 +310,10 @@ struct TuringMaschine : Module {
                 json_object_set_new(root, "pitchMode", json_integer(pitchMode));
                 json_object_set_new(root, "mode", json_integer(mode));
                 json_object_set_new(root, "writeMode", json_integer(writeMode));
+                json_object_set_new(root, "pulseMode", json_integer(pulseMode));
 
-		return root;
-	}
+                return root;
+        }
 
 	void dataFromJson(json_t* root) override {
 		// Restore shiftReg.bits
@@ -333,6 +354,11 @@ struct TuringMaschine : Module {
                 json_t* writeJ = json_object_get(root, "writeMode");
                 if (writeJ) {
                         writeMode = json_integer_value(writeJ);
+                }
+
+                json_t* pulseJ = json_object_get(root, "pulseMode");
+                if (pulseJ) {
+                        pulseMode = json_integer_value(pulseJ);
                 }
         }
 };
@@ -411,11 +437,16 @@ struct TuringMaschineWidget : ModuleWidget {
 				&module->pitchMode
 		));
 
-		menu->addChild(createIndexPtrSubmenuItem("Write Mode",
-				{"Standard", "Evolving"},
-				&module->writeMode
-		));
-	}
+                menu->addChild(createIndexPtrSubmenuItem("Write Mode",
+                                {"Standard", "Evolving"},
+                                &module->writeMode
+                ));
+
+                menu->addChild(createIndexPtrSubmenuItem("Pulse Mode",
+                                {"Gate", "Tap"},
+                                &module->pulseMode
+                ));
+        }
 };
 
 Model* modelTuringMaschine = createModel<TuringMaschine, TuringMaschineWidget>("TuringMaschine");
