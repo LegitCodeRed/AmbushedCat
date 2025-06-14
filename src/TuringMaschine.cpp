@@ -371,23 +371,24 @@ struct TuringMaschineWidget : ModuleWidget {
 		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15.24, 50.063)), module, TuringMaschine::LENGTH_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15.24, 60.063)), module, TuringMaschine::CHANGE_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15.24, 70.063)), module, TuringMaschine::BIAS_PARAM));
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15.24, 50.063)), module, TuringMaschine::LENGTH_PARAM));
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15.24, 60.063)), module, TuringMaschine::CHANGE_PARAM));
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15.24, 70.063)), module, TuringMaschine::BIAS_PARAM));
+		
 
 		addParam(createParamCentered<TL1105>(mm2px(Vec(15.24, 30.81)), module, TuringMaschine::SEED_PARAM));
 		addParam(createParamCentered<CKSS>(mm2px(Vec(15.24, 40.81)), module, TuringMaschine::WRITE_PARAM));
 
-		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 90.478)), module, TuringMaschine::CLOCK_INPUT));
-		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 100.478)), module, TuringMaschine::RESET_INPUT));
+		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 98.713)), module, TuringMaschine::CLOCK_INPUT));
+		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(5.24, 108.713)), module, TuringMaschine::RESET_INPUT));
 
-		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(25.0, 46.0)), module, TuringMaschine::CHANGE_CV_INPUT));
-		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(25.0, 61.0)), module, TuringMaschine::LENGTH_CV_INPUT));
-		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(25.0, 75.0)), module, TuringMaschine::BIAS_CV_INPUT));
+		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(5.24, 88.713)), module, TuringMaschine::CHANGE_CV_INPUT));
+		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 88.713)), module, TuringMaschine::LENGTH_CV_INPUT));
+		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(25.24, 88.713)), module, TuringMaschine::BIAS_CV_INPUT));
 
-               addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 108.713)), module, TuringMaschine::SEQUENCE_OUTPUT));
-               addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(25.24, 108.713)), module, TuringMaschine::NOISE_OUTPUT));
-               addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(5.24, 108.713)), module, TuringMaschine::PULSE_OUTPUT));
+		addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(25.24, 108.713)), module, TuringMaschine::SEQUENCE_OUTPUT));
+		addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 108.713)), module, TuringMaschine::NOISE_OUTPUT));
+		addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(25.24, 98.713)), module, TuringMaschine::PULSE_OUTPUT));
 
 		for (int i = 0; i < 16; ++i) {
 			float x = mm2px(Vec(4.0f, 20.0f)).x;  // adjust X as needed
