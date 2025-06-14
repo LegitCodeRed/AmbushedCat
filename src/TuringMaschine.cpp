@@ -130,6 +130,7 @@ struct TuringMaschine : Module {
 
 		configInput(CHANGE_CV_INPUT, "Change CV");
 		configInput(LENGTH_CV_INPUT, "Length CV");
+		configInput(BIAS_CV_INPUT, "Bias CV");
 
 		paramQuantities[LENGTH_PARAM]->snapEnabled = true;
 		configParam(BIAS_PARAM, 0.f, 1.f, 0.5f, "Bias");
@@ -330,10 +331,34 @@ struct TuringMaschine : Module {
         }
 };
 
+struct BackgroundImage : Widget {
+	std::string imagePath = asset::plugin(pluginInstance, "res/TuringMaschine-1.png");
+
+	void draw(const DrawArgs& args) override {
+		std::shared_ptr<Image> image = APP->window->loadImage(imagePath);
+		if (image) {
+			int w = box.size.x;
+			int h = box.size.y;
+
+			NVGpaint paint = nvgImagePattern(args.vg, 0, 0, w, h, 0.0f, image->handle, 1.0f);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, w, h);
+			nvgFillPaint(args.vg, paint);
+			nvgFill(args.vg);
+		}
+	}
+};
+
+
 struct TuringMaschineWidget : ModuleWidget {
 	TuringMaschineWidget(TuringMaschine* module) {
 		setModule(module);
 		setPanel(createPanel(asset::plugin(pluginInstance, "res/TuringMaschine.svg")));
+		
+		auto bg = new BackgroundImage();
+		bg->box.pos = Vec(0, 0);
+		bg->box.size = box.size; // Match panel size (e.g., 128.5 x 380 or 115 x 485)
+		addChild(bg);
 
 		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
@@ -362,6 +387,7 @@ struct TuringMaschineWidget : ModuleWidget {
 			float y = mm2px(Vec(0.0f, 10.0f + i * 4.0f)).y;  // vertical stack
 			addChild(createLight<SmallLight<GreenLight>>(Vec(x, y), module, TuringMaschine::BIT_LIGHTS + i));
 		}
+		
 		addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(15.24, 25.81)), module, TuringMaschine::BLINK_LIGHT));
 	}
 
@@ -372,16 +398,16 @@ struct TuringMaschineWidget : ModuleWidget {
 			&module->mode
 		));
 
-                menu->addChild(createIndexPtrSubmenuItem("Pitch Output Range",
-                        {"5V", "3V", "1V"},
-                        &module->pitchMode
-                ));
+		menu->addChild(createIndexPtrSubmenuItem("Pitch Output Range",
+				{"5V", "3V", "1V"},
+				&module->pitchMode
+		));
 
-                menu->addChild(createIndexPtrSubmenuItem("Write Mode",
-                        {"Standard", "Evolving"},
-                        &module->writeMode
-                ));
-        }
+		menu->addChild(createIndexPtrSubmenuItem("Write Mode",
+				{"Standard", "Evolving"},
+				&module->writeMode
+		));
+	}
 };
 
 Model* modelTuringMaschine = createModel<TuringMaschine, TuringMaschineWidget>("TuringMaschine");

@@ -54,10 +54,33 @@ struct TuringVoltsExpander : Module {
 	}
 };
 
+struct BackgroundImage : Widget {
+	std::string imagePath = asset::plugin(pluginInstance, "res/TuringMaschine-3.png");
+
+	void draw(const DrawArgs& args) override {
+		std::shared_ptr<Image> image = APP->window->loadImage(imagePath);
+		if (image) {
+			int w = box.size.x;
+			int h = box.size.y;
+
+			NVGpaint paint = nvgImagePattern(args.vg, 0, 0, w, h, 0.0f, image->handle, 1.0f);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, w, h);
+			nvgFillPaint(args.vg, paint);
+			nvgFill(args.vg);
+		}
+	}
+};
+
 struct TuringVoltsExpanderWidget : ModuleWidget {
 	TuringVoltsExpanderWidget(TuringVoltsExpander* module) {
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/TuringVoltsExpander.svg")));
+
+		auto bg = new BackgroundImage();
+		bg->box.pos = Vec(0, 0);
+		bg->box.size = box.size; // Match panel size (e.g., 128.5 x 380 or 115 x 485)
+		addChild(bg);
 
 		for (int i = 0; i < 5; i++) {
 			addParam(createParamCentered<RoundSmallBlackKnob>(
