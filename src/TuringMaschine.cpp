@@ -96,11 +96,12 @@ struct TuringMaschine : Module {
 		BIAS_CV_INPUT,
 		INPUTS_LEN
 	};
-	enum OutputId {
-		SEQUENCE_OUTPUT,
-		NOISE_OUTPUT,
-		OUTPUTS_LEN
-	};
+       enum OutputId {
+               SEQUENCE_OUTPUT,
+               PULSE_OUTPUT,
+               NOISE_OUTPUT,
+               OUTPUTS_LEN
+       };
 	enum LightId {
 		BLINK_LIGHT,
 		BIT_LIGHTS,  // this starts the 16-bit range
@@ -135,10 +136,11 @@ struct TuringMaschine : Module {
 		configParam(BIAS_PARAM, 0.f, 1.f, 0.5f, "Bias");
 
 		configInput(CLOCK_INPUT, "Clock");
-		configInput(RESET_INPUT, "Reset");
-		configOutput(SEQUENCE_OUTPUT, "Sequence");
-		configOutput(NOISE_OUTPUT, "Noise");
-	}
+               configInput(RESET_INPUT, "Reset");
+               configOutput(SEQUENCE_OUTPUT, "Sequence");
+               configOutput(PULSE_OUTPUT, "Pulse");
+               configOutput(NOISE_OUTPUT, "Noise");
+       }
 
 	float getPitchScale() {
 		switch (pitchMode) {	
@@ -211,10 +213,14 @@ struct TuringMaschine : Module {
 		
 		float voltage = (value / (float)maxValue) * getPitchScale(); 
 
-		outputs[SEQUENCE_OUTPUT].setVoltage(voltage);
+               outputs[SEQUENCE_OUTPUT].setVoltage(voltage);
 
-		bool noiseBit = random::u32() % 2 == 0;
-		outputs[NOISE_OUTPUT].setVoltage(noiseBit ? 10.f : 0.f);
+               // Alan 3U-style pulse output from the MSB
+               bool pulseBit = shiftReg.bits[15];
+               outputs[PULSE_OUTPUT].setVoltage(pulseBit ? 10.f : 0.f);
+
+               bool noiseBit = random::u32() % 2 == 0;
+               outputs[NOISE_OUTPUT].setVoltage(noiseBit ? 10.f : 0.f);
 
 		
                 Module* exp = this;
@@ -354,8 +360,9 @@ struct TuringMaschineWidget : ModuleWidget {
 		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(25.0, 61.0)), module, TuringMaschine::LENGTH_CV_INPUT));
 		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(25.0, 75.0)), module, TuringMaschine::BIAS_CV_INPUT));
 
-		addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 108.713)), module, TuringMaschine::SEQUENCE_OUTPUT));
-		addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(25.24, 108.713)), module, TuringMaschine::NOISE_OUTPUT));
+               addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 108.713)), module, TuringMaschine::SEQUENCE_OUTPUT));
+               addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(25.24, 108.713)), module, TuringMaschine::NOISE_OUTPUT));
+               addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(5.24, 108.713)), module, TuringMaschine::PULSE_OUTPUT));
 
 		for (int i = 0; i < 16; ++i) {
 			float x = mm2px(Vec(4.0f, 20.0f)).x;  // adjust X as needed
