@@ -379,22 +379,6 @@ struct BackgroundImage : Widget {
 	}
 };
 
-struct OldBastardsLabel : Widget {
-	void draw(const DrawArgs& args) override {
-		std::string fontPath = asset::plugin(pluginInstance, "res/RobotoMono-VariableFont_wght.ttf");
-		std::shared_ptr<Font> font = APP->window->loadFont(fontPath);
-		if (font) {
-			nvgFontFaceId(args.vg, font->handle);
-			nvgFontSize(args.vg, 12.0);
-			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
-			nvgFillColor(args.vg, nvgRGB(0, 0, 0));
-
-			nvgText(args.vg, box.size.x/2+2, 30.0f, "TM", NULL);
-			nvgText(args.vg, box.size.x/2-5, 40.0f, "Rythm", NULL);
-		}
-	}
-};
-
 struct TuringMaschineWidget : ModuleWidget {
 	TuringMaschineWidget(TuringMaschine* module) {
 		setModule(module);
@@ -404,11 +388,6 @@ struct TuringMaschineWidget : ModuleWidget {
 		bg->box.pos = Vec(0, 0);
 		bg->box.size = box.size; // Match panel size (e.g., 128.5 x 380 or 115 x 485)
 		addChild(bg);
-
-		auto label = new OldBastardsLabel();
-		label->box.pos = Vec(10, 5);
-		label->box.size = Vec(50, 20);
-		addChild(label);
 
 		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
