@@ -93,7 +93,7 @@ struct TuringVoltsExpanderWidget : ModuleWidget {
 		}
 
 		addOutput(createOutputCentered<DarkPJ301MPort>(
-			mm2px(Vec(15.0, 110.0)), module, TuringVoltsExpander::VOLTS_OUTPUT));
+			mm2px(Vec(15.0, 115.0)), module, TuringVoltsExpander::VOLTS_OUTPUT));
 	}
 };
 
