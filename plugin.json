@@ -21,13 +21,13 @@
     },
     {
       "slug": "TuringGateExpander",
-      "name": "TuringGateExpander",
+      "name": "TuringGates",
       "description": "An expander for the TuringMaschine module that outputs rhythmic gate patterns derived from the current sequence state. Useful for triggering drums, envelopes, or other events.",
       "tags": ["Expander"]
     },
     {
       "slug": "TuringVoltsExpander",
-      "name": "TuringFlowExpander",
+      "name": "TuringFlow",
       "description": "An expander for the TuringMaschine that provides additional CV outputs based on bits of the sequence. Allows complex modulation and control signals derived from the main sequence.",
       "tags": ["Expander"]
     },
