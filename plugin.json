@@ -15,7 +15,7 @@
   "modules": [
     {
       "slug": "TuringMaschine",
-      "name": "TuringMaschine",
+      "name": "TuringMaschineRythm",
       "description": "A probabilistic CV sequencer inspired by the original Music Thing Turing Machine. Generates semi-random looping sequences with adjustable probability and loop length.",
       "tags": ["Sequencer"]
     },
@@ -27,7 +27,7 @@
     },
     {
       "slug": "TuringVoltsExpander",
-      "name": "TuringVoltsExpander",
+      "name": "TuringFlowExpander",
       "description": "An expander for the TuringMaschine that provides additional CV outputs based on bits of the sequence. Allows complex modulation and control signals derived from the main sequence.",
       "tags": ["Expander"]
     },
