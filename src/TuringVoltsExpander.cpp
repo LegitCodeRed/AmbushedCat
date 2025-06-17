@@ -54,18 +54,46 @@ struct TuringVoltsExpander : Module {
 	}
 };
 
+struct BackgroundImage : Widget {
+	std::string imagePath = asset::plugin(pluginInstance, "res/TuringMaschine-3.png");
+
+	void draw(const DrawArgs& args) override {
+		std::shared_ptr<Image> image = APP->window->loadImage(imagePath);
+		if (image) {
+			int w = box.size.x;
+			int h = box.size.y;
+
+			NVGpaint paint = nvgImagePattern(args.vg, 0, 0, w, h, 0.0f, image->handle, 1.0f);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, w, h);
+			nvgFillPaint(args.vg, paint);
+			nvgFill(args.vg);
+		}
+	}
+};
+
 struct TuringVoltsExpanderWidget : ModuleWidget {
 	TuringVoltsExpanderWidget(TuringVoltsExpander* module) {
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/TuringVoltsExpander.svg")));
 
+		auto bg = new BackgroundImage();
+		bg->box.pos = Vec(0, 0);
+		bg->box.size = box.size; // Match panel size (e.g., 128.5 x 380 or 115 x 485)
+		addChild(bg);
+
+		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
 		for (int i = 0; i < 5; i++) {
 			addParam(createParamCentered<RoundSmallBlackKnob>(
-				mm2px(Vec(15.0, 20.0 + i * 15.0)), module, i));
+				mm2px(Vec(15.0, 40.0 + i * 15.0)), module, i));
 		}
 
-		addOutput(createOutputCentered<PJ301MPort>(
-			mm2px(Vec(15.0, 100.0)), module, TuringVoltsExpander::VOLTS_OUTPUT));
+		addOutput(createOutputCentered<DarkPJ301MPort>(
+			mm2px(Vec(15.0, 115.0)), module, TuringVoltsExpander::VOLTS_OUTPUT));
 	}
 };
 

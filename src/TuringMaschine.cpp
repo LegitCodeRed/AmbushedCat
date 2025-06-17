@@ -10,8 +10,6 @@ struct BitShiftRegister {
 		}
 	}
 
-
-
 	std::bitset<16> bits;
 	std::bitset<16> seedBits;
 
@@ -96,11 +94,12 @@ struct TuringMaschine : Module {
 		BIAS_CV_INPUT,
 		INPUTS_LEN
 	};
-	enum OutputId {
-		SEQUENCE_OUTPUT,
-		NOISE_OUTPUT,
-		OUTPUTS_LEN
-	};
+       enum OutputId {
+               SEQUENCE_OUTPUT,
+               PULSE_OUTPUT,
+               NOISE_OUTPUT,
+               OUTPUTS_LEN
+       };
 	enum LightId {
 		BLINK_LIGHT,
 		BIT_LIGHTS,  // this starts the 16-bit range
@@ -112,13 +111,18 @@ struct TuringMaschine : Module {
 	float blinkTimer = 0.f;
 
 	BitShiftRegister shiftReg;
-	dsp::SchmittTrigger clockTrigger;
-	dsp::SchmittTrigger resetTrigger;
-	dsp::SchmittTrigger seedTrigger;
+        dsp::SchmittTrigger clockTrigger;
+        dsp::SchmittTrigger resetTrigger;
+        dsp::SchmittTrigger seedTrigger;
 
         int mode = 0; // 0: Normal, 1: Techno
         int pitchMode = 0;
         int writeMode = 0; // 0: Standard, 1: Evolving
+        int pulseMode = 0; // 0: Gate, 1: Tap
+
+        bool prevPulseBit = false;
+        float pulseTapTimer = 0.f;
+        const float tapTime = 0.05f;
 
 	TuringMaschine() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -130,15 +134,17 @@ struct TuringMaschine : Module {
 
 		configInput(CHANGE_CV_INPUT, "Change CV");
 		configInput(LENGTH_CV_INPUT, "Length CV");
+		configInput(BIAS_CV_INPUT, "Bias CV");
 
 		paramQuantities[LENGTH_PARAM]->snapEnabled = true;
 		configParam(BIAS_PARAM, 0.f, 1.f, 0.5f, "Bias");
 
 		configInput(CLOCK_INPUT, "Clock");
-		configInput(RESET_INPUT, "Reset");
-		configOutput(SEQUENCE_OUTPUT, "Sequence");
-		configOutput(NOISE_OUTPUT, "Noise");
-	}
+               configInput(RESET_INPUT, "Reset");
+               configOutput(SEQUENCE_OUTPUT, "Sequence");
+               configOutput(PULSE_OUTPUT, "Pulse");
+               configOutput(NOISE_OUTPUT, "Noise");
+       }
 
 	float getPitchScale() {
 		switch (pitchMode) {	
@@ -211,10 +217,29 @@ struct TuringMaschine : Module {
 		
 		float voltage = (value / (float)maxValue) * getPitchScale(); 
 
-		outputs[SEQUENCE_OUTPUT].setVoltage(voltage);
+               outputs[SEQUENCE_OUTPUT].setVoltage(voltage);
 
-		bool noiseBit = random::u32() % 2 == 0;
-		outputs[NOISE_OUTPUT].setVoltage(noiseBit ? 10.f : 0.f);
+               // Alan 3U-style pulse output from the MSB
+               bool pulseBit = shiftReg.bits[15];
+               if (pulseMode == 0) {
+                       outputs[PULSE_OUTPUT].setVoltage(pulseBit ? 10.f : 0.f);
+                       prevPulseBit = pulseBit;
+               }
+               else {
+                       if (pulseBit != prevPulseBit)
+                               pulseTapTimer = tapTime;
+                       if (pulseTapTimer > 0.f) {
+                               pulseTapTimer -= args.sampleTime;
+                               outputs[PULSE_OUTPUT].setVoltage(10.f);
+                       }
+                       else {
+                               outputs[PULSE_OUTPUT].setVoltage(0.f);
+                       }
+                       prevPulseBit = pulseBit;
+               }
+
+               bool noiseBit = random::u32() % 2 == 0;
+               outputs[NOISE_OUTPUT].setVoltage(noiseBit ? 10.f : 0.f);
 
 		
                 Module* exp = this;
@@ -283,9 +308,10 @@ struct TuringMaschine : Module {
                 json_object_set_new(root, "pitchMode", json_integer(pitchMode));
                 json_object_set_new(root, "mode", json_integer(mode));
                 json_object_set_new(root, "writeMode", json_integer(writeMode));
+                json_object_set_new(root, "pulseMode", json_integer(pulseMode));
 
-		return root;
-	}
+                return root;
+        }
 
 	void dataFromJson(json_t* root) override {
 		// Restore shiftReg.bits
@@ -327,7 +353,30 @@ struct TuringMaschine : Module {
                 if (writeJ) {
                         writeMode = json_integer_value(writeJ);
                 }
+
+                json_t* pulseJ = json_object_get(root, "pulseMode");
+                if (pulseJ) {
+                        pulseMode = json_integer_value(pulseJ);
+                }
         }
+};
+
+struct BackgroundImage : Widget {
+	std::string imagePath = asset::plugin(pluginInstance, "res/TuringMaschine-1.png");
+
+	void draw(const DrawArgs& args) override {
+		std::shared_ptr<Image> image = APP->window->loadImage(imagePath);
+		if (image) {
+			int w = box.size.x;
+			int h = box.size.y;
+
+			NVGpaint paint = nvgImagePattern(args.vg, 0, 0, w, h, 0.0f, image->handle, 1.0f);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, w, h);
+			nvgFillPaint(args.vg, paint);
+			nvgFill(args.vg);
+		}
+	}
 };
 
 struct TuringMaschineWidget : ModuleWidget {
@@ -335,53 +384,66 @@ struct TuringMaschineWidget : ModuleWidget {
 		setModule(module);
 		setPanel(createPanel(asset::plugin(pluginInstance, "res/TuringMaschine.svg")));
 
-		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		auto bg = new BackgroundImage();
+		bg->box.pos = Vec(0, 0);
+		bg->box.size = box.size; // Match panel size (e.g., 128.5 x 380 or 115 x 485)
+		addChild(bg);
 
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15.24, 50.063)), module, TuringMaschine::LENGTH_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15.24, 60.063)), module, TuringMaschine::CHANGE_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15.24, 70.063)), module, TuringMaschine::BIAS_PARAM));
+		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15.24, 50.063)), module, TuringMaschine::LENGTH_PARAM));
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15.24, 60.063)), module, TuringMaschine::CHANGE_PARAM));
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15.24, 70.063)), module, TuringMaschine::BIAS_PARAM));
+		
 
 		addParam(createParamCentered<TL1105>(mm2px(Vec(15.24, 30.81)), module, TuringMaschine::SEED_PARAM));
 		addParam(createParamCentered<CKSS>(mm2px(Vec(15.24, 40.81)), module, TuringMaschine::WRITE_PARAM));
 
-		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 90.478)), module, TuringMaschine::CLOCK_INPUT));
-		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 100.478)), module, TuringMaschine::RESET_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(15.24, 98.713)), module, TuringMaschine::CLOCK_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.24, 108.713)), module, TuringMaschine::RESET_INPUT));
 
-		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(25.0, 46.0)), module, TuringMaschine::CHANGE_CV_INPUT));
-		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(25.0, 61.0)), module, TuringMaschine::LENGTH_CV_INPUT));
-		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(25.0, 75.0)), module, TuringMaschine::BIAS_CV_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.24, 88.713)), module, TuringMaschine::CHANGE_CV_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(15.24, 88.713)), module, TuringMaschine::LENGTH_CV_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(25.24, 88.713)), module, TuringMaschine::BIAS_CV_INPUT));
 
-		addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(15.24, 108.713)), module, TuringMaschine::SEQUENCE_OUTPUT));
-		addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(25.24, 108.713)), module, TuringMaschine::NOISE_OUTPUT));
+		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(25.24, 108.713)), module, TuringMaschine::SEQUENCE_OUTPUT));
+		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(15.24, 108.713)), module, TuringMaschine::NOISE_OUTPUT));
+		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(25.24, 98.713)), module, TuringMaschine::PULSE_OUTPUT));
 
 		for (int i = 0; i < 16; ++i) {
 			float x = mm2px(Vec(4.0f, 20.0f)).x;  // adjust X as needed
 			float y = mm2px(Vec(0.0f, 10.0f + i * 4.0f)).y;  // vertical stack
 			addChild(createLight<SmallLight<GreenLight>>(Vec(x, y), module, TuringMaschine::BIT_LIGHTS + i));
 		}
+		
 		addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(15.24, 25.81)), module, TuringMaschine::BLINK_LIGHT));
 	}
 
 	void appendContextMenu(Menu* menu) override {
 		TuringMaschine* module = getModule<TuringMaschine>();
-		menu->addChild(createIndexPtrSubmenuItem("Mode",
-			{"Normal", "Poly Ryhtmic"},
-			&module->mode
-		));
+			menu->addChild(createIndexPtrSubmenuItem("Mode",
+				{"Normal", "Poly Ryhtmic"},
+				&module->mode
+			));
 
-                menu->addChild(createIndexPtrSubmenuItem("Pitch Output Range",
-                        {"5V", "3V", "1V"},
-                        &module->pitchMode
-                ));
+			menu->addChild(createIndexPtrSubmenuItem("Pitch Output Range",
+					{"5V", "3V", "1V"},
+					&module->pitchMode
+			));
 
-                menu->addChild(createIndexPtrSubmenuItem("Write Mode",
-                        {"Standard", "Evolving"},
-                        &module->writeMode
-                ));
-        }
+			menu->addChild(createIndexPtrSubmenuItem("Write Mode",
+							{"Standard", "Evolving"},
+							&module->writeMode
+			));
+
+			menu->addChild(createIndexPtrSubmenuItem("Pulse Mode",
+							{"Gate", "Tap"},
+							&module->pulseMode
+			));
+	}
 };
 
 Model* modelTuringMaschine = createModel<TuringMaschine, TuringMaschineWidget>("TuringMaschine");

@@ -568,35 +568,57 @@ struct Tape : Module {
         }
 };
 
+struct BackgroundImage : Widget {
+	std::string imagePath = asset::plugin(pluginInstance, "res/Rack_Tape.png");
+
+	void draw(const DrawArgs& args) override {
+		std::shared_ptr<Image> image = APP->window->loadImage(imagePath);
+		if (image) {
+			int w = box.size.x;
+			int h = box.size.y;
+
+			NVGpaint paint = nvgImagePattern(args.vg, 0, 0, w, h, 0.0f, image->handle, 1.0f);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, w, h);
+			nvgFillPaint(args.vg, paint);
+			nvgFill(args.vg);
+		}
+	}
+};
 
 struct TapeWidget : ModuleWidget {
 	TapeWidget(Tape* module) {
 		setModule(module);
 		setPanel(createPanel(asset::plugin(pluginInstance, "res/Tape.svg")));
 
-		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+                auto bg = new BackgroundImage();
+		bg->box.pos = Vec(0, 0);
+		bg->box.size = box.size; // Match panel size (e.g., 128.5 x 380 or 115 x 485)
+		addChild(bg);
 
-               addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10, 20)), module, Tape::LEFT_INPUT));
-               addInput(createInputCentered<PJ301MPort>(mm2px(Vec(20, 20)), module, Tape::RIGHT_INPUT));
-                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(10, 100)), module, Tape::LEFT_OUTPUT));
-                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(20, 100)), module, Tape::RIGHT_OUTPUT));
+		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10, 115)), module, Tape::LEFT_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(20, 115)), module, Tape::RIGHT_INPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(40, 115)), module, Tape::LEFT_OUTPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(50, 115)), module, Tape::RIGHT_OUTPUT));
 
 		
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(50, 40)), module, Tape::INPUT_PARAM));
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10, 40)), module, Tape::DRIVE_PARAM));
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10, 60)), module, Tape::TONE_PARAM));
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10, 80)), module, Tape::LEVEL_PARAM));
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(50, 60)), module, Tape::BIAS_PARAM));
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(50, 80)), module, Tape::SWEETSPOT_PARAM));
-               addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(50, 100)), module, Tape::TRANSFORM_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(50, 40)), module, Tape::INPUT_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(10, 40)), module, Tape::DRIVE_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(10, 60)), module, Tape::TONE_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(10, 80)), module, Tape::LEVEL_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(50, 60)), module, Tape::BIAS_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(50, 80)), module, Tape::SWEETSPOT_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(50, 100)), module, Tape::TRANSFORM_PARAM));
 
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(30, 40)), module, Tape::FLUTTER_PARAM));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(30, 60)), module, Tape::WOW_PARAM));
-               addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(30, 80)), module, Tape::HISS_PARAM));
-               addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(30, 100)), module, Tape::NOISE_PARAM));
+		addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(30, 40)), module, Tape::FLUTTER_PARAM));
+		addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(30, 60)), module, Tape::WOW_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(30, 80)), module, Tape::HISS_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(30, 100)), module, Tape::NOISE_PARAM));
 	}
 
         void appendContextMenu(Menu* menu) override {
