@@ -10,8 +10,6 @@ struct BitShiftRegister {
 		}
 	}
 
-
-
 	std::bitset<16> bits;
 	std::bitset<16> seedBits;
 
@@ -383,16 +381,16 @@ struct BackgroundImage : Widget {
 
 struct OldBastardsLabel : Widget {
 	void draw(const DrawArgs& args) override {
-		std::string fontPath = asset::plugin(pluginInstance, "res/Oldbastards.otf");
+		std::string fontPath = asset::plugin(pluginInstance, "res/RobotoMono-VariableFont_wght.ttf");
 		std::shared_ptr<Font> font = APP->window->loadFont(fontPath);
 		if (font) {
 			nvgFontFaceId(args.vg, font->handle);
 			nvgFontSize(args.vg, 12.0);
 			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
-			nvgFillColor(args.vg, nvgRGB(255, 255, 255));
+			nvgFillColor(args.vg, nvgRGB(0, 0, 0));
 
-			nvgText(args.vg, 5.0f, 20.0f, "Turing", NULL);
-			nvgText(args.vg, 5.0f, 36.0f, "Machine", NULL);  // Adjust Y offset
+			nvgText(args.vg, box.size.x/2+2, 30.0f, "TM", NULL);
+			nvgText(args.vg, box.size.x/2-5, 40.0f, "Rythm", NULL);
 		}
 	}
 };
@@ -438,7 +436,7 @@ struct TuringMaschineWidget : ModuleWidget {
 
 		for (int i = 0; i < 16; ++i) {
 			float x = mm2px(Vec(4.0f, 20.0f)).x;  // adjust X as needed
-			float y = mm2px(Vec(0.0f, 20.0f + i * 4.0f)).y;  // vertical stack
+			float y = mm2px(Vec(0.0f, 10.0f + i * 4.0f)).y;  // vertical stack
 			addChild(createLight<SmallLight<GreenLight>>(Vec(x, y), module, TuringMaschine::BIT_LIGHTS + i));
 		}
 		
