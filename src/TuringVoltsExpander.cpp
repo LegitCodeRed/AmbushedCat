@@ -89,11 +89,11 @@ struct TuringVoltsExpanderWidget : ModuleWidget {
 
 		for (int i = 0; i < 5; i++) {
 			addParam(createParamCentered<RoundSmallBlackKnob>(
-				mm2px(Vec(15.0, 20.0 + i * 15.0)), module, i));
+				mm2px(Vec(15.0, 40.0 + i * 15.0)), module, i));
 		}
 
 		addOutput(createOutputCentered<DarkPJ301MPort>(
-			mm2px(Vec(15.0, 100.0)), module, TuringVoltsExpander::VOLTS_OUTPUT));
+			mm2px(Vec(15.0, 110.0)), module, TuringVoltsExpander::VOLTS_OUTPUT));
 	}
 };
 
