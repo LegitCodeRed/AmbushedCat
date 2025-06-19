@@ -7,9 +7,10 @@ void init(Plugin* p) {
 	pluginInstance = p;
  	p->addModel(modelTuringMaschine);
  	p->addModel(modelTuringGateExpander);
- 	p->addModel(modelTuringVoltsExpander);
-	p->addModel(modelTape);
-	// Add modules here
+        p->addModel(modelTuringVoltsExpander);
+        p->addModel(modelTape);
+        p->addModel(modelBass303);
+        // Add modules here
 	// p->addModel(modelMyModule);
 
 	// Any other plugin initialization may go here.
