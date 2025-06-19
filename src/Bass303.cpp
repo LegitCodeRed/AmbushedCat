@@ -1,5 +1,6 @@
 #include "plugin.hpp"
-#include "dsp/DiodeLadder.cpp"
+#include "dsp/AcidFilter.cpp"
+#include "dsp/Saturation.hpp"
 #include <cmath>
 
 
@@ -46,7 +47,8 @@ struct Bass303 : Module {
 
     dsp::SchmittTrigger gateTrigger;
     float phase = 0.f;
-    DiodeLadder filter;
+    AcidFilter filter;
+    dspext::Saturator<2> saturator;
     GateEnv env;
     float slidePitch = 0.f;
 
@@ -95,14 +97,21 @@ struct Bass303 : Module {
 
         float cutoffKnob = params[CUTOFF_PARAM].getValue();
         float cutoff = rack::math::rescale(cutoffKnob, 0.f, 1.f, 80.f, 6000.f);
-        cutoff *= 1.f + envVal * params[ENV_PARAM].getValue() * (1.f + accent) * 2.f;
+        float envMod = envVal * params[ENV_PARAM].getValue() * (1.f + accent);
+        cutoff *= 1.f + envMod * 2.f;
         float resonance = params[RES_PARAM].getValue();
+        resonance *= 1.f + 0.3f * envVal * accent;
+
         filter.setCutoff(cutoff);
         filter.setResonance(resonance);
         filter.setDrive(0.5f);
         float filtered = filter.process(wave);
 
-        float out = filtered * envVal * (1.f + accent) * params[LEVEL_PARAM].getValue();
+        float amp = envVal * (1.f + accent);
+        float preOut = filtered * amp;
+        float clipped = saturator.process(preOut, 1.2f, args.sampleRate, dspext::Saturator<2>::MODERATE);
+
+        float out = clipped * params[LEVEL_PARAM].getValue();
         outputs[AUDIO_OUTPUT].setVoltage(5.f * out);
     }
 };
