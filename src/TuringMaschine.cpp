@@ -140,10 +140,10 @@ struct TuringMaschine : Module {
 		configParam(BIAS_PARAM, 0.f, 1.f, 0.5f, "Bias");
 
 		configInput(CLOCK_INPUT, "Clock");
-               configInput(RESET_INPUT, "Reset");
-               configOutput(SEQUENCE_OUTPUT, "Sequence");
-               configOutput(PULSE_OUTPUT, "Pulse");
-               configOutput(NOISE_OUTPUT, "Noise");
+		configInput(RESET_INPUT, "Reset");
+		configOutput(SEQUENCE_OUTPUT, "Sequence");
+		configOutput(PULSE_OUTPUT, "Pulse");
+		configOutput(NOISE_OUTPUT, "Noise");
        }
 
 	float getPitchScale() {

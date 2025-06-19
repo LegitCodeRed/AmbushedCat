@@ -12,6 +12,7 @@ struct TuringVoltsExpander : Module {
 	};
 	enum OutputIds {
 		VOLTS_OUTPUT,
+		VOLTSINV_OUTPUT,
 		NUM_OUTPUTS
 	};
 
@@ -23,6 +24,9 @@ struct TuringVoltsExpander : Module {
 		for (int i = 0; i < 5; i++) {
 			configParam(i, 0.f, 10.f, 0.f, "Bit " + std::to_string(i) + " voltage");
 		}
+
+		configOutput(VOLTS_OUTPUT, "CV Out");
+		configOutput(VOLTSINV_OUTPUT, "CV Inverted Out");
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -93,7 +97,10 @@ struct TuringVoltsExpanderWidget : ModuleWidget {
 		}
 
 		addOutput(createOutputCentered<DarkPJ301MPort>(
-			mm2px(Vec(15.0, 115.0)), module, TuringVoltsExpander::VOLTS_OUTPUT));
+			mm2px(Vec(20.0, 115.0)), module, TuringVoltsExpander::VOLTS_OUTPUT));
+		
+		addOutput(createOutputCentered<DarkPJ301MPort>(
+			mm2px(Vec(10.0, 115.0)), module, TuringVoltsExpander::VOLTSINV_OUTPUT));
 	}
 };
 
