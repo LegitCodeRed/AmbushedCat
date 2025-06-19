@@ -12,5 +12,6 @@ Heavy hitting with love <3
 - **Accent In** – Optional accent CV
 
 The Bass303 emulates the classic 3‑pole diode ladder filter of the original TB‑303.
-Its resonance path is softly clipped so it never self‑oscillates, while an internal
+Its resonance path is softly clipped so it never self‑oscillates and now follows the envelope
+and accent for a more authentic response. An internal
 saturator adds a touch of post‑filter distortion for extra squelch.

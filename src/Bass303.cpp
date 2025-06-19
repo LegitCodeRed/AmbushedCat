@@ -123,7 +123,7 @@ struct Bass303 : Module {
 
         // --- Resonance modulation ---
         float resKnob = params[RES_PARAM].getValue();
-        float resonance = resKnob * (1.f + 0.8f * accent) * shapedEnv;
+        float resonance = resKnob * (1.f + 0.8f * accent);
         resonance = clamp(resonance, 0.f, 1.f);
 
         // --- Drive control ---
