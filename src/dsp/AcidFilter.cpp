@@ -1,4 +1,5 @@
 #include <cmath>
+#include "Filters.hpp"
 
 struct AcidFilter {
     float sampleRate = 44100.f;
@@ -13,9 +14,11 @@ struct AcidFilter {
     float k = 0.f;
 
     float mismatchFactor = 1.5f; // First pole faster (C18 behavior)
+    RBJFilter hp{RBJFilter::HIGHPASS, 20.f, sampleRate};
 
     void setSampleRate(float sr) {
         sampleRate = sr;
+        hp.SetSampleRate(sampleRate);
         updateCoeffs();
     }
 
@@ -64,7 +67,8 @@ struct AcidFilter {
         }
 
         // Final output buffer saturation (simulates VCA + output stage)
-        return std::tanh(stage[3] * 1.2f);
+        float out = std::tanh(stage[3] * 1.2f);
+        return hp.Tick(out);
     }
 
 private:
@@ -77,8 +81,9 @@ private:
         g[0] = baseG * mismatchFactor; // first pole mismatch = C18
         g[1] = baseG;
         g[2] = baseG;
-        g[3] = baseG;
+       g[3] = baseG;
 
        k = 3.2f * resonanceBase / (1.f + 0.5f * drive); // smooths high-res feedback
+       hp.SetCutoff(20.f);
     }
 };
