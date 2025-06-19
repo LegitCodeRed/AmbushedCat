@@ -1,12 +1,13 @@
 #pragma once
 #include <cmath>
 
-// Simple diode ladder lowpass filter approximation
+// Diode ladder lowpass filter with simple drive control
 // Provides a resonant 4-pole sound inspired by the TB-303
 struct DiodeLadder {
     float sampleRate = 44100.f;
     float cutoff = 1000.f;
     float resonance = 0.f;
+    float drive = 0.f;
 
     float stage[4] = {};
     float g = 0.f;
@@ -27,6 +28,10 @@ struct DiodeLadder {
         updateCoeffs();
     }
 
+    void setDrive(float d) {
+        drive = d;
+    }
+
     void reset() {
         for (int i = 0; i < 4; ++i) {
             stage[i] = 0.f;
@@ -34,8 +39,9 @@ struct DiodeLadder {
     }
 
     float process(float in) {
+        float input = in * (1.f + drive);
         float feedback = k * stage[3];
-        float x = std::tanh(in - feedback);
+        float x = std::tanh(input - feedback);
         for (int i = 0; i < 4; ++i) {
             stage[i] += g * (x - stage[i]);
             x = std::tanh(stage[i]);
