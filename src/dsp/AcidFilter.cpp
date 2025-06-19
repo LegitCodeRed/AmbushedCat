@@ -54,7 +54,8 @@ struct AcidFilter {
         float input = std::tanh(in * drive);
 
         // Diode-style nonlinear feedback
-        float fb = k * stage[3];
+        float dynamicK = k * (1.f + 0.3f * accent + 0.2f * envVal);
+        float fb = dynamicK * stage[3];
         float feedback = (fb >= 0.f) ? std::tanh(fb * 0.9f) : 0.5f * std::tanh(fb * 1.5f);
         // Input minus feedback
         float x = input - feedback;
