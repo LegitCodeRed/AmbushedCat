@@ -5,7 +5,8 @@ struct AcidFilter {
     float cutoff = 1000.f;
     float resonance = 0.1f;
     float sampleRate = 44100.f;
-    float s1 = 0.f, s2 = 0.f, s3 = 0.f, s4 = 0.f;
+    float y1 = 0.f, y2 = 0.f, y3 = 0.f, y4 = 0.f;
+    float oldx = 0.f, oldy1 = 0.f, oldy2 = 0.f, oldy3 = 0.f;
 
     void setSampleRate(float sr) {
         sampleRate = sr;
@@ -18,16 +19,34 @@ struct AcidFilter {
 
     float process(float in) {
         float f = cutoff / sampleRate;
-        f = rack::math::clamp(f, 0.f, 0.49f);
-        float fb = resonance * (1.f - 0.15f * f * f);
+        f = rack::math::clamp(f, 0.f, 0.99f);
 
-        in -= fb * s4;
-        in *= 0.35013f * (f * f) * (f * f);
-        s1 = in + 0.3f * s1 + 1e-20f;
-        s2 = s1 + 0.3f * s2;
-        s3 = s2 + 0.3f * s3;
-        s4 = s3 + 0.3f * s4;
-        return s4;
+        // coefficients for classic 4-pole ladder approximation
+        float k = 3.6f * f - 1.6f * f * f - 1.f;
+        float p = (k + 1.f) * 0.5f;
+        float scale = std::exp((1.f - p) * 1.386249f);
+        float r = resonance * scale;
+
+        float x = in - r * y4;
+
+        float y1n = x * p + oldx * p - k * y1;
+        float y2n = y1n * p + oldy1 * p - k * y2;
+        float y3n = y2n * p + oldy2 * p - k * y3;
+        float y4n = y3n * p + oldy3 * p - k * y4;
+
+        // Non-linear clipping for acid character
+        y4n -= y4n * y4n * y4n * 0.166667f;
+
+        oldx = x;
+        oldy1 = y1n;
+        oldy2 = y2n;
+        oldy3 = y3n;
+        y1 = y1n;
+        y2 = y2n;
+        y3 = y3n;
+        y4 = y4n;
+
+        return y4n;
     }
 };
 
