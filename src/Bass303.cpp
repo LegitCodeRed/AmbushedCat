@@ -87,7 +87,7 @@ struct Bass303 : Module {
         configParam(ACCENT_PARAM, 0.f, 1.f, 0.f, "Accent Amount");
         configParam(SLIDE_PARAM, 0.f, 1.f, 0.f, "Slide Time");
         configParam(WAVE_PARAM, 0.f, 1.f, 0.f, "Waveform");
-        configParam(LEVEL_PARAM, 0.f, 1.f, 0.8f, "Level");
+        configParam(LEVEL_PARAM, 0.f, 10.f, 0.8f, "Level");
         configInput(PITCH_INPUT, "CV In");
         configInput(GATE_INPUT, "Gate In");
         configInput(ACCENT_INPUT, "Accent In");
