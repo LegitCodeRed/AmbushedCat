@@ -1,5 +1,6 @@
 #include <cmath>
 #include "Filters.hpp"
+#include "open303/rosic_BiquadFilter.h"
 
 struct AcidFilter {
     float sampleRate = 44100.f;
@@ -9,8 +10,8 @@ struct AcidFilter {
     float accent = 0.f;        // 0 or 1
     float envVal = 0.f;        // External envelope (0..1)
 
-    float stage[4] = {};
-    float g[4] = {};
+    rosic::BiquadFilter lp[4];
+    float lastStage = 0.f;
     float k = 0.f;
 
     float mismatchFactor = 1.5f; // First pole faster (C18 behavior)
@@ -19,6 +20,8 @@ struct AcidFilter {
     void setSampleRate(float sr) {
         sampleRate = sr;
         hp.SetSampleRate(sampleRate);
+        for (int i = 0; i < 4; ++i)
+            lp[i].setSampleRate(sampleRate);
         updateCoeffs();
     }
 
@@ -46,7 +49,7 @@ struct AcidFilter {
 
     void reset() {
         for (int i = 0; i < 4; ++i)
-            stage[i] = 0.f;
+            lp[i].reset();
     }
 
     float process(float in) {
@@ -55,34 +58,32 @@ struct AcidFilter {
 
         // Diode-style nonlinear feedback
         float dynamicK = k * (1.f + 0.3f * accent + 0.2f * envVal);
-        float fb = dynamicK * stage[3];
+        float fb = dynamicK * lastStage;
         float feedback = (fb >= 0.f) ? std::tanh(fb * 0.9f) : 0.5f * std::tanh(fb * 1.5f);
         // Input minus feedback
         float x = input - feedback;
 
         // Process through 4 nonlinear, slightly mismatched poles
         for (int i = 0; i < 4; ++i) {
-            float gain = g[i] * (1.f + 0.03f * i); // subtle mismatch
-            x = stage[i] + gain * (std::tanh(x * (1.0f + 0.05f * i)) - stage[i]);
-            stage[i] = x;
+            x = std::tanh(x * (1.0f + 0.05f * i));
+            x = lp[i].getSample(x);
         }
+        lastStage = x;
 
         // Final output buffer saturation (simulates VCA + output stage)
-        float out = std::tanh(stage[3] * 1.2f);
+        float out = std::tanh(lastStage * 1.2f);
         return hp.Tick(out);
     }
 
 private:
     void updateCoeffs() {
-        float T = 1.f / sampleRate;
-        float wc = 2.f * (float)M_PI * cutoff;
-        float wd = 2.f / T * std::tan(wc * T / 2.f);
-        float baseG = wd * T / (1.f + wd * T);
-
-        g[0] = baseG * mismatchFactor; // first pole mismatch = C18
-        g[1] = baseG;
-        g[2] = baseG;
-       g[3] = baseG;
+        for (int i = 0; i < 4; ++i) {
+            lp[i].setMode(rosic::BiquadFilter::LOWPASS6);
+            float freq = cutoff;
+            if (i == 0)
+                freq *= mismatchFactor;
+            lp[i].setFrequency(freq);
+        }
 
        k = 3.2f * resonanceBase / (1.f + 0.5f * drive); // smooths high-res feedback
        hp.SetCutoff(20.f);
