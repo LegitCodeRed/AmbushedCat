@@ -157,13 +157,17 @@ struct Bass303 : Module {
 
         // --- Set filter parameters ---
         filter.setCutoff(cutoff);
+        filter.setResonance(resonance * 100.f);
+        filter.setDrive(drive * 24.f); // map 0-1 range to dB
 
         // --- Pre-filter diode-style saturation ---
         float drivenInput = diodeClip(wave * (2.0f + 2.0f * accent));
 
         // --- Filter processing ---
-        float filtered  = allpass.getSample(drivenInput);
-        filtered = highpass2.getSample(filtered);        
+        float filtered = highpass1.getSample(drivenInput);
+        filtered = filter.getSample(filtered);
+        filtered = allpass.getSample(filtered);
+        filtered = highpass2.getSample(filtered);
         filtered = notch.getSample(filtered);
 
         // --- Envelope-based amplitude control ---
