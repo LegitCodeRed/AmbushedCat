@@ -1,25 +1,9 @@
 #include "plugin.hpp"
-#include "dsp/open303/rosic_BiquadFilter.h"
-#include "dsp/open303/rosic_OnePoleFilter.h"
-#include "dsp/open303/rosic_TeeBeeFilter.h"
-#include "dsp/Saturation.hpp"
+#include "dsp/open303/rosic_Open303.h"
 #include <cmath>
 
 
-struct GateEnv {
-    float attack = 0.001f;
-    float release = 0.2f;
-    float value = 0.f;
 
-    float process(bool gate, float dt) {
-        float target = gate ? 1.f : 0.f;
-        float tau = gate ? attack : release;
-        float coeff = dt / tau;
-        coeff = rack::math::clamp(coeff, 0.f, 1.f);
-        value += (target - value) * coeff;
-        return value;
-    }
-};
 
 struct Bass303 : Module {
     enum ParamId {
@@ -48,17 +32,8 @@ struct Bass303 : Module {
     };
 
     dsp::SchmittTrigger gateTrigger;
-    float phase = 0.f;
-    
-    rosic::TeeBeeFilter filter;
-    rosic::BiquadFilter notch;
-    rosic::BiquadFilter ampDeClicker;
-    rosic::OnePoleFilter highpass1, highpass2, allpass; 
-
-    dspext::Saturator<2> saturator;
-    GateEnv env;
-    float slidePitch = 0.f;
-    static const int oversampling = 4;
+    bool gateState = false;
+    rosic::Open303 synth;
 
     Bass303() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -75,112 +50,47 @@ struct Bass303 : Module {
         configInput(ACCENT_INPUT, "Accent In");
         configOutput(AUDIO_OUTPUT, "Audio");
         
-        highpass1.setMode(rosic::OnePoleFilter::HIGHPASS);
-        highpass2.setMode(rosic::OnePoleFilter::HIGHPASS);
-        allpass.setMode(rosic::OnePoleFilter::ALLPASS);
-        notch.setMode(rosic::BiquadFilter::BANDREJECT);
-
-        highpass1.setCutoff(44.486);
-        highpass2.setCutoff(24.167);
-        allpass.setCutoff(14.008);
-        notch.setFrequency(7.5164);
-        notch.setBandwidth(4.7);
-
-        filter.setFeedbackHighpassCutoff(150.0);
+        synth.setSlideTime(60.0);
+        synth.setVolume(0.0);
     }
-
-    inline float diodeClip(float x) {
-        if (x >= 0.f)
-            return std::tanh(x);         // full wave on positive
-        else
-            return 0.5f * std::tanh(x);  // weaker on negative
-    }
-
     void process(const ProcessArgs& args) override {
-        filter.setSampleRate(args.sampleRate);
-        notch.setSampleRate(args.sampleRate);
-        ampDeClicker.setSampleRate(args.sampleRate);
-        highpass1.setSampleRate(args.sampleRate);
-        highpass2.setSampleRate(args.sampleRate);
-        allpass.setSampleRate(args.sampleRate);
-        float dt = args.sampleTime;
+        synth.setSampleRate(args.sampleRate);
 
-        // --- Inputs ---
         bool gate = inputs[GATE_INPUT].getVoltage() >= 1.f;
-        float targetPitch = inputs[PITCH_INPUT].getVoltage();
-        float accentGate = (inputs[ACCENT_INPUT].isConnected() && inputs[ACCENT_INPUT].getVoltage() >= 1.f) ? 1.f : 0.f;
+        float pitchCv = inputs[PITCH_INPUT].getVoltage();
+        bool accentGate = inputs[ACCENT_INPUT].isConnected() && inputs[ACCENT_INPUT].getVoltage() >= 1.f;
 
-        // --- Parameters ---
-        float accentAmount = params[ACCENT_PARAM].getValue();
-        float accent = accentGate * accentAmount;
+        int midiNote = clamp((int)std::round(60.f + pitchCv * 12.f), 0, 127);
+        int velocity = accentGate ? 127 : 100;
 
-        float decayParam = params[DECAY_PARAM].getValue();
-        float envDecay = rack::math::rescale(decayParam, 0.f, 1.f, 0.05f, 1.f);
-        float punchyDecay = envDecay * (1.f - 0.7f * accent); // accent makes decay snappier
-        env.release = std::max(punchyDecay, 0.01f);
+        if (gateTrigger.process(gate)) {
+            if (gate) {
+                synth.noteOn(midiNote, velocity, 0.0);
+            } else {
+                synth.noteOn(midiNote, 0, 0.0);
+            }
+        }
 
-        float envVal = env.process(gate, dt);
-        float shapedEnv = 1.f - std::exp(-6.f * envVal); // fast, analog-like decay
+        float cutoff = rack::math::rescale(params[CUTOFF_PARAM].getValue(), 0.f, 1.f, 80.f, 6000.f);
+        float resonance = params[RES_PARAM].getValue() * 100.f;
+        float envMod = params[ENV_PARAM].getValue() * 100.f;
+        float decay = rack::math::rescale(params[DECAY_PARAM].getValue(), 0.f, 1.f, 30.f, 3000.f);
+        float accentAmt = params[ACCENT_PARAM].getValue() * 100.f;
+        float slideTime = rack::math::rescale(params[SLIDE_PARAM].getValue(), 0.f, 1.f, 0.f, 200.f);
+        float waveform = params[WAVE_PARAM].getValue();
+        float levelDb = rack::math::rescale(params[LEVEL_PARAM].getValue(), 0.f, 10.f, -60.f, 0.f);
 
-        // --- Portamento (slide) ---
-        float slideTime = rack::math::rescale(params[SLIDE_PARAM].getValue(), 0.f, 1.f, 0.f, 0.5f);
-        float coeff = slideTime > 0.f ? rack::math::clamp(dt / slideTime, 0.f, 1.f) : 1.f;
-        slidePitch += (targetPitch - slidePitch) * coeff;
+        synth.setCutoff(cutoff);
+        synth.setResonance(resonance);
+        synth.setEnvMod(envMod);
+        synth.setDecay(decay);
+        synth.setAccent(accentAmt);
+        synth.setSlideTime(slideTime);
+        synth.setWaveform(waveform);
+        synth.setVolume(levelDb);
 
-        // --- Oscillator ---
-        float freq = dsp::FREQ_C4 * std::pow(2.f, slidePitch);
-        phase += freq * dt;
-        if (phase >= 1.f)
-            phase -= 1.f;
-
-        float saw = 2.f * phase - 1.f;
-        float square = phase < 0.5f ? 1.f : -1.f;
-        float waveMix = params[WAVE_PARAM].getValue();
-        float wave = rack::math::crossfade(saw, square, waveMix);
-
-        // --- Filter cutoff modulation ---
-        float baseCutoff = rack::math::rescale(params[CUTOFF_PARAM].getValue(), 0.f, 1.f, 80.f, 6000.f);
-        float envMod = shapedEnv * params[ENV_PARAM].getValue() * (1.f + 0.5f * accent);
-        float cutoff = baseCutoff * (1.f + envMod * 3.f);
-
-        // Optional: pitch glide influences cutoff tone
-        float glideMod = rack::math::rescale(slidePitch, 0.f, 10.f, -0.5f, 0.5f);
-        cutoff *= std::pow(2.f, glideMod); // glide-to-cutoff tracking
-
-        // --- Resonance modulation ---
-        float resKnob = params[RES_PARAM].getValue();
-        float resonance = resKnob * (1.f + 0.8f * accent);
-        resonance = clamp(resonance, 0.f, 1.f);
-
-        // --- Drive control ---
-        float drive = 0.5f + 0.6f * shapedEnv + 0.4f * accent;
-
-        // --- Set filter parameters ---
-        filter.setCutoff(cutoff);
-        filter.setResonance(resonance * 100.f);
-        filter.setDrive(drive * 24.f); // map 0-1 range to dB
-
-        // --- Pre-filter diode-style saturation ---
-        float drivenInput = diodeClip(wave * (2.0f + 2.0f * accent));
-
-        // --- Filter processing ---
-        float filtered = highpass1.getSample(drivenInput);
-        filtered = filter.getSample(filtered);
-        filtered = allpass.getSample(filtered);
-        filtered = highpass2.getSample(filtered);
-        filtered = notch.getSample(filtered);
-
-        // --- Envelope-based amplitude control ---
-        float amp = std::tanh(envVal * (1.f + 1.5f * accent));
-        float preOut = filtered * amp;
-
-        // --- Post-filter saturation stage ---
-        float clipped = saturator.process(preOut, 1.2f, args.sampleRate, dspext::Saturator<2>::MODERATE);
-
-        // --- Output level + soft clip ---
-        float level = params[LEVEL_PARAM].getValue() / 10.f; // normalize to 0–1
-        float out = std::tanh(clipped * 2.0f) * level;
-        outputs[AUDIO_OUTPUT].setVoltage(5.f * out);
+        double sample = synth.getSample();
+        outputs[AUDIO_OUTPUT].setVoltage(5.f * (float)sample);
     }
 };
 
