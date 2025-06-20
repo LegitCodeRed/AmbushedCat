@@ -42,6 +42,12 @@
       "name": "Bass 303",
       "description": "Classic acid bass voice featuring a 3‑pole resonant filter with envelope and accent shaping.",
       "tags": ["Synth voice"]
+    },
+    {
+      "slug": "Open303",
+      "name": "Open 303",
+      "description": "Advanced 303 synth engine with built-in sequencer (no display).",
+      "tags": ["Synth voice"]
     }
   ]
 }
