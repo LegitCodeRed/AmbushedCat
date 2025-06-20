@@ -31,7 +31,9 @@ struct Bass303 : Module {
         LIGHTS_LEN
     };
 
-    bool gateState = false;
+    dsp::SchmittTrigger gateTrigger;
+    int countdown = 0;
+    int currentNote = -1;
     rosic::Open303 synth;
 
     Bass303() {
@@ -59,18 +61,21 @@ struct Bass303 : Module {
         float pitchCv = inputs[PITCH_INPUT].getVoltage();
         bool accentGate = inputs[ACCENT_INPUT].isConnected() && inputs[ACCENT_INPUT].getVoltage() >= 1.f;
 
-        int midiNote = clamp((int)std::round(60.f + pitchCv * 12.f), 0, 127);
-        int velocity = accentGate ? 127 : 100;
-
-       // Trigger note events on gate changes
-        if (gate && !gateState) {
-            synth.noteOn(midiNote, velocity, 0.0);
+        if (gateTrigger.process(gate))
+            countdown = 8;
+        if (countdown > 0) {
+            countdown--;
+            if (countdown == 0) {
+                currentNote = clamp((int)std::round(60.f + pitchCv * 12.f), 0, 127);
+                int velocity = accentGate ? 127 : 100;
+                synth.noteOn(currentNote, velocity, 0.0);
+            }
         }
-        else if (!gate && gateState) {
-            // Velocity zero acts as note-off for the Open303 engine
-            synth.noteOn(midiNote, 0, 0.0);
+        if (!gate && currentNote >= 0) {
+            countdown = -1;
+            synth.noteOn(currentNote, 0, 0.0);
+            currentNote = -1;
         }
-        gateState = gate;
 
         float cutoff = rack::math::rescale(params[CUTOFF_PARAM].getValue(), 0.f, 1.f, 80.f, 6000.f);
         float resonance = params[RES_PARAM].getValue() * 100.f;
