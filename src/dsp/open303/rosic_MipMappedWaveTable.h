@@ -2,6 +2,7 @@
 #define rosic_MipMappedWaveTable_h
 
 // rosic-indcludes:
+#include <string.h>
 #include "rosic_FunctionTemplates.h"
 #include "rosic_FourierTransformerRadix2.h"
 
