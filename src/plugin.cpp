@@ -9,7 +9,6 @@ void init(Plugin* p) {
  	p->addModel(modelTuringGateExpander);
         p->addModel(modelTuringVoltsExpander);
         p->addModel(modelTape);
-        p->addModel(modelBass303);
         p->addModel(modelOpen303);
         // Add modules here
 	// p->addModel(modelMyModule);
