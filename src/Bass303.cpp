@@ -31,7 +31,7 @@ struct Bass303 : Module {
         LIGHTS_LEN
     };
 
-    dsp::SchmittTrigger gateTrigger;
+    // Track gate state manually to trigger note on/off reliably
     bool gateState = false;
     rosic::Open303 synth;
 
@@ -63,13 +63,15 @@ struct Bass303 : Module {
         int midiNote = clamp((int)std::round(60.f + pitchCv * 12.f), 0, 127);
         int velocity = accentGate ? 127 : 100;
 
-        if (gateTrigger.process(gate)) {
-            if (gate) {
-                synth.noteOn(midiNote, velocity, 0.0);
-            } else {
-                synth.noteOn(midiNote, 0, 0.0);
-            }
+        // Trigger note events on gate changes
+        if (gate && !gateState) {
+            synth.noteOn(midiNote, velocity, 0.0);
         }
+        else if (!gate && gateState) {
+            // Velocity zero acts as note-off for the Open303 engine
+            synth.noteOn(midiNote, 0, 0.0);
+        }
+        gateState = gate;
 
         float cutoff = rack::math::rescale(params[CUTOFF_PARAM].getValue(), 0.f, 1.f, 80.f, 6000.f);
         float resonance = params[RES_PARAM].getValue() * 100.f;
