@@ -5,7 +5,6 @@
 //#include "GlobalDefinitions.h"
 #include "rosic_RealFunctions.h"
 #include <algorithm>
-#include <cstring>
 
 namespace rosic
 {
