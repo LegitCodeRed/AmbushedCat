@@ -1,5 +1,7 @@
 #include "plugin.hpp"
-#include "dsp/AcidFilter.cpp"
+#include "dsp/open303/rosic_BiquadFilter.h"
+#include "dsp/open303/rosic_OnePoleFilter.h"
+#include "dsp/open303/rosic_TeeBeeFilter.h"
 #include "dsp/Saturation.hpp"
 #include <cmath>
 
@@ -47,10 +49,16 @@ struct Bass303 : Module {
 
     dsp::SchmittTrigger gateTrigger;
     float phase = 0.f;
-    AcidFilter filter;
+    
+    rosic::TeeBeeFilter filter;
+    rosic::BiquadFilter notch;
+    rosic::BiquadFilter ampDeClicker;
+    rosic::OnePoleFilter highpass1, highpass2, allpass; 
+
     dspext::Saturator<2> saturator;
     GateEnv env;
     float slidePitch = 0.f;
+    static const int oversampling = 4;
 
     Bass303() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -66,6 +74,19 @@ struct Bass303 : Module {
         configInput(GATE_INPUT, "Gate In");
         configInput(ACCENT_INPUT, "Accent In");
         configOutput(AUDIO_OUTPUT, "Audio");
+        
+        highpass1.setMode(rosic::OnePoleFilter::HIGHPASS);
+        highpass2.setMode(rosic::OnePoleFilter::HIGHPASS);
+        allpass.setMode(rosic::OnePoleFilter::ALLPASS);
+        notch.setMode(rosic::BiquadFilter::BANDREJECT);
+
+        highpass1.setCutoff(44.486);
+        highpass2.setCutoff(24.167);
+        allpass.setCutoff(14.008);
+        notch.setFrequency(7.5164);
+        notch.setBandwidth(4.7);
+
+        filter.setFeedbackHighpassCutoff(150.0);
     }
 
     inline float diodeClip(float x) {
@@ -77,6 +98,11 @@ struct Bass303 : Module {
 
     void process(const ProcessArgs& args) override {
         filter.setSampleRate(args.sampleRate);
+        notch.setSampleRate(args.sampleRate);
+        ampDeClicker.setSampleRate(args.sampleRate);
+        highpass1.setSampleRate(args.sampleRate);
+        highpass2.setSampleRate(args.sampleRate);
+        allpass.setSampleRate(args.sampleRate);
         float dt = args.sampleTime;
 
         // --- Inputs ---
@@ -131,16 +157,14 @@ struct Bass303 : Module {
 
         // --- Set filter parameters ---
         filter.setCutoff(cutoff);
-        filter.setResonance(resonance);
-        filter.setDrive(drive);
-        filter.setAccent(accent);
-        filter.setEnv(shapedEnv);
 
         // --- Pre-filter diode-style saturation ---
         float drivenInput = diodeClip(wave * (2.0f + 2.0f * accent));
 
         // --- Filter processing ---
-        float filtered = filter.process(drivenInput);
+        float filtered  = allpass.getSample(drivenInput);
+        filtered = highpass2.getSample(filtered);        
+        filtered = notch.getSample(filtered);
 
         // --- Envelope-based amplitude control ---
         float amp = std::tanh(envVal * (1.f + 1.5f * accent));
