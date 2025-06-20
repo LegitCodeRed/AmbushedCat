@@ -11,6 +11,7 @@
 #include "rosic_EllipticQuarterBandFilter.h"
 #include "rosic_AcidSequencer.h"
 
+#include <climits>
 #include <list>
 using namespace std; // for the noteList
 
