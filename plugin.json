@@ -35,7 +35,7 @@
       "slug": "Tape",
       "name": "Tape Machine",
       "description": "A detailed tape emulation module offering saturation, wow & flutter, bias shaping, and vintage tape coloration. Perfect for adding analog warmth and character to your sound.",
-      "tags": ["Tape"]
+      "tags": ["Effect", "Dynamics", "Physical modeling", "Distortion"]
     }
   ]
 }
