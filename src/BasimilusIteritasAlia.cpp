@@ -302,9 +302,9 @@ struct BasimilusIteritasAlia : Module {
                         if (mode == 2)
                                 partialTime *= 0.75f;
                         if (articulation == ARTICULATION_KICK) {
-                                float lowTail = 0.22f + 1.8f * decayNorm * decayNorm;
-                                float midTail = 0.1f + 0.8f * decayNorm;
-                                float highTail = 0.035f + 0.28f * decayNorm;
+                                float lowTail = 0.05f + 1.95f * decayNorm * decayNorm;
+                                float midTail = 0.025f + 0.875f * decayNorm;
+                                float highTail = 0.012f + 0.313f * decayNorm;
                                 if (i == 0)
                                         partialTime = lowTail;
                                 else if (i == 1)
@@ -362,7 +362,7 @@ struct BasimilusIteritasAlia : Module {
                 float decayTime = 0.06f + 2.4f * decayNorm * decayNorm * decayNorm;
                 if (articulationMode == ARTICULATION_KICK) {
                         attackTime = 0.0002f + 0.01f * attackNorm * attackNorm;
-                        decayTime = 0.24f + 1.2f * decayNorm * decayNorm * decayNorm;
+                        decayTime = 0.04f + 1.4f * decayNorm * decayNorm * decayNorm;
                 }
 
                 float pitchParam = params[PITCH_PARAM].getValue();
@@ -398,8 +398,8 @@ struct BasimilusIteritasAlia : Module {
                 if (articulationMode == ARTICULATION_KICK) {
                         float attackShape = 0.45f + 0.35f * attackNorm;
                         float shapedEnv = std::pow(rack::math::clamp(env, 0.f, 1.f), attackShape);
-                        float bodyTime = 0.18f + 1.8f * decayNorm * decayNorm;
-                        float bodyCoef = std::exp(-args.sampleTime / std::max(0.02f, bodyTime));
+                        float bodyTime = 0.035f + 1.945f * decayNorm * decayNorm;
+                        float bodyCoef = std::exp(-args.sampleTime / std::max(0.015f, bodyTime));
                         kickBodyEnv *= bodyCoef;
                         kickBodyEnv = std::max(kickBodyEnv, shapedEnv);
                         float punchBlend = rack::math::crossfade(kickBodyEnv, shapedEnv, 0.35f + 0.45f * attackNorm);
@@ -413,11 +413,11 @@ struct BasimilusIteritasAlia : Module {
 
                 float pitchBend = 1.f;
                 if (articulationMode == ARTICULATION_KICK) {
-                        float pitchSweepTime = 0.004f + 0.03f * (1.f - attackNorm) + 0.045f * (1.f - decayNorm);
+                        float pitchSweepTime = 0.002f + 0.015f * (1.f - attackNorm) + 0.06f * decayNorm;
                         float pitchCoef = std::exp(-args.sampleTime / std::max(0.0015f, pitchSweepTime));
                         kickPitchEnv *= pitchCoef;
                         float shapedPitch = kickPitchEnv * kickPitchEnv;
-                        float pitchSemis = rack::math::clamp(6.f + 18.f * attackNorm + 4.f * (1.f - decayNorm), 6.f, 30.f);
+                        float pitchSemis = rack::math::clamp(6.f + 18.f * attackNorm + 6.f * decayNorm, 6.f, 30.f);
                         pitchBend = std::pow(2.f, (shapedPitch * pitchSemis) / 12.f);
                 } else {
                         pitchBend = 1.f + spread * 0.7f * envPow;
