@@ -42,6 +42,12 @@
       "name": "Kabaddon",
       "description": "",
       "tags": ["Oscillator"]
+    },
+    {
+      "slug": "AtaraxicIteritasAlia",
+      "name": "Ataraxic Iteritas Alia",
+      "description": "Massive hybrid tone generator that fuses polyBLEP oscillators, voltage-controlled combing, and evolving LF SR textures for brutal yet controllable timbres.",
+      "tags": ["Oscillator", "Noise"]
     }
   ]
 }

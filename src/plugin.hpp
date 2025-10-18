@@ -13,6 +13,7 @@ extern Model* modelTuringVoltsExpander;
 extern Model* modelTuringGateExpander;
 extern Model* modelTape;
 extern Model* modelBasimilusIteritasAlia;
+extern Model* modelAtaraxicIteritasAlia;
 
 struct TuringVoltsExpanderMessage {
 	uint8_t bits = 0;
