@@ -42,7 +42,7 @@ struct PolyBLEPOsc {
                         phase -= 1.f;
 
                 float basePhase = phase;
-                float warped = basePhase + shape * 0.35f * std::sin(2.f * M_PI * basePhase);
+                float warped = basePhase + shape * 0.45f * std::sin(2.f * M_PI * basePhase);
                 warped -= std::floor(warped);
 
                 float sine = std::sin(2.f * M_PI * warped);
@@ -50,8 +50,8 @@ struct PolyBLEPOsc {
                 float saw = 2.f * basePhase - 1.f;
                 saw -= polyblep(basePhase, dt);
 
-                float pwm = 0.5f + 0.4f * shape;
-                pwm = rack::math::clamp(pwm, 0.05f, 0.95f);
+                float pwm = 0.5f + 0.45f * shape;
+                pwm = rack::math::clamp(pwm, 0.02f, 0.98f);
                 float square = basePhase < pwm ? 1.f : -1.f;
                 square += polyblep(basePhase, dt);
                 float t = basePhase - pwm;
@@ -76,17 +76,92 @@ struct PolyBLEPOsc {
         }
 };
 
+struct UnisonEngine {
+        static constexpr int NUM_VOICES = 7;
+        PolyBLEPOsc voices[NUM_VOICES];
+        float detuneSpreads[NUM_VOICES] = {0.f, -0.08f, 0.11f, -0.15f, 0.19f, -0.24f, 0.29f};
+        float panSpreads[NUM_VOICES] = {0.f, -0.7f, 0.8f, -0.5f, 0.6f, -0.9f, 1.0f};
+
+        void setSampleRate(float sr) {
+                for (int i = 0; i < NUM_VOICES; i++) {
+                        voices[i].setSampleRate(sr);
+                }
+        }
+
+        void reset() {
+                for (int i = 0; i < NUM_VOICES; i++) {
+                        voices[i].reset(i * 0.03f);
+                }
+        }
+
+        struct StereoOut {
+                float left;
+                float right;
+        };
+
+        StereoOut process(float freq, float morph, float shape, float syncAmount, bool hardSync, float thickness) {
+                StereoOut out = {0.f, 0.f};
+                int activeVoices = 1 + static_cast<int>(thickness * (NUM_VOICES - 1));
+
+                for (int i = 0; i < activeVoices; i++) {
+                        float detune = 1.f + detuneSpreads[i] * thickness * 0.035f;
+                        float voiceFreq = freq * detune;
+                        float signal = voices[i].process(voiceFreq, morph, shape, syncAmount, hardSync && (i == 0));
+
+                        float pan = panSpreads[i] * thickness * 0.5f;
+                        float leftGain = std::cos((pan + 1.f) * 0.25f * M_PI);
+                        float rightGain = std::sin((pan + 1.f) * 0.25f * M_PI);
+
+                        out.left += signal * leftGain;
+                        out.right += signal * rightGain;
+                }
+
+                float norm = 1.f / std::sqrt(static_cast<float>(activeVoices));
+                out.left *= norm;
+                out.right *= norm;
+
+                return out;
+        }
+};
+
 struct AnalogSaturator {
         float memory = 0.f;
+        float dcBlocker = 0.f;
 
         float process(float in, float amount) {
                 if (amount <= 0.f)
                         return in;
-                float drive = 1.f + amount * 5.f;
-                float pre = in + memory * 0.35f;
-                float out = std::tanh(pre * drive);
-                memory = rack::math::crossfade(memory, out, 0.25f);
-                return rack::math::crossfade(in, out, rack::math::clamp(amount * 1.25f, 0.f, 1.f));
+                float drive = 1.f + amount * 9.f;
+                float pre = in + memory * 0.45f;
+
+                float hardClip = rack::math::clamp(pre * drive * 0.7f, -1.5f, 1.5f);
+                float soft = std::tanh(pre * drive);
+                float asymmetric = soft + hardClip * hardClip * 0.15f;
+
+                float out = rack::math::crossfade(soft, asymmetric, amount * 0.6f);
+
+                dcBlocker = dcBlocker * 0.995f + out - memory;
+                memory = rack::math::crossfade(memory, out, 0.35f);
+
+                return rack::math::crossfade(in, dcBlocker, rack::math::clamp(amount * 1.4f, 0.f, 1.f));
+        }
+};
+
+struct TightFilter {
+        dsp::RCFilter hp;
+        float sampleRate = 0.f;
+
+        void setSampleRate(float sr) {
+                if (std::fabs(sr - sampleRate) < 1e-3f)
+                        return;
+                sampleRate = sr;
+                hp.setCutoffFreq(65.f / sr);
+        }
+
+        float process(float in, float tightness) {
+                hp.process(in);
+                float tight = hp.highpass();
+                return rack::math::crossfade(in, tight, tightness * 0.85f);
         }
 };
 
@@ -118,6 +193,7 @@ struct ThickComb {
         std::vector<float> buffer;
         size_t index = 0;
         float sampleRate = 44100.f;
+        float lowpass = 0.f;
 
         void setSampleRate(float sr) {
                 sampleRate = std::max(1000.f, sr);
@@ -144,10 +220,13 @@ struct ThickComb {
                 float frac = readIndex - std::floor(readIndex);
                 float delayed = rack::math::crossfade(buffer[i0], buffer[i1], frac);
 
-                float feedback = 0.55f + 0.3f * amount;
-                float damping = rack::math::crossfade(0.35f, 0.12f, amount);
-                float out = in + delayed * amount;
-                float next = rack::math::clamp(in + delayed * feedback, -4.f, 4.f);
+                lowpass = lowpass * 0.7f + delayed * 0.3f;
+                float enhanced = delayed + lowpass * 0.4f * amount;
+
+                float feedback = 0.65f + 0.25f * amount;
+                float damping = rack::math::crossfade(0.25f, 0.08f, amount);
+                float out = in + enhanced * amount * 1.15f;
+                float next = rack::math::clamp(in + enhanced * feedback, -4.5f, 4.5f);
                 next = rack::math::crossfade(next, in, damping);
                 buffer[index] = next;
                 index = (index + 1) % size;
@@ -185,10 +264,27 @@ struct LfsrNoise {
 float softFold(float x, float amount) {
         if (amount <= 0.f)
                 return x;
-        float drive = 1.f + amount * 6.f;
-        float clipped = std::tanh(x * drive);
-        float folded = std::sin(clipped * static_cast<float>(M_PI));
-        return rack::math::crossfade(clipped, folded, amount);
+        float drive = 1.f + amount * 8.5f;
+        float shaped = x * drive;
+
+        float clipped = std::tanh(shaped);
+        float folded = std::sin(shaped * 0.8f);
+        float hardFold = shaped - 4.f * std::floor(shaped / 4.f + 0.5f);
+        hardFold = rack::math::clamp(hardFold, -1.f, 1.f);
+
+        float mixed = rack::math::crossfade(clipped, folded, amount * 0.7f);
+        mixed = rack::math::crossfade(mixed, hardFold, amount * amount * 0.3f);
+
+        return mixed;
+}
+
+float hardLimiter(float x, float threshold) {
+        float absX = std::fabs(x);
+        if (absX < threshold)
+                return x;
+        float over = absX - threshold;
+        float compressed = threshold + std::tanh(over * 2.5f) * 0.3f;
+        return std::copysign(compressed, x);
 }
 
 } // namespace
@@ -204,6 +300,7 @@ struct AtaraxicIteritasAlia : Module {
                 TIME_PARAM,
                 DIGITAL_PARAM,
                 TONE_PARAM,
+                THICKNESS_PARAM,
                 HOLD_PARAM,
                 NUM_PARAMS
         };
@@ -217,6 +314,7 @@ struct AtaraxicIteritasAlia : Module {
                 TIME_INPUT,
                 COMB_INPUT,
                 FOLD_INPUT,
+                THICKNESS_INPUT,
                 SYNC_INPUT,
                 NUM_INPUTS
         };
@@ -231,28 +329,31 @@ struct AtaraxicIteritasAlia : Module {
                 NUM_LIGHTS
         };
 
-        PolyBLEPOsc mainOsc;
+        UnisonEngine unison;
         AnalogSaturator saturator;
         TiltEQ toneEq;
+        TightFilter tightFilter;
         ThickComb comb;
         LfsrNoise noise;
         dsp::SchmittTrigger holdTrigger;
         dsp::SchmittTrigger syncTrigger;
         bool holdState = false;
         float subPhase = 0.f;
+        float subPhase2 = 0.f;
 
         AtaraxicIteritasAlia() {
                 config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
                 configParam(PITCH_PARAM, -3.f, 3.f, 0.f, "Pitch", " oct");
                 configParam(WAVE_PARAM, 0.f, 1.f, 0.45f, "Waveform Morph");
-                configParam(NOISE_PARAM, 0.f, 1.f, 0.35f, "Noise Density");
+                configParam(NOISE_PARAM, 0.f, 1.f, 0.25f, "Noise Density");
                 configParam(SHAPE_PARAM, 0.f, 1.f, 0.5f, "Shape");
-                configParam(SOFTFOLD_PARAM, 0.f, 1.f, 0.25f, "Soft Fold");
-                configParam(COMB_PARAM, 0.f, 1.f, 0.4f, "Comb Resonance");
+                configParam(SOFTFOLD_PARAM, 0.f, 1.f, 0.4f, "Aggression");
+                configParam(COMB_PARAM, 0.f, 1.f, 0.5f, "Comb Resonance");
                 configParam(TIME_PARAM, -1.f, 1.f, 0.f, "Time Mod");
                 configParam(DIGITAL_PARAM, 0.f, 1.f, 0.5f, "Digital Grit");
                 configParam(TONE_PARAM, -1.f, 1.f, 0.f, "Bass/Treble");
+                configParam(THICKNESS_PARAM, 0.f, 1.f, 0.65f, "Thickness");
                 configButton(HOLD_PARAM, "Hold LFSR");
 
                 configInput(PITCH_INPUT, "Pitch CV");
@@ -263,7 +364,8 @@ struct AtaraxicIteritasAlia : Module {
                 configInput(SHAPE_INPUT, "Shape CV");
                 configInput(TIME_INPUT, "Time Mod CV");
                 configInput(COMB_INPUT, "Comb CV");
-                configInput(FOLD_INPUT, "Fold CV");
+                configInput(FOLD_INPUT, "Aggression CV");
+                configInput(THICKNESS_INPUT, "Thickness CV");
                 configInput(SYNC_INPUT, "Sync");
 
                 configOutput(MAIN_OUTPUT, "Main");
@@ -272,9 +374,10 @@ struct AtaraxicIteritasAlia : Module {
 
         void process(const ProcessArgs& args) override {
                 float sampleRate = args.sampleRate;
-                mainOsc.setSampleRate(sampleRate);
+                unison.setSampleRate(sampleRate);
                 comb.setSampleRate(sampleRate);
                 toneEq.setSampleRate(sampleRate);
+                tightFilter.setSampleRate(sampleRate);
 
                 if (holdTrigger.process(params[HOLD_PARAM].getValue()))
                         holdState = !holdState;
@@ -289,43 +392,58 @@ struct AtaraxicIteritasAlia : Module {
 
                 float wave = params[WAVE_PARAM].getValue() + inputs[WAVE_INPUT].getVoltage() / 5.f;
                 float shape = params[SHAPE_PARAM].getValue() + inputs[SHAPE_INPUT].getVoltage() / 5.f;
-                float softFoldAmt = params[SOFTFOLD_PARAM].getValue() + inputs[FOLD_INPUT].getVoltage() / 5.f;
+                float aggressionAmt = params[SOFTFOLD_PARAM].getValue() + inputs[FOLD_INPUT].getVoltage() / 5.f;
                 float combAmt = params[COMB_PARAM].getValue() + inputs[COMB_INPUT].getVoltage() / 5.f;
                 float timeMod = params[TIME_PARAM].getValue() + inputs[TIME_INPUT].getVoltage() / 5.f;
                 float digitalAmt = params[DIGITAL_PARAM].getValue() + inputs[DIGITAL_INPUT].getVoltage() / 5.f;
                 float tone = params[TONE_PARAM].getValue() + inputs[TONE_INPUT].getVoltage() / 5.f;
                 float noiseAmt = params[NOISE_PARAM].getValue() + inputs[NOISE_INPUT].getVoltage() / 5.f;
+                float thickness = params[THICKNESS_PARAM].getValue() + inputs[THICKNESS_INPUT].getVoltage() / 5.f;
 
                 wave = rack::math::clamp(wave, 0.f, 1.f);
                 shape = rack::math::clamp(shape, 0.f, 1.f);
-                softFoldAmt = rack::math::clamp(softFoldAmt, 0.f, 1.2f);
+                aggressionAmt = rack::math::clamp(aggressionAmt, 0.f, 1.3f);
                 combAmt = rack::math::clamp(combAmt, 0.f, 1.f);
                 timeMod = rack::math::clamp(timeMod, -1.f, 1.f);
                 digitalAmt = rack::math::clamp(digitalAmt, 0.f, 1.f);
                 tone = rack::math::clamp(tone, -1.f, 1.f);
                 noiseAmt = rack::math::clamp(noiseAmt, 0.f, 1.f);
+                thickness = rack::math::clamp(thickness, 0.f, 1.f);
 
                 float timeWarp = std::pow(2.f, timeMod * 1.2f);
                 float warpedFreq = freq * timeWarp;
                 warpedFreq = rack::math::clamp(warpedFreq, 10.f, sampleRate * 0.45f);
 
-                float osc = mainOsc.process(warpedFreq, wave, shape, digitalAmt * 0.35f, sync);
-                float grit = noise.process(noiseAmt, digitalAmt, timeMod, sampleRate, holdState);
-                float mixed = osc * (1.f - noiseAmt * 0.45f) + grit * noiseAmt;
+                UnisonEngine::StereoOut oscOut = unison.process(warpedFreq, wave, shape, digitalAmt * 0.45f, sync, thickness);
+                float osc = (oscOut.left + oscOut.right) * 0.5f;
 
-                float folded = softFold(mixed, softFoldAmt);
-                float saturated = saturator.process(folded, 0.2f + 0.6f * softFoldAmt);
+                float grit = noise.process(noiseAmt, digitalAmt, timeMod, sampleRate, holdState);
+                float mixed = osc * (1.f - noiseAmt * 0.35f) + grit * noiseAmt * 0.8f;
+
+                float folded = softFold(mixed, aggressionAmt * 0.85f);
+                float saturated = saturator.process(folded, 0.3f + 0.7f * aggressionAmt);
                 float combed = comb.process(saturated, freq, combAmt);
-                float toned = toneEq.process(combed, tone);
+                float tight = tightFilter.process(combed, aggressionAmt * 0.7f);
+                float toned = toneEq.process(tight, tone);
+
+                float limited = hardLimiter(toned, 0.85f);
 
                 subPhase += (freq * 0.5f) / sampleRate;
                 if (subPhase >= 1.f)
                         subPhase -= 1.f;
-                float sub = std::sin(2.f * M_PI * subPhase);
-                sub = saturator.process(sub, 0.35f + 0.4f * softFoldAmt);
+                subPhase2 += (freq * 0.25f) / sampleRate;
+                if (subPhase2 >= 1.f)
+                        subPhase2 -= 1.f;
 
-                float mainOut = toned * 5.f;
-                float subOut = (sub * 3.5f) + grit * 1.2f * noiseAmt * (1.f - digitalAmt * 0.4f);
+                float sub1 = std::sin(2.f * M_PI * subPhase);
+                float sub2 = std::sin(2.f * M_PI * subPhase2);
+                sub1 = std::tanh(sub1 * (1.3f + aggressionAmt * 0.5f));
+                sub2 = std::tanh(sub2 * 1.2f);
+                float sub = sub1 * 0.7f + sub2 * 0.3f;
+
+                float mainOut = limited * 5.5f;
+                float subOut = (sub * 4.2f) + grit * 1.5f * noiseAmt * (1.f - digitalAmt * 0.3f);
+                subOut = hardLimiter(subOut, 0.9f);
 
                 if (outputs[MAIN_OUTPUT].isConnected())
                         outputs[MAIN_OUTPUT].setVoltage(mainOut);
@@ -350,13 +468,14 @@ struct AtaraxicIteritasAliaWidget : ModuleWidget {
                 addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(14.f, 24.f)), module, AtaraxicIteritasAlia::PITCH_PARAM));
                 addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(47.f, 24.f)), module, AtaraxicIteritasAlia::WAVE_PARAM));
 
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(30.5f, 52.f)), module, AtaraxicIteritasAlia::SHAPE_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(30.5f, 52.f)), module, AtaraxicIteritasAlia::THICKNESS_PARAM));
                 addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(30.5f, 79.f)), module, AtaraxicIteritasAlia::SOFTFOLD_PARAM));
 
                 addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(14.f, 60.f)), module, AtaraxicIteritasAlia::NOISE_PARAM));
                 addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(47.f, 60.f)), module, AtaraxicIteritasAlia::TIME_PARAM));
                 addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(14.f, 88.f)), module, AtaraxicIteritasAlia::COMB_PARAM));
                 addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(47.f, 88.f)), module, AtaraxicIteritasAlia::DIGITAL_PARAM));
+                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(14.f, 45.f)), module, AtaraxicIteritasAlia::SHAPE_PARAM));
                 addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(30.5f, 104.f)), module, AtaraxicIteritasAlia::TONE_PARAM));
 
                 addParam(createParamCentered<TL1105>(mm2px(Vec(30.5f, 94.f)), module, AtaraxicIteritasAlia::HOLD_PARAM));
@@ -372,6 +491,7 @@ struct AtaraxicIteritasAliaWidget : ModuleWidget {
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(48.f, 111.f)), module, AtaraxicIteritasAlia::COMB_INPUT));
 
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(12.f, 123.f)), module, AtaraxicIteritasAlia::FOLD_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(18.f, 123.f)), module, AtaraxicIteritasAlia::THICKNESS_INPUT));
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.f, 123.f)), module, AtaraxicIteritasAlia::SYNC_INPUT));
 
                 addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(36.f, 123.f)), module, AtaraxicIteritasAlia::SUB_OUTPUT));
