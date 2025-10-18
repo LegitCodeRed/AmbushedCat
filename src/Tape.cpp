@@ -709,30 +709,30 @@ struct TapeWidget : ModuleWidget {
                 addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(40, 115)), module, Tape::LEFT_OUTPUT));
                 addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(50, 115)), module, Tape::RIGHT_OUTPUT));
 
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(50, 52)), module, Tape::INPUT_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10, 52)), module, Tape::DRIVE_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(30, 52)), module, Tape::FLUTTER_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10, 72)), module, Tape::TONE_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(30, 72)), module, Tape::WOW_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(50, 72)), module, Tape::BIAS_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10, 92)), module, Tape::LEVEL_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(30, 92)), module, Tape::HISS_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(50, 92)), module, Tape::SWEETSPOT_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(30, 112)), module, Tape::NOISE_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(50, 112)), module, Tape::TRANSFORM_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(50, 36)), module, Tape::INPUT_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10, 36)), module, Tape::DRIVE_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(30, 36)), module, Tape::FLUTTER_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10, 58)), module, Tape::TONE_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(30, 58)), module, Tape::WOW_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(50, 58)), module, Tape::BIAS_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10, 80)), module, Tape::LEVEL_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(30, 80)), module, Tape::HISS_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(50, 80)), module, Tape::SWEETSPOT_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(30, 102)), module, Tape::NOISE_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(50, 102)), module, Tape::TRANSFORM_CV_INPUT));
 
-		addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(50, 40)), module, Tape::INPUT_PARAM));
-                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(10, 40)), module, Tape::DRIVE_PARAM));
-                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(10, 60)), module, Tape::TONE_PARAM));
-                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(10, 80)), module, Tape::LEVEL_PARAM));
-                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(50, 60)), module, Tape::BIAS_PARAM));
-                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(50, 80)), module, Tape::SWEETSPOT_PARAM));
-                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(50, 100)), module, Tape::TRANSFORM_PARAM));
+		addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(50, 26)), module, Tape::INPUT_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(10, 26)), module, Tape::DRIVE_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(10, 48)), module, Tape::TONE_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(10, 70)), module, Tape::LEVEL_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(50, 48)), module, Tape::BIAS_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(50, 70)), module, Tape::SWEETSPOT_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(50, 92)), module, Tape::TRANSFORM_PARAM));
 
-		addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(30, 40)), module, Tape::FLUTTER_PARAM));
-		addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(30, 60)), module, Tape::WOW_PARAM));
-                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(30, 80)), module, Tape::HISS_PARAM));
-                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(30, 100)), module, Tape::NOISE_PARAM));
+		addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(30, 26)), module, Tape::FLUTTER_PARAM));
+		addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(30, 48)), module, Tape::WOW_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(30, 70)), module, Tape::HISS_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(30, 92)), module, Tape::NOISE_PARAM));
 	}
 
         void appendContextMenu(Menu* menu) override {
