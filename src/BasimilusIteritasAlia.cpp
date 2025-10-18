@@ -181,6 +181,11 @@ struct BasimilusIteritasAlia : Module {
                 NUM_LIGHTS
         };
 
+        enum ArticulationMode {
+                ARTICULATION_PERCUSSIVE = 0,
+                ARTICULATION_KICK = 1
+        };
+
         PercEnvelope envelope;
         NoiseBurst noiseBurst;
         std::array<Partial, kNumPartials> partials;
@@ -190,6 +195,11 @@ struct BasimilusIteritasAlia : Module {
         float baseFreqState = 110.f;
         bool initialized = false;
         float envShape = 0.f;
+        int articulationMode = ARTICULATION_PERCUSSIVE;
+        float kickPitchEnv = 0.f;
+        float kickTransientEnv = 0.f;
+        float kickBodyEnv = 0.f;
+        float kickTransientPhase = 0.f;
 
         BasimilusIteritasAlia() {
                 config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -232,9 +242,13 @@ struct BasimilusIteritasAlia : Module {
                 }
                 baseFreqState = 110.f;
                 initialized = false;
+                kickPitchEnv = 0.f;
+                kickTransientEnv = 0.f;
+                kickBodyEnv = 0.f;
+                kickTransientPhase = 0.f;
         }
 
-        void updateSpectralTargets(float baseFreq, float spread, float harmonic, int mode, float sampleRate) {
+        void updateSpectralTargets(float baseFreq, float spread, float harmonic, int mode, float attackNorm, float decayNorm, float sampleRate, int articulation) {
                 static constexpr float harmonicRatios[kNumPartials] = {1.f, 2.f, 3.f, 4.f, 5.f, 7.f};
                 static constexpr float skinRatios[kNumPartials]    = {1.f, 1.5f, 2.f, 2.5f, 3.5f, 5.f};
                 static constexpr float liquidRatios[kNumPartials]  = {1.f, 1.25f, 1.75f, 2.45f, 3.15f, 4.6f};
@@ -248,6 +262,8 @@ struct BasimilusIteritasAlia : Module {
                 }
 
                 float harmonicWeight = 0.55f + 0.75f * harmonic;
+                if (articulation == ARTICULATION_KICK)
+                        harmonicWeight = 0.32f + 0.45f * harmonic;
 
                 for (int i = 0; i < kNumPartials; ++i) {
                         float ratio = rack::math::crossfade(harmonicRatios[i], targetRatios[i], spread);
@@ -264,6 +280,17 @@ struct BasimilusIteritasAlia : Module {
                         // Boost fundamental and lower partials for more punch
                         if (i == 0) targetAmp *= 1.4f;
                         else if (i == 1) targetAmp *= 1.2f;
+                        if (articulation == ARTICULATION_KICK) {
+                                float transientScale = 0.45f + 0.4f * attackNorm;
+                                if (i == 0)
+                                        targetAmp *= 2.6f + 1.3f * decayNorm;
+                                else if (i == 1)
+                                        targetAmp *= 1.2f + 0.5f * decayNorm;
+                                else {
+                                        float airy = rack::math::crossfade(0.18f, 0.45f, attackNorm);
+                                        targetAmp *= airy * transientScale;
+                                }
+                        }
                         targetAmp = std::max(targetAmp, 0.0005f);
                         if (!initialized)
                                 partials[i].amp = targetAmp;
@@ -274,6 +301,21 @@ struct BasimilusIteritasAlia : Module {
                         float partialTime = partialBase * (1.3f - 0.6f * harmonic) * (mode == 0 ? 1.15f : 1.f);
                         if (mode == 2)
                                 partialTime *= 0.75f;
+                        if (articulation == ARTICULATION_KICK) {
+                                float lowTail = 0.22f + 1.8f * decayNorm * decayNorm;
+                                float midTail = 0.1f + 0.8f * decayNorm;
+                                float highTail = 0.035f + 0.28f * decayNorm;
+                                if (i == 0)
+                                        partialTime = lowTail;
+                                else if (i == 1)
+                                        partialTime = rack::math::crossfade(lowTail, midTail, 0.55f);
+                                else {
+                                        float tail = rack::math::crossfade(midTail, highTail, i / (float)(kNumPartials - 1));
+                                        float transientTrim = 0.55f + 0.5f * (1.f - attackNorm);
+                                        partialTime = tail * transientTrim;
+                                }
+                                partialTime *= rack::math::clamp(1.4f - 0.5f * harmonic, 0.55f, 1.4f);
+                        }
                         float decayCoef = std::exp(-1.f / (std::max(0.006f, partialTime) * sampleRate));
                         partials[i].decay = decayCoef;
                 }
@@ -284,6 +326,8 @@ struct BasimilusIteritasAlia : Module {
                 envelope.setTimes(sampleRate, attackTime, decayTime);
                 envelope.trigger();
                 float noiseDecayTime = 0.006f + 0.02f * (1.f - attackTime);
+                if (articulationMode == ARTICULATION_KICK)
+                        noiseDecayTime = 0.0015f + 0.0065f * (1.f - attackTime);
                 float noiseCoef = std::exp(-1.f / (std::max(0.001f, noiseDecayTime) * sampleRate));
                 noiseBurst.trigger(noiseCoef);
 
@@ -292,10 +336,18 @@ struct BasimilusIteritasAlia : Module {
                         partials[i].phase = random::uniform();
                         partials[i].fmPhase = random::uniform();
                         float jitterAmt = 0.005f + 0.012f * spread;
+                        if (articulationMode == ARTICULATION_KICK)
+                                jitterAmt = 0.002f + 0.004f * spread;
                         partials[i].jitter = (random::normal() * jitterAmt) * partials[i].baseFreq;
                 }
 
                 envShape = 0.f;
+                if (articulationMode == ARTICULATION_KICK) {
+                        kickPitchEnv = 1.f;
+                        kickTransientEnv = 1.f;
+                        kickBodyEnv = 1.f;
+                        kickTransientPhase = 0.f;
+                }
         }
 
         void process(const ProcessArgs& args) override {
@@ -308,6 +360,10 @@ struct BasimilusIteritasAlia : Module {
 
                 float attackTime = 0.0004f + 0.04f * attackNorm * attackNorm;
                 float decayTime = 0.06f + 2.4f * decayNorm * decayNorm * decayNorm;
+                if (articulationMode == ARTICULATION_KICK) {
+                        attackTime = 0.0002f + 0.01f * attackNorm * attackNorm;
+                        decayTime = 0.24f + 1.2f * decayNorm * decayNorm * decayNorm;
+                }
 
                 float pitchParam = params[PITCH_PARAM].getValue();
                 float pitchCv = inputs[PITCH_INPUT].getVoltage();
@@ -325,7 +381,7 @@ struct BasimilusIteritasAlia : Module {
                 float toneControl = params[TONE_PARAM].getValue() + inputs[TONE_INPUT].getVoltage() * 0.2f;
                 int tone = rack::math::clamp((int)std::round(toneControl), 0, 2);
 
-                updateSpectralTargets(baseFreqState, spread, harmonic, mode, args.sampleRate);
+                updateSpectralTargets(baseFreqState, spread, harmonic, mode, attackNorm, decayNorm, args.sampleRate, articulationMode);
 
                 bool trigger = false;
                 if (trigTrigger.process(inputs[TRIG_INPUT].getVoltage()))
@@ -338,11 +394,34 @@ struct BasimilusIteritasAlia : Module {
                         envelope.setTimes(args.sampleRate, attackTime, decayTime);
 
                 float env = envelope.process();
-                envShape += 0.05f * (env - envShape);
-                // Sharper attack envelope for more punch
-                float envPow = env * env * (1.f + 0.3f * env);
+                float envPow = 0.f;
+                if (articulationMode == ARTICULATION_KICK) {
+                        float attackShape = 0.45f + 0.35f * attackNorm;
+                        float shapedEnv = std::pow(rack::math::clamp(env, 0.f, 1.f), attackShape);
+                        float bodyTime = 0.18f + 1.8f * decayNorm * decayNorm;
+                        float bodyCoef = std::exp(-args.sampleTime / std::max(0.02f, bodyTime));
+                        kickBodyEnv *= bodyCoef;
+                        kickBodyEnv = std::max(kickBodyEnv, shapedEnv);
+                        float punchBlend = rack::math::crossfade(kickBodyEnv, shapedEnv, 0.35f + 0.45f * attackNorm);
+                        float sustainLift = 0.85f + 0.45f * decayNorm;
+                        envPow = rack::math::clamp(punchBlend * sustainLift, 0.f, 1.8f);
+                } else {
+                        envShape += 0.05f * (env - envShape);
+                        // Sharper attack envelope for more punch
+                        envPow = env * env * (1.f + 0.3f * env);
+                }
 
-                float pitchBend = 1.f + spread * 0.7f * envPow;
+                float pitchBend = 1.f;
+                if (articulationMode == ARTICULATION_KICK) {
+                        float pitchSweepTime = 0.004f + 0.03f * (1.f - attackNorm) + 0.045f * (1.f - decayNorm);
+                        float pitchCoef = std::exp(-args.sampleTime / std::max(0.0015f, pitchSweepTime));
+                        kickPitchEnv *= pitchCoef;
+                        float shapedPitch = kickPitchEnv * kickPitchEnv;
+                        float pitchSemis = rack::math::clamp(6.f + 18.f * attackNorm + 4.f * (1.f - decayNorm), 6.f, 30.f);
+                        pitchBend = std::pow(2.f, (shapedPitch * pitchSemis) / 12.f);
+                } else {
+                        pitchBend = 1.f + spread * 0.7f * envPow;
+                }
                 float body = 0.f;
 
                 for (int i = 0; i < kNumPartials; ++i) {
@@ -376,19 +455,60 @@ struct BasimilusIteritasAlia : Module {
                                 wave = rack::math::crossfade(sine, metallic, 0.6f + 0.4f * morph);
                         }
 
+                        if (articulationMode == ARTICULATION_KICK) {
+                                if (i == 0)
+                                        wave = rack::math::crossfade(wave, sine, 0.75f);
+                                else if (i == 1)
+                                        wave = rack::math::crossfade(wave, sine, 0.45f);
+                                else
+                                        wave *= rack::math::crossfade(0.25f, 0.65f, attackNorm);
+                        }
+
                         p.env *= p.decay;
                         body += p.amp * p.env * wave;
                 }
 
                 float noiseEnv = noiseBurst.process();
-                float noise = noiseEnv * (random::normal() * (0.4f + 0.8f * morph) * (mode == 2 ? 2.0f : 1.4f));
+                float noiseAmount = (0.4f + 0.8f * morph) * (mode == 2 ? 2.0f : 1.4f);
+                if (articulationMode == ARTICULATION_KICK)
+                        noiseAmount = 0.05f + 0.35f * attackNorm + 0.22f * (1.f - harmonic);
+                float noise = noiseEnv * (random::normal() * noiseAmount);
 
-                float signal = body + noise;
+                float transient = 0.f;
+                if (articulationMode == ARTICULATION_KICK) {
+                        float transientTime = 0.0012f + 0.0065f * attackNorm;
+                        float transientCoef = std::exp(-args.sampleTime / std::max(0.0006f, transientTime));
+                        kickTransientEnv *= transientCoef;
+                        float transientFreq = 1800.f + 5200.f * attackNorm;
+                        kickTransientPhase += transientFreq * args.sampleTime;
+                        kickTransientPhase -= std::floor(kickTransientPhase);
+                        float click = std::sin(2.f * (float)M_PI * kickTransientPhase);
+                        float snap = random::normal() * (0.22f + 0.25f * attackNorm);
+                        float transientStrength = 0.45f + 0.55f * attackNorm;
+                        transient = kickTransientEnv * transientStrength * (0.65f * click + 0.35f * snap);
+                }
+
+                float signal = body + noise + transient;
                 signal = saturateFold(signal, fold);
+                if (articulationMode == ARTICULATION_KICK) {
+                        float drive = 2.4f + 5.2f * fold + 1.1f * attackNorm;
+                        float shapedDrive = std::tanh(signal * drive);
+                        float asym = std::tanh(signal * (drive * 0.65f + 1.7f)) - std::tanh(signal * 0.3f);
+                        float comp = 0.55f + 0.45f * decayNorm;
+                        signal = rack::math::crossfade(signal, shapedDrive + 0.12f * asym, 0.7f);
+                        signal *= comp;
+                }
                 signal *= envPow;
 
                 float shaped = toneShaper.process(signal, tone, mode, harmonic, fold, args.sampleRate);
-                shaped = 6.5f * std::tanh(shaped * 1.1f);
+                if (articulationMode == ARTICULATION_KICK) {
+                        float drive = 1.8f + 2.4f * fold + 0.6f * attackNorm;
+                        float weight = 0.75f + 0.35f * decayNorm;
+                        shaped = 5.6f * std::tanh(shaped * drive);
+                        shaped *= weight;
+                } else {
+                        shaped = 6.5f * std::tanh(shaped * 1.1f);
+                }
 
                 outputs[OUT_OUTPUT].setVoltage(shaped);
                 outputs[ENV_OUTPUT].setVoltage(env * 10.f);
@@ -399,6 +519,18 @@ struct BasimilusIteritasAlia : Module {
                 lights[TONE1_LIGHT].setSmoothBrightness(tone == 0 ? env : 0.f, args.sampleTime);
                 lights[TONE2_LIGHT].setSmoothBrightness(tone == 1 ? env : 0.f, args.sampleTime);
                 lights[TONE3_LIGHT].setSmoothBrightness(tone == 2 ? env : 0.f, args.sampleTime);
+        }
+
+        json_t* dataToJson() override {
+                json_t* root = json_object();
+                json_object_set_new(root, "articulationMode", json_integer(articulationMode));
+                return root;
+        }
+
+        void dataFromJson(json_t* root) override {
+                json_t* modeJ = json_object_get(root, "articulationMode");
+                if (modeJ)
+                        articulationMode = json_integer_value(modeJ);
         }
 };
 
@@ -449,6 +581,18 @@ struct BasimilusIteritasAliaWidget : ModuleWidget {
                 addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(53.5f, 83.5f)), module, BasimilusIteritasAlia::TONE1_LIGHT));
                 addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(58.f, 92.f)), module, BasimilusIteritasAlia::TONE2_LIGHT));
                 addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(53.5f, 100.5f)), module, BasimilusIteritasAlia::TONE3_LIGHT));
+        }
+
+        void appendContextMenu(Menu* menu) override {
+                BasimilusIteritasAlia* module = getModule<BasimilusIteritasAlia>();
+                if (!module)
+                        return;
+
+                menu->addChild(new MenuSeparator());
+                menu->addChild(createIndexPtrSubmenuItem("Articulation Mode",
+                        {"Percussive", "Kick"},
+                        &module->articulationMode
+                ));
         }
 };
 
