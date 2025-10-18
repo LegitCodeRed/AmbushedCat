@@ -108,9 +108,9 @@ struct ToneShaper {
                                 float highFreq;
                                 float highGain;
                         } toneProfiles[3] = {
-                                {65.f, 6.f, 4200.f, -2.f},
-                                {110.f, 0.f, 7000.f, 2.f},
-                                {180.f, -4.f, 10500.f, 6.f}
+                                {65.f, 9.f, 4200.f, -2.f},
+                                {110.f, 4.f, 7000.f, 2.f},
+                                {180.f, -2.f, 10500.f, 6.f}
                         };
                         tone = rack::math::clamp(tone, 0, 2);
                         auto profile = toneProfiles[tone];
@@ -261,6 +261,9 @@ struct BasimilusIteritasAlia : Module {
 
                         float targetAmp = std::pow(ratio, -harmonicWeight);
                         targetAmp *= 1.f + 0.25f * (mode == 2 ? (i % 2 == 0 ? 1.f : -0.4f) : 0.f);
+                        // Boost fundamental and lower partials for more punch
+                        if (i == 0) targetAmp *= 1.4f;
+                        else if (i == 1) targetAmp *= 1.2f;
                         targetAmp = std::max(targetAmp, 0.0005f);
                         if (!initialized)
                                 partials[i].amp = targetAmp;
@@ -336,7 +339,8 @@ struct BasimilusIteritasAlia : Module {
 
                 float env = envelope.process();
                 envShape += 0.05f * (env - envShape);
-                float envPow = env * env;
+                // Sharper attack envelope for more punch
+                float envPow = env * env * (1.f + 0.3f * env);
 
                 float pitchBend = 1.f + spread * 0.7f * envPow;
                 float body = 0.f;
@@ -377,14 +381,14 @@ struct BasimilusIteritasAlia : Module {
                 }
 
                 float noiseEnv = noiseBurst.process();
-                float noise = noiseEnv * (random::normal() * (0.2f + 0.6f * morph) * (mode == 2 ? 1.6f : 1.f));
+                float noise = noiseEnv * (random::normal() * (0.4f + 0.8f * morph) * (mode == 2 ? 2.0f : 1.4f));
 
                 float signal = body + noise;
                 signal = saturateFold(signal, fold);
                 signal *= envPow;
 
                 float shaped = toneShaper.process(signal, tone, mode, harmonic, fold, args.sampleRate);
-                shaped = 5.f * std::tanh(shaped * 0.9f);
+                shaped = 6.5f * std::tanh(shaped * 1.1f);
 
                 outputs[OUT_OUTPUT].setVoltage(shaped);
                 outputs[ENV_OUTPUT].setVoltage(env * 10.f);
