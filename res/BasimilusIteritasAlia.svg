@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="60.96mm" height="128.5mm" viewBox="0 0 60.96 128.5">
+  <defs>
+    <linearGradient id="panelGradient" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#111" />
+      <stop offset="1" stop-color="#030303" />
+    </linearGradient>
+  </defs>
+  <rect width="60.96" height="128.5" fill="url(#panelGradient)" rx="2" ry="2" />
+  <g fill="#f5f5f5" font-family="'Rajdhani', 'Bank Gothic', 'Avenir', sans-serif" font-size="3.4" font-weight="600" text-anchor="middle">
+    <text x="30.48" y="9">Basimilus</text>
+    <text x="30.48" y="13">Iteritas Alia</text>
+  </g>
+  <g fill="#9fa4ff" font-family="'Rajdhani', 'Eurostile', sans-serif" font-size="2.4" text-anchor="middle">
+    <text x="14.5" y="21">Pitch</text>
+    <text x="30.5" y="18">Morph</text>
+    <text x="46.5" y="21">Attack</text>
+    <text x="14.5" y="47">Spread</text>
+    <text x="30.5" y="47">Fold</text>
+    <text x="46.5" y="47">Decay</text>
+    <text x="14.5" y="73">Harm</text>
+    <text x="30.5" y="73">Hit</text>
+    <text x="54" y="60">Skin</text>
+    <text x="54" y="82">Bass</text>
+    <text x="54" y="68">Liquid</text>
+    <text x="54" y="75">Metal</text>
+    <text x="54" y="90">Alto</text>
+    <text x="54" y="98">Treble</text>
+  </g>
+  <g fill="#d0d3ff" font-family="'Rajdhani', 'Avenir', sans-serif" font-size="2.2" text-anchor="middle">
+    <text x="11" y="99">Pitch</text>
+    <text x="24.5" y="99">Attack</text>
+    <text x="38" y="99">S/L/M</text>
+    <text x="51.5" y="99">B/A/T</text>
+    <text x="11" y="111">Spread</text>
+    <text x="24.5" y="111">Morph</text>
+    <text x="38" y="111">Decay</text>
+    <text x="51.5" y="111">Harm</text>
+    <text x="11" y="123">Fold</text>
+    <text x="24.5" y="123">Trig</text>
+    <text x="38" y="123">Env</text>
+    <text x="51.5" y="123">Out</text>
+  </g>
+  <g fill="#363a72">
+    <rect x="5" y="31" width="50.96" height="0.6" rx="0.3" />
+    <rect x="5" y="57" width="50.96" height="0.6" rx="0.3" />
+    <rect x="5" y="83" width="50.96" height="0.6" rx="0.3" />
+  </g>
+  <g fill="#565a8f" font-family="'Rajdhani', 'Avenir', sans-serif" font-size="2" font-weight="500" text-anchor="middle">
+    <text x="30.48" y="124.8">Ambushed Cat DSP Labs 2025</text>
+  </g>
+</svg>
