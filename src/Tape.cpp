@@ -49,26 +49,61 @@ struct TapeAging {
 	float eqWarmState = 0.f;
 	float eqDrift = 1.f;
 
-	float printBuffer[MAX_DELAY_SAMPLES * 2] = {};
-	int printIndex = 0;
+        float printBuffer[MAX_DELAY_SAMPLES * 2] = {};
+        int printIndex = 0;
+        float printEchoSmooth = 0.f;
+        float printEchoAir = 0.f;
 
-	void tickDrift() {
-		eqWarmState += 0.00001f;
-		eqDrift = 1.f + 0.05f * std::sin(eqWarmState);
-	}
+        void tickDrift() {
+                eqWarmState += 0.00001f;
+                eqDrift = 1.f + 0.05f * std::sin(eqWarmState);
+        }
 
-	void storePrint(float sample) {
-		printBuffer[printIndex] = sample;
-		printIndex = (printIndex + 1) % (MAX_DELAY_SAMPLES * 2);
-	}
+        void storePrint(float sample) {
+                printBuffer[printIndex] = sample;
+                printIndex = (printIndex + 1) % (MAX_DELAY_SAMPLES * 2);
+        }
 
-        float getPrintEcho() const {
-                // The original implementation returned a small delayed sample
-                // to emulate print-through on tape. This subtle echo was
-                // reported to produce audible artifacts, especially when the
-                // module is used on a final mix. Disable the effect by returning
-                // silence.
-                return 0.f;
+        float getPrintEcho(float sampleRate) {
+                const int bufferSize = MAX_DELAY_SAMPLES * 2;
+                if (sampleRate <= 0.f)
+                        return 0.f;
+
+                auto hermite = [](float a, float b, float c, float d, float t) {
+                        float t2 = t * t;
+                        float t3 = t2 * t;
+                        return 0.5f * ((2.f * b) + (-a + c) * t + (2.f * a - 5.f * b + 4.f * c - d) * t2 + (-a + 3.f * b - 3.f * c + d) * t3);
+                };
+
+                float baseDelay = 0.0028f * sampleRate;
+                float modulation = 0.0004f * sampleRate * std::sin(eqWarmState * 0.37f);
+                float delaySamples = rack::math::clamp(baseDelay + modulation, 4.f, (float)(bufferSize - 4));
+
+                float readPos = (float)printIndex - delaySamples;
+                while (readPos < 0.f)
+                        readPos += (float)bufferSize;
+
+                int index0 = (int)std::floor(readPos);
+                float frac = readPos - (float)index0;
+
+                auto sampleAt = [&](int offset) {
+                        int idx = (index0 + offset + bufferSize) % bufferSize;
+                        return printBuffer[idx];
+                };
+
+                float mainEcho = hermite(sampleAt(-1), sampleAt(0), sampleAt(1), sampleAt(2), frac);
+                float smearEcho = 0.5f * (sampleAt(-48) + sampleAt(-47));
+
+                float amplitude = 0.008f * (0.7f + 0.3f * eqDrift);
+                float combined = amplitude * (0.75f * mainEcho + 0.25f * smearEcho);
+
+                float cutoff = 1800.f * (0.9f + 0.1f * eqDrift);
+                cutoff = rack::math::clamp(cutoff, 200.f, 6000.f);
+                float alpha = std::exp(-2.f * M_PI * cutoff / sampleRate);
+                alpha = rack::math::clamp(alpha, 0.0001f, 0.9999f);
+                printEchoSmooth = alpha * printEchoSmooth + (1.f - alpha) * combined;
+                printEchoAir += 0.05f * (printEchoSmooth - printEchoAir);
+                return printEchoAir;
         }
 };
 
@@ -267,6 +302,17 @@ struct Tape : Module {
        enum InputId {
                LEFT_INPUT,
                RIGHT_INPUT,
+               INPUT_CV_INPUT,
+               DRIVE_CV_INPUT,
+               TONE_CV_INPUT,
+               LEVEL_CV_INPUT,
+               BIAS_CV_INPUT,
+               WOW_CV_INPUT,
+               FLUTTER_CV_INPUT,
+               HISS_CV_INPUT,
+               NOISE_CV_INPUT,
+               SWEETSPOT_CV_INPUT,
+               TRANSFORM_CV_INPUT,
                INPUTS_LEN
        };
         enum OutputId {
@@ -330,11 +376,36 @@ struct Tape : Module {
        int transformerMode = 0; // 0: Standard, 1: Dark, 2: Iron
 
 
-       float processChannel(ChannelState& st, float in, const ProcessArgs& args, int channel) {
-               float inputGain = params[INPUT_PARAM].getValue();
-               float drive = params[DRIVE_PARAM].getValue();
+       struct ControlValues {
+               float inputGain = 1.f;
+               float drive = 1.f;
+               float tone = 0.5f;
+               float level = 1.f;
+               float bias = 1.f;
+               float wow = 0.f;
+               float flutter = 0.f;
+               float hiss = 0.f;
+               float noise = 0.f;
+               float sweetspot = 0.f;
+               float transformer = 0.f;
+       };
 
-               float userBias = params[BIAS_PARAM].getValue();
+       float getParamWithCv(int paramId, int cvInputId, float minValue, float maxValue, bool bipolar = false) {
+               float value = params[paramId].getValue();
+               if (cvInputId >= 0 && inputs[cvInputId].isConnected()) {
+                       float span = maxValue - minValue;
+                       float cv = inputs[cvInputId].getVoltage();
+                       float norm = bipolar ? (cv / 5.f) * 0.5f : (cv / 10.f);
+                       value += norm * span;
+               }
+               return rack::math::clamp(value, minValue, maxValue);
+       }
+
+       float processChannel(ChannelState& st, float in, const ProcessArgs& args, int channel, const ControlValues& controls) {
+               float inputGain = controls.inputGain;
+               float drive = controls.drive;
+
+               float userBias = controls.bias;
                float biasAmount = modeBias[tapeMode] * userBias;
 
                float biasMod = 0.9f + 0.1f * std::sin(2.f * M_PI * wowFlutter.getFlutterPhase() * 2.0f);
@@ -360,8 +431,8 @@ struct Tape : Module {
                float glueAmount = std::max(0.f, inputGain - 1.f) * modeGlue[tapeMode];
                float glued = st.glue.process(saturatedWithTail, glueAmount, driveMode, driven);
 
-               float wowAmount = params[WOW_PARAM].getValue() * modeWF[tapeMode];
-               float flutterAmount = params[FLUTTER_PARAM].getValue() * modeWF[tapeMode];
+               float wowAmount = controls.wow * modeWF[tapeMode];
+               float flutterAmount = controls.flutter * modeWF[tapeMode];
                float rawMod = wowFlutter.compute(args.sampleRate, wowAmount, flutterAmount);
 
                st.modSmoothed1 += 0.001f * (rawMod - st.modSmoothed1);
@@ -373,7 +444,7 @@ struct Tape : Module {
                // Use separate delay lines per channel to avoid cross-talk
                float delayed = st.delay.readModulated(glued, delaySamples, channel, args.sampleRate);
 
-               float tone = params[TONE_PARAM].getValue() * modeTone[tapeMode];
+               float tone = controls.tone * modeTone[tapeMode];
                tone = clamp(tone, 0.f, 1.f);
                float cutoff = 200.f + 20000.f * tone;
                cutoff *= speedCutoffScale[tapeSpeed];
@@ -418,7 +489,7 @@ struct Tape : Module {
                        st.hfComp.reset();
                        st.eqInit = true;
                }
-               float sweetDrive = params[SWEETSPOT_PARAM].getValue();
+               float sweetDrive = controls.sweetspot;
                float lowGain = eqCurves[eqCurve].lowGainDb * sweetDrive;
                float highGain = eqCurves[eqCurve].highGainDb * sweetDrive;
                st.eqLow.setLowShelf(args.sampleRate, eqCurves[eqCurve].lowFreq, lowGain);
@@ -429,7 +500,7 @@ struct Tape : Module {
                st.hfComp.setHighShelf(args.sampleRate, 12000.f, hfCompGain);
                float hfProcessed = st.hfComp.process(eqProcessed);
 
-               float hissAmount = params[HISS_PARAM].getValue();
+               float hissAmount = controls.hiss;
                float white = 2.f * random::uniform() - 1.f;
 
                float hp = white - st.hissHPState;
@@ -450,7 +521,7 @@ struct Tape : Module {
                float hissToneTrim = 1.0f - 0.6f * (1.0f - tone);
                hissSignal *= hissToneTrim;
 
-               float noiseAmount = params[NOISE_PARAM].getValue();
+               float noiseAmount = controls.noise;
                float tapeWhite = 2.f * random::uniform() - 1.f;
                float noiseHP = tapeWhite - st.tapeNoiseHP;
                st.tapeNoiseHP = tapeWhite;
@@ -464,10 +535,10 @@ struct Tape : Module {
                tapeStatic = st.staticLP;
                tapeStatic *= 0.9f;
 
-               float level = params[LEVEL_PARAM].getValue();
+               float level = controls.level;
                st.aging.storePrint(glued);
-               float printEcho = st.aging.getPrintEcho();
-               float xformDrive = params[TRANSFORM_PARAM].getValue();
+               float printEcho = st.aging.getPrintEcho(args.sampleRate);
+               float xformDrive = controls.transformer;
                float transformed = 0.f;
                switch (transformerMode) {
                        case 1:
@@ -504,6 +575,25 @@ struct Tape : Module {
 		configParam(NOISE_PARAM, 0.0f, 6.0f, 0.2f, "Tape Static");           // extended range
                configParam(SWEETSPOT_PARAM, -1.f, 1.f, 0.3f, "Sweetspot Drive");
                configParam(TRANSFORM_PARAM, 0.f, 5.f, 0.f, "Transformer Load");
+
+               configInput(LEFT_INPUT, "Left");
+               configInput(RIGHT_INPUT, "Right");
+               configOutput(LEFT_OUTPUT, "Left");
+               configOutput(RIGHT_OUTPUT, "Right");
+               configBypass(LEFT_INPUT, LEFT_OUTPUT);
+               configBypass(RIGHT_INPUT, RIGHT_OUTPUT);
+
+               configInput(INPUT_CV_INPUT, "Input Level CV");
+               configInput(DRIVE_CV_INPUT, "Drive CV");
+               configInput(TONE_CV_INPUT, "Tone CV");
+               configInput(LEVEL_CV_INPUT, "Output Level CV");
+               configInput(BIAS_CV_INPUT, "Bias CV");
+               configInput(WOW_CV_INPUT, "Wow CV");
+               configInput(FLUTTER_CV_INPUT, "Flutter CV");
+               configInput(HISS_CV_INPUT, "Hiss CV");
+               configInput(NOISE_CV_INPUT, "Noise CV");
+               configInput(SWEETSPOT_CV_INPUT, "Sweetspot CV");
+               configInput(TRANSFORM_CV_INPUT, "Transformer Load CV");
        }
 
         void process(const ProcessArgs& args) override {
@@ -513,15 +603,28 @@ struct Tape : Module {
                 float inR = inputs[RIGHT_INPUT].isConnected() ? inputs[RIGHT_INPUT].getVoltage() * VOLT_SCALE : inL;
                 bool stereo = outputs[RIGHT_OUTPUT].isConnected();
 
+                ControlValues controls;
+                controls.inputGain = getParamWithCv(INPUT_PARAM, INPUT_CV_INPUT, 0.f, 3.f);
+                controls.drive = getParamWithCv(DRIVE_PARAM, DRIVE_CV_INPUT, 0.f, 4.f);
+                controls.tone = getParamWithCv(TONE_PARAM, TONE_CV_INPUT, 0.f, 1.f);
+                controls.level = getParamWithCv(LEVEL_PARAM, LEVEL_CV_INPUT, 0.f, 2.5f);
+                controls.bias = getParamWithCv(BIAS_PARAM, BIAS_CV_INPUT, 0.5f, 2.5f);
+                controls.wow = getParamWithCv(WOW_PARAM, WOW_CV_INPUT, 0.f, 1.5f);
+                controls.flutter = getParamWithCv(FLUTTER_PARAM, FLUTTER_CV_INPUT, 0.f, 2.5f);
+                controls.hiss = getParamWithCv(HISS_PARAM, HISS_CV_INPUT, 0.f, 6.f);
+                controls.noise = getParamWithCv(NOISE_PARAM, NOISE_CV_INPUT, 0.f, 6.f);
+                controls.sweetspot = getParamWithCv(SWEETSPOT_PARAM, SWEETSPOT_CV_INPUT, -1.f, 1.f, true);
+                controls.transformer = getParamWithCv(TRANSFORM_PARAM, TRANSFORM_CV_INPUT, 0.f, 5.f);
+
                 // SAFER: average pre-process if mono
                 if (!stereo) {
                         float mono = 0.5f * (inL + inR);
-                        float out = processChannel(channels[0], mono, args, 0);
+                        float out = processChannel(channels[0], mono, args, 0, controls);
                         outputs[LEFT_OUTPUT].setVoltage(out / VOLT_SCALE);
                         outputs[RIGHT_OUTPUT].setVoltage(0.f); // optional mute
                 } else {
-                        float outL = processChannel(channels[0], inL, args, 0);
-                        float outR = processChannel(channels[1], inR, args, 1);
+                        float outL = processChannel(channels[0], inL, args, 0, controls);
+                        float outR = processChannel(channels[1], inR, args, 1, controls);
                         outputs[LEFT_OUTPUT].setVoltage(outL / VOLT_SCALE);
                         outputs[RIGHT_OUTPUT].setVoltage(outR / VOLT_SCALE);
                 }
@@ -606,8 +709,19 @@ struct TapeWidget : ModuleWidget {
                 addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(40, 115)), module, Tape::LEFT_OUTPUT));
                 addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(50, 115)), module, Tape::RIGHT_OUTPUT));
 
-		
-                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(50, 40)), module, Tape::INPUT_PARAM));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(50, 52)), module, Tape::INPUT_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10, 52)), module, Tape::DRIVE_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(30, 52)), module, Tape::FLUTTER_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10, 72)), module, Tape::TONE_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(30, 72)), module, Tape::WOW_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(50, 72)), module, Tape::BIAS_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10, 92)), module, Tape::LEVEL_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(30, 92)), module, Tape::HISS_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(50, 92)), module, Tape::SWEETSPOT_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(30, 112)), module, Tape::NOISE_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(50, 112)), module, Tape::TRANSFORM_CV_INPUT));
+
+		addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(50, 40)), module, Tape::INPUT_PARAM));
                 addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(10, 40)), module, Tape::DRIVE_PARAM));
                 addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(10, 60)), module, Tape::TONE_PARAM));
                 addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(10, 80)), module, Tape::LEVEL_PARAM));
