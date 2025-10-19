@@ -13,6 +13,7 @@ void init(Plugin* p) {
         p->addModel(modelAtaraxicIteritasAlia);
         p->addModel(modelAhriman);
         p->addModel(modelLeviathan);
+        p->addModel(modelSitri);
         // Add modules here
         // p->addModel(modelMyModule);
 
