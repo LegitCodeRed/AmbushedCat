@@ -47,11 +47,63 @@ struct DelayLine {
         }
 };
 
-inline float octaveUpTransform(float x) {
-        float s = rack::math::clamp(x, -1.f, 1.f);
-        float inner = std::max(0.f, 1.f - s * s);
-        return 2.f * s * std::sqrt(inner);
-}
+// Delay-based pitch shifter for shimmer reverb (octave up)
+struct PitchShifter {
+        static constexpr int GRAIN_SIZE = 1024;  // Smaller grains for more responsive shimmer
+        static constexpr int NUM_GRAINS = 4;     // More grains for smoother output
+
+        std::vector<float> buffer;
+        int writePos = 0;
+        float grainPhases[NUM_GRAINS] = {0.f, 0.25f, 0.5f, 0.75f}; // Evenly spaced grains
+
+        void init(int sampleRate) {
+                buffer.assign(GRAIN_SIZE * 6, 0.f);
+                writePos = 0;
+                for (int i = 0; i < NUM_GRAINS; ++i) {
+                        grainPhases[i] = (float)i / (float)NUM_GRAINS;
+                }
+        }
+
+        void write(float sample) {
+                buffer[writePos] = sample;
+                writePos = (writePos + 1) % buffer.size();
+        }
+
+        float processOctaveUp(float sampleRate) {
+                if (buffer.empty())
+                        return 0.f;
+
+                float output = 0.f;
+                float grainLen = GRAIN_SIZE;
+
+                // Process overlapping grains with window crossfading
+                for (int g = 0; g < NUM_GRAINS; ++g) {
+                        // Grain phase advances at half speed (octave up = 2x pitch = 0.5x playback speed)
+                        grainPhases[g] += 0.5f;
+                        if (grainPhases[g] >= grainLen)
+                                grainPhases[g] -= grainLen;
+
+                        // Calculate read position with delay
+                        float readOffset = grainPhases[g];
+                        int readPos = writePos - (int)readOffset - GRAIN_SIZE * 2;
+                        while (readPos < 0)
+                                readPos += buffer.size();
+                        readPos = readPos % buffer.size();
+
+                        // Linear interpolation for sample reading
+                        int nextPos = (readPos + 1) % buffer.size();
+                        float frac = readOffset - std::floor(readOffset);
+                        float sample = rack::math::crossfade(buffer[readPos], buffer[nextPos], frac);
+
+                        // Hann window for smooth grain envelope (reduces artifacts)
+                        float windowPhase = grainPhases[g] / grainLen;
+                        float window = 0.5f - 0.5f * std::cos(2.f * M_PI * windowPhase);
+                        output += sample * window;
+                }
+
+                return output * (1.f / NUM_GRAINS); // Normalize for NUM_GRAINS overlapping
+        }
+};
 
 } // namespace
 
@@ -98,9 +150,21 @@ struct Ahriman : Module {
 
         DelayLine delayLines[NUM_DELAY_LINES];
         std::array<float, NUM_DELAY_LINES> delayTimes{};
-        std::array<float, NUM_DELAY_LINES> baseMultipliers{0.36f, 0.51f, 0.75f, 1.03f};
-        std::array<float, NUM_DELAY_LINES> modScales{0.9f, -0.7f, 0.55f, -0.4f};
-        std::array<float, NUM_DELAY_LINES> inputPolarity{1.f, -1.f, 1.f, -1.f};
+        // Prime number-based delay multipliers for sparse FDN (less metallic resonances)
+        std::array<float, NUM_DELAY_LINES> baseMultipliers{0.37f, 0.53f, 0.73f, 0.97f};
+        std::array<float, NUM_DELAY_LINES> modScales{1.0f, -0.8f, 0.6f, -0.5f};
+
+        // Hadamard matrix for FDN (orthogonal mixing)
+        // H4 = [[1,1,1,1], [1,-1,1,-1], [1,1,-1,-1], [1,-1,-1,1]]
+        static constexpr float hadamard[NUM_DELAY_LINES][NUM_DELAY_LINES] = {
+                {0.5f,  0.5f,  0.5f,  0.5f},
+                {0.5f, -0.5f,  0.5f, -0.5f},
+                {0.5f,  0.5f, -0.5f, -0.5f},
+                {0.5f, -0.5f, -0.5f,  0.5f}
+        };
+
+        PitchShifter shimmerL;
+        PitchShifter shimmerR;
 
         float sampleRate = 44100.f;
         int bufferSize = 0;
@@ -115,8 +179,6 @@ struct Ahriman : Module {
         float toneLowR = 0.f;
         float toneHighL = 0.f;
         float toneHighR = 0.f;
-        float shimmerSmoothL = 0.f;
-        float shimmerSmoothR = 0.f;
         float bootTimer = 1.2f;
         bool bootActive = true;
 
@@ -164,6 +226,8 @@ struct Ahriman : Module {
                 for (size_t i = 0; i < delayTimes.size(); ++i) {
                         delayTimes[i] = sampleRate * 0.1f * baseMultipliers[i];
                 }
+                shimmerL.init(sampleRate);
+                shimmerR.init(sampleRate);
         }
 
         float getBipolarCv(Input &input) {
@@ -225,8 +289,8 @@ struct Ahriman : Module {
                         feedback *= (1.f - duck * rack::math::clamp(inputEnv * 0.25f, 0.f, 1.f));
                 }
 
-                float denseShape = rack::math::crossfade(0.45f, 0.85f, dense);
-                float inputGain = rack::math::crossfade(0.18f, 0.32f, dense);
+                float denseShape = rack::math::crossfade(0.4f, 0.9f, dense);
+                float inputGain = rack::math::crossfade(0.15f, 0.35f, dense);
 
                 float sizeShaped = size * size;
                 float baseSeconds = 0.03f + sizeShaped * 1.8f;
@@ -272,76 +336,107 @@ struct Ahriman : Module {
                         inputGain = 0.f;
                 }
 
+                // Read delay taps with modulation
                 std::array<float, NUM_DELAY_LINES> taps{};
                 for (int i = 0; i < NUM_DELAY_LINES; ++i) {
                         float target = baseSamples * baseMultipliers[i];
-                        target *= rack::math::crossfade(0.75f, 1.35f, dense);
+                        target *= rack::math::crossfade(0.6f, 1.5f, dense);
                         float mod = modSignal * modSeconds * sampleRate * modScales[i];
                         target = rack::math::clamp(target + mod, 8.f, (float)(bufferSize - 8));
+
+                        // Response modes: BND (smooth), LRP (interpolated), JMP (instant)
                         if (response == 2) {
-                                delayTimes[i] = target;
+                                delayTimes[i] = target;  // JMP: instant jumps
                         } else {
                                 delayTimes[i] += (target - delayTimes[i]) * smoothing;
                         }
                         taps[i] = delayLines[i].read(delayTimes[i]);
                 }
 
-                float sum0 = taps[0] + taps[1] + taps[2] + taps[3];
-                float sum1 = taps[0] - taps[1] + taps[2] - taps[3];
-                float sum2 = taps[0] + taps[1] - taps[2] - taps[3];
-                float sum3 = taps[0] - taps[1] - taps[2] + taps[3];
-
-                sum0 *= 0.5f;
-                sum1 *= 0.5f;
-                sum2 *= 0.5f;
-                sum3 *= 0.5f;
-
-                std::array<float, NUM_DELAY_LINES> feedbackVector{sum0, sum1, sum2, sum3};
-
-                float wetL = sum1 * 0.65f + sum0 * 0.2f + sum3 * 0.15f;
-                float wetR = sum2 * 0.65f + sum0 * 0.2f - sum3 * 0.15f;
-
-                if (mode == 2) {
-                        float shimmerL = octaveUpTransform(wetL);
-                        float shimmerR = octaveUpTransform(wetR);
-                        shimmerSmoothL += 0.08f * (shimmerL - shimmerSmoothL);
-                        shimmerSmoothR += 0.08f * (shimmerR - shimmerSmoothR);
-                        wetL = rack::math::crossfade(wetL, shimmerSmoothL, 0.45f);
-                        wetR = rack::math::crossfade(wetR, shimmerSmoothR, 0.45f);
+                // Apply Hadamard matrix mixing (FDN feedback matrix)
+                std::array<float, NUM_DELAY_LINES> mixed{};
+                for (int i = 0; i < NUM_DELAY_LINES; ++i) {
+                        mixed[i] = 0.f;
+                        for (int j = 0; j < NUM_DELAY_LINES; ++j) {
+                                mixed[i] += hadamard[i][j] * taps[j];
+                        }
                 }
 
+                // Stereo output derived from FDN
+                float wetL = mixed[1] * 0.6f + mixed[0] * 0.25f + mixed[3] * 0.15f;
+                float wetR = mixed[2] * 0.6f + mixed[0] * 0.25f - mixed[3] * 0.15f;
+
+                // Shimmer mode: octave-up pitch shift with feedback
+                float shimmerOutL = 0.f;
+                float shimmerOutR = 0.f;
+                if (mode == 2) {
+                        // Feed reverb output into pitch shifter
+                        shimmerL.write(wetL);
+                        shimmerR.write(wetR);
+
+                        // Get octave-up shifted output
+                        shimmerOutL = shimmerL.processOctaveUp(sampleRate);
+                        shimmerOutR = shimmerR.processOctaveUp(sampleRate);
+
+                        // Blend shimmer into wet output (demonic quality)
+                        wetL = rack::math::crossfade(wetL, shimmerOutL, 0.35f);
+                        wetR = rack::math::crossfade(wetR, shimmerOutR, 0.35f);
+                }
+
+                // FDN feedback with nonlinear processing per delay line
                 for (int i = 0; i < NUM_DELAY_LINES; ++i) {
-                        float content = feedbackVector[i];
+                        float content = mixed[i];
+
+                        // Nonlinear processing based on mode (applied at each 4x4 mix node)
                         if (mode == 0) {
-                                content = rack::math::clamp(content, -1.2f, 1.2f);
+                                // LIM: Hard limiting
+                                content = rack::math::clamp(content, -1.15f, 1.15f);
                         } else if (mode == 1) {
-                                content = std::tanh(content * 1.4f);
+                                // DST: Soft saturation/distortion
+                                content = std::tanh(content * 1.5f) * 0.9f;
                         } else {
-                                content = std::tanh(content * 1.1f);
+                                // SHM: Lighter saturation for shimmer
+                                content = std::tanh(content * 1.2f);
                         }
 
-                        float injection = inputGain * (inSum + inputPolarity[i] * inDiff * 0.6f);
+                        // Stereo input injection
+                        float stereoSpread = (i % 2 == 0) ? 1.f : -1.f;
+                        float injection = inputGain * (inSum * 0.7f + inDiff * stereoSpread * 0.3f);
+
+                        // Shimmer mode: feed pitch-shifted signal back into tank
                         if (mode == 2) {
-                                float shimmerFeed = (i % 2 == 0) ? shimmerSmoothL : shimmerSmoothR;
-                                injection += 0.18f * shimmerFeed;
+                                float shimmerFeed = (i % 2 == 0) ? shimmerOutL : shimmerOutR;
+                                injection += 0.3f * shimmerFeed;
                         }
-                        float writeSample = injection + feedback * (content * denseShape);
+
+                        // Write to delay line with feedback and dense control
+                        float writeSample = injection + feedback * content * denseShape;
                         delayLines[i].write(writeSample);
                 }
 
                 auto toneProcess = [&](float &sample, float &lowState, float &highState) {
-                        float lowFreq = rack::math::crossfade(900.f, 4500.f, rack::math::clamp((tone + 1.f) * 0.5f, 0.f, 1.f));
-                        float highFreq = rack::math::crossfade(1800.f, 400.f, rack::math::clamp((tone + 1.f) * 0.5f, 0.f, 1.f));
-                        float lowAlpha = std::exp(-2.f * M_PI * lowFreq / sampleRate);
-                        float highAlpha = std::exp(-2.f * M_PI * highFreq / sampleRate);
-                        lowState = rack::math::clamp(lowState + (1.f - lowAlpha) * (sample - lowState), -12.f, 12.f);
-                        highState = rack::math::clamp(highState + (1.f - highAlpha) * (sample - highState), -12.f, 12.f);
-                        float lowPart = lowState;
-                        float highPart = sample - highState;
-                        float tilt = (tone + 1.f) * 0.5f;
-                        float lowGain = rack::math::crossfade(1.6f, 0.6f, tilt);
-                        float highGain = rack::math::crossfade(0.6f, 1.6f, tilt);
-                        sample = rack::math::clamp(lowPart * lowGain + highPart * highGain, -12.f, 12.f);
+                        // Bipolar control: left = lowpass, right = highpass, center = disabled
+                        float amount = std::abs(tone);
+
+                        // Dead zone at center for filter disabled
+                        if (amount < 0.05f) {
+                                // Filter disabled, pass through
+                                return;
+                        }
+
+                        if (tone < 0.f) {
+                                // Left side: lowpass filter
+                                float freq = rack::math::crossfade(20000.f, 400.f, amount);
+                                float alpha = std::exp(-2.f * M_PI * freq / sampleRate);
+                                lowState = rack::math::clamp(lowState + (1.f - alpha) * (sample - lowState), -12.f, 12.f);
+                                sample = rack::math::crossfade(sample, lowState, amount);
+                        } else {
+                                // Right side: highpass filter
+                                float freq = rack::math::crossfade(20.f, 4000.f, amount);
+                                float alpha = std::exp(-2.f * M_PI * freq / sampleRate);
+                                highState = rack::math::clamp(highState + (1.f - alpha) * (sample - highState), -12.f, 12.f);
+                                sample = rack::math::crossfade(sample, sample - highState, amount);
+                        }
                 };
 
                 toneProcess(wetL, toneLowL, toneHighL);
