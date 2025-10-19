@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="50.8mm" height="128.5mm" viewBox="0 0 50.8 128.5">
+  <defs>
+    <linearGradient id="panelGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0a0f1a"/>
+      <stop offset="50%" stop-color="#101b2a"/>
+      <stop offset="100%" stop-color="#080b12"/>
+    </linearGradient>
+    <linearGradient id="accentGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1f6ca4"/>
+      <stop offset="100%" stop-color="#7236a9"/>
+    </linearGradient>
+    <style>
+      .title { font-family: 'Eurostile', 'Rajdhani', sans-serif; font-size: 6px; letter-spacing: 2px; fill: #d2deff; text-transform: uppercase; }
+      .subtitle { font-family: 'Rajdhani', sans-serif; font-size: 3.2px; fill: #9fb1d9; letter-spacing: 1px; text-transform: uppercase; }
+      .label { font-family: 'Rajdhani', sans-serif; font-size: 2.6px; fill: #c4ceff; letter-spacing: 0.8px; }
+    </style>
+  </defs>
+  <rect width="50.8" height="128.5" fill="url(#panelGradient)" rx="2"/>
+  <rect x="2" y="6" width="46.8" height="116.5" fill="rgba(12,18,30,0.45)" stroke="#1f2f45" stroke-width="0.25" rx="1.5"/>
+  <path d="M3 18 L47.8 18" stroke="url(#accentGradient)" stroke-width="0.4" stroke-linecap="round"/>
+  <text x="25.4" y="11" class="title" text-anchor="middle">LEVIATHAN</text>
+  <text x="25.4" y="16.2" class="subtitle" text-anchor="middle">VERSIO</text>
+  <g fill="#243554" opacity="0.8">
+    <rect x="6.5" y="22" width="10.5" height="10.5" rx="2"/>
+    <rect x="33.3" y="22" width="10.5" height="10.5" rx="2"/>
+    <rect x="6.5" y="52" width="10.5" height="10.5" rx="2"/>
+    <rect x="33.3" y="52" width="10.5" height="10.5" rx="2"/>
+    <rect x="6.5" y="82" width="10.5" height="10.5" rx="2"/>
+    <rect x="33.3" y="82" width="10.5" height="10.5" rx="2"/>
+    <rect x="6.5" y="112" width="10.5" height="10.5" rx="2"/>
+  </g>
+  <g class="label" text-anchor="middle">
+    <text x="12.0" y="36">BLEND</text>
+    <text x="38.8" y="36">FOLD</text>
+    <text x="12.0" y="66">CENTER</text>
+    <text x="38.8" y="66">DOOM</text>
+    <text x="12.0" y="96">PHASE</text>
+    <text x="38.8" y="96">DRIVE</text>
+    <text x="12.0" y="126">8VIZE</text>
+  </g>
+  <g class="label" text-anchor="middle" fill="#8aa8d8">
+    <text x="24.5" y="21">CV</text>
+    <text x="47.0" y="21">CV</text>
+    <text x="24.5" y="51">CV</text>
+    <text x="47.0" y="51">CV</text>
+    <text x="24.5" y="81">CV</text>
+    <text x="47.0" y="81">CV</text>
+    <text x="24.5" y="111">CV</text>
+    <text x="47.0" y="111">SMOOSH</text>
+  </g>
+  <g class="label" text-anchor="middle" fill="#9fb1d9">
+    <text x="24.0" y="138">FLOW</text>
+    <text x="33.5" y="138">NOTCH</text>
+    <text x="45.0" y="138">SMOOSH</text>
+  </g>
+  <g class="label" text-anchor="middle" fill="#bcd0ff">
+    <text x="12.0" y="145">L IN</text>
+    <text x="38.8" y="145">R IN</text>
+    <text x="12.0" y="165">L OUT</text>
+    <text x="38.8" y="165">R OUT</text>
+  </g>
+  <circle cx="10.5" cy="13.5" r="1.6" fill="#4b6dd1"/>
+  <circle cx="18.5" cy="13.5" r="1.6" fill="#4b6dd1"/>
+  <circle cx="32.5" cy="13.5" r="1.6" fill="#7e50d4"/>
+  <circle cx="40.5" cy="13.5" r="1.6" fill="#d8e2ff"/>
+</svg>

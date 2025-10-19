@@ -71,6 +71,16 @@
         "Reverb",
         "Delay"
       ]
+    },
+    {
+      "slug": "Leviathan",
+      "name": "Leviathan",
+      "description": "Stereo techno-focused distortion inspired by Ruina Versio with wavefolding, DOOM suboctaves, multiband saturation, octavizing, phase warping, and the infamous Smoosh drive.",
+      "tags": [
+        "Distortion",
+        "Effect",
+        "Stereo"
+      ]
     }
   ]
 }

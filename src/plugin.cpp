@@ -12,6 +12,7 @@ void init(Plugin* p) {
         p->addModel(modelBasimilusIteritasAlia);
         p->addModel(modelAtaraxicIteritasAlia);
         p->addModel(modelAhriman);
+        p->addModel(modelLeviathan);
         // Add modules here
         // p->addModel(modelMyModule);
 
