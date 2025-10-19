@@ -11,6 +11,7 @@ void init(Plugin* p) {
         p->addModel(modelTape);
         p->addModel(modelBasimilusIteritasAlia);
         p->addModel(modelAtaraxicIteritasAlia);
+        p->addModel(modelAhriman);
         // Add modules here
         // p->addModel(modelMyModule);
 
