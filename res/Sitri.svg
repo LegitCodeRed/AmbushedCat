@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="60" height="380" viewBox="0 0 60 380">
+  <rect width="60" height="380" fill="#181818" />
+  <rect x="4" y="4" width="52" height="372" fill="#202428" stroke="#3f3f3f" stroke-width="1.5" />
+  <text x="30" y="24" font-family="Fira Sans, Arial" font-size="12" fill="#d0d5df" text-anchor="middle">Sitri</text>
+  <text x="30" y="360" font-family="Fira Sans, Arial" font-size="8" fill="#80858f" text-anchor="middle">StingX engine</text>
+</svg>
