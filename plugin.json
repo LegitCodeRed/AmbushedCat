@@ -17,37 +17,60 @@
       "slug": "TuringMaschine",
       "name": "TuringMaschineRythm",
       "description": "A probabilistic CV sequencer inspired by the original Music Thing Turing Machine. Generates semi-random looping sequences with adjustable probability and loop length.",
-      "tags": ["Sequencer"]
+      "tags": [
+        "Sequencer"
+      ]
     },
     {
       "slug": "TuringGateExpander",
       "name": "TuringGates",
       "description": "An expander for the TuringMaschine module that outputs rhythmic gate patterns derived from the current sequence state. Useful for triggering drums, envelopes, or other events.",
-      "tags": ["Expander"]
+      "tags": [
+        "Expander"
+      ]
     },
     {
       "slug": "TuringVoltsExpander",
       "name": "TuringFlow",
       "description": "An expander for the TuringMaschine that provides additional CV outputs based on bits of the sequence. Allows complex modulation and control signals derived from the main sequence.",
-      "tags": ["Expander"]
+      "tags": [
+        "Expander"
+      ]
     },
     {
       "slug": "Tape",
       "name": "Tape Machine",
       "description": "A detailed tape emulation module offering saturation, wow & flutter, bias shaping, and vintage tape coloration. Perfect for adding analog warmth and character to your sound.",
-      "tags": ["Tape"]
+      "tags": [
+        "Tape"
+      ]
     },
     {
       "slug": "BasimilusIteritasAlia",
       "name": "Kabaddon",
       "description": "",
-      "tags": ["Oscillator"]
+      "tags": [
+        "Oscillator"
+      ]
     },
     {
       "slug": "AtaraxicIteritasAlia",
       "name": "Ataraxic Iteritas Alia",
       "description": "Massive hybrid tone generator that fuses polyBLEP oscillators, voltage-controlled combing, and evolving LF SR textures for brutal yet controllable timbres.",
-      "tags": ["Oscillator", "Noise"]
+      "tags": [
+        "Oscillator",
+        "Noise"
+      ]
+    },
+    {
+      "slug": "Ahriman",
+      "name": "Ahriman",
+      "description": "Stereo reverb inspired by Desmodus Versio with blend, tone, regen, modulation, density, and firmware-style FSU behavior for lush ambiences and haunted atmospheres.",
+      "tags": [
+        "Effect",
+        "Reverb",
+        "Delay"
+      ]
     }
   ]
 }
