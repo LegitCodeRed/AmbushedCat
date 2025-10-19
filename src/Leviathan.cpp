@@ -31,17 +31,27 @@ struct OnePole {
 static float applyWavefolder(float x, float amount) {
         if (amount <= 1e-5f)
                 return x;
-        float gain = 1.f + amount * 8.f;
+
+        // More aggressive gain curve - Infinifolder style
+        float gain = 1.f + amount * amount * 24.f;
         float folded = x * gain;
-        for (int i = 0; i < 6; ++i) {
+
+        // More iterations for harder crushing
+        for (int i = 0; i < 12; ++i) {
                 if (folded > 1.f) {
                         folded = 2.f - folded;
                 } else if (folded < -1.f) {
                         folded = -2.f - folded;
                 }
         }
-        folded = std::tanh(folded * (0.7f + 0.6f * amount));
-        return rack::math::crossfade(x, folded, amount);
+
+        // Asymmetric saturation for more character
+        float offset = 0.15f * amount;
+        folded = std::tanh((folded + offset) * (1.f + amount * 1.5f)) - offset * 0.5f;
+
+        // Less dry blend for more crushing
+        float dryBlend = rack::math::clamp(1.f - amount * 1.3f, 0.f, 1.f);
+        return rack::math::crossfade(folded, x, dryBlend);
 }
 
 struct RectifierStage {
@@ -127,20 +137,20 @@ struct SubOctaveChorus {
         bool prevPositive = false;
         float subPolarity = 1.f;
         float env = 0.f;
-        float lfoPhase = 0.f;
+        float detunePhase = 0.f;
         float buzzPhase = 0.f;
         OnePole smoother;
 
         void setSampleRate(float sr) {
                 sampleRate = std::max(1.f, sr);
-                smoother.set(120.f, sampleRate);
+                smoother.set(100.f, sampleRate);
         }
 
         void reset() {
                 prevPositive = false;
                 subPolarity = 1.f;
                 env = 0.f;
-                lfoPhase = 0.f;
+                detunePhase = 0.f;
                 buzzPhase = 0.f;
                 smoother.reset();
         }
@@ -149,36 +159,56 @@ struct SubOctaveChorus {
                 if (amount <= 1e-5f)
                         return input;
 
+                // Simple suboctave: flip polarity on zero crossings
                 bool positive = input >= 0.f;
                 if (positive != prevPositive) {
                         subPolarity = -subPolarity;
                         prevPositive = positive;
                 }
 
+                // Track envelope
                 float absIn = std::fabs(input);
-                env += 0.0015f * (absIn - env);
-                float base = subPolarity * env;
-                float smoothed = smoother.process(base);
+                env += 0.002f * (absIn - env);
 
-                float lfoRate = (0.12f + 1.2f * amount) / sampleRate;
-                lfoPhase += lfoRate;
-                if (lfoPhase >= 1.f)
-                        lfoPhase -= 1.f;
-                float detune = std::sin(2.f * M_PI * lfoPhase);
-                float swirl = smoothed * (1.f + 0.6f * amount * detune);
+                // Base suboctave square wave
+                float sub = subPolarity * rack::math::clamp(env, 0.f, 1.f);
+                sub = smoother.process(sub);
 
-                float fuzz = 0.f;
+                // Detuning that gets worse as amount increases
+                // Slow LFO for pitch warble
+                float detuneSpeed = 0.5f + amount * 2.5f; // Gets faster/more unstable
+                detunePhase += detuneSpeed / sampleRate;
+                if (detunePhase >= 1.f)
+                        detunePhase -= 1.f;
+
+                float detune = std::sin(2.f * M_PI * detunePhase);
+
+                // Apply detuning - gets more extreme with amount
+                float detuneDepth = amount * amount * 0.7f;
+                float detuned = sub * (1.f + detune * detuneDepth);
+
+                // In top quarter, add overtone buzz
+                float output = detuned;
                 if (amount > 0.75f) {
-                        float extra = (amount - 0.75f) / 0.25f;
-                        buzzPhase += (0.5f + 1.5f * extra) / sampleRate;
+                        float buzzAmount = (amount - 0.75f) * 4.f; // 0-1 in last quarter
+
+                        // Fast buzz oscillator
+                        buzzPhase += 120.f / sampleRate;
                         if (buzzPhase >= 1.f)
                                 buzzPhase -= 1.f;
-                        float buzz = std::sin(2.f * M_PI * buzzPhase) + 0.5f * std::sin(6.f * M_PI * buzzPhase);
-                        fuzz = std::tanh((smoothed + buzz * env) * (3.f + 18.f * extra)) * (0.6f * extra);
+
+                        // Generate buzz with harmonics
+                        float buzz = std::sin(2.f * M_PI * buzzPhase);
+                        buzz += 0.5f * std::sin(4.f * M_PI * buzzPhase);
+                        buzz += 0.3f * std::sin(6.f * M_PI * buzzPhase);
+
+                        // Mix buzz with envelope
+                        output += buzz * env * buzzAmount * 0.6f;
                 }
 
-                float doom = swirl + fuzz;
-                return input + doom * amount;
+                // Volume increases with amount
+                float level = amount;
+                return input + output * level;
         }
 };
 
@@ -539,15 +569,17 @@ struct LeviathanWidget : ModuleWidget {
                 addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(38.8, 83.0)), module, Leviathan::DRIVE_PARAM));
                 addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(12.0, 113.0)), module, Leviathan::RECTIFY_PARAM));
 
-                addParam(createParamCentered<CKSS>(mm2px(Vec(24.0, 125.5)), module, Leviathan::FLOW_PARAM));
-                addParam(createParamCentered<CKSS>(mm2px(Vec(33.5, 125.5)), module, Leviathan::NOTCH_PARAM));
-                addParam(createParamCentered<TL1105>(mm2px(Vec(45.0, 125.3)), module, Leviathan::SMOOSH_PARAM));
+                addParam(createParamCentered<CKSSThree>(mm2px(Vec(38.8, 100.0)), module, Leviathan::FLOW_PARAM));
+                addParam(createParamCentered<CKSSThree>(mm2px(Vec(38.8, 110.0)), module, Leviathan::NOTCH_PARAM));
+                addParam(createParamCentered<TL1105>(mm2px(Vec(38.8, 118.0)), module, Leviathan::SMOOSH_PARAM));
 
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(12.0, 150.0)), module, Leviathan::IN_L_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(38.8, 150.0)), module, Leviathan::IN_R_INPUT));
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(12.0, 170.5)), module, Leviathan::OUT_L_OUTPUT));
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(38.8, 170.5)), module, Leviathan::OUT_R_OUTPUT));
+                // Audio I/O at bottom
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.0, 108.0)), module, Leviathan::IN_L_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(16.0, 108.0)), module, Leviathan::IN_R_INPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(8.0, 118.0)), module, Leviathan::OUT_L_OUTPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(16.0, 118.0)), module, Leviathan::OUT_R_OUTPUT));
 
+                // CV inputs next to knobs
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5, 23.0)), module, Leviathan::BLEND_CV_INPUT));
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(47.0, 23.0)), module, Leviathan::FOLD_CV_INPUT));
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5, 53.0)), module, Leviathan::CENTER_CV_INPUT));
@@ -556,8 +588,15 @@ struct LeviathanWidget : ModuleWidget {
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(47.0, 83.0)), module, Leviathan::DRIVE_CV_INPUT));
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5, 113.0)), module, Leviathan::RECTIFY_CV_INPUT));
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(47.0, 113.0)), module, Leviathan::SMOOSH_GATE_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(17.0, 125.5)), module, Leviathan::FLOW_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(47.0, 125.5)), module, Leviathan::NOTCH_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(25.0, 100.0)), module, Leviathan::FLOW_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(25.0, 110.0)), module, Leviathan::NOTCH_CV_INPUT));
+
+                // Boot lights
+                addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(14.0, 13.0)), module, Leviathan::BOOT_LEFT_LIGHT));
+                addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(21.0, 13.0)), module, Leviathan::BOOT_LEFT_CENTER_LIGHT));
+                addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(30.0, 13.0)), module, Leviathan::BOOT_RIGHT_CENTER_LIGHT));
+                addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(37.0, 13.0)), module, Leviathan::BOOT_RIGHT_LIGHT));
+                addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(45.0, 118.0)), module, Leviathan::SMOOSH_LIGHT));
         }
 };
 
