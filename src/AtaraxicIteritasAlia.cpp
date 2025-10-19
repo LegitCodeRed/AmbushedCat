@@ -28,29 +28,54 @@ struct BitTableOsc {
                 if (initialised)
                         return;
 
-                constexpr std::array<uint32_t, 3> tapMasks = {0xD0000001u, 0xA3000001u, 0xE5000001u};
+                // Mode 0: LFSR - linear feedback shift register patterns
+                constexpr uint32_t lfsrTapMask = 0xD0000001u;
                 constexpr std::array<uint32_t, wavesPerMode> seeds = {
                         0x13579BDFu, 0x2468ACE1u, 0x89ABCDEFu, 0x10293847u,
                         0x55667788u, 0xABCDEF12u, 0x1F2E3D4Cu, 0x0C0FFEE0u};
 
-                for (size_t mode = 0; mode < tables.size(); ++mode) {
-                        for (size_t wave = 0; wave < wavesPerMode; ++wave) {
-                                uint32_t state = seeds[wave] ^ (static_cast<uint32_t>(mode) << 7);
-                                float integrator = 0.f;
-                                float norm = 0.f;
-                                for (int i = 0; i < tableSize; ++i) {
-                                        state = lfsrStep(state, tapMasks[mode]);
-                                        float bit = (state & 1u) ? 1.f : -1.f;
-                                        float nibble = static_cast<float>((state >> 1) & 0x7u) / 3.5f - 1.f;
-                                        float step = 0.55f * bit + 0.45f * nibble;
-                                        integrator = 0.82f * integrator + 0.18f * step;
-                                        tables[mode][wave][i] = integrator;
-                                        norm = std::max(norm, std::fabs(integrator));
-                                }
-                                if (norm < 1e-3f)
-                                        norm = 1.f;
-                                for (float& sample : tables[mode][wave])
-                                        sample /= norm;
+                for (size_t wave = 0; wave < wavesPerMode; ++wave) {
+                        uint32_t state = seeds[wave];
+                        float integrator = 0.f;
+                        float norm = 0.f;
+                        for (int i = 0; i < tableSize; ++i) {
+                                state = lfsrStep(state, lfsrTapMask);
+                                float bit = (state & 1u) ? 1.f : -1.f;
+                                float nibble = static_cast<float>((state >> 1) & 0x7u) / 3.5f - 1.f;
+                                float step = 0.55f * bit + 0.45f * nibble;
+                                integrator = 0.82f * integrator + 0.18f * step;
+                                tables[0][wave][i] = integrator;
+                                norm = std::max(norm, std::fabs(integrator));
+                        }
+                        if (norm < 1e-3f)
+                                norm = 1.f;
+                        for (float& sample : tables[0][wave])
+                                sample /= norm;
+                }
+
+                // Mode 1: SQR - square wave AM'd by harmonic series
+                // Each waveform blends between different harmonics
+                for (size_t wave = 0; wave < wavesPerMode; ++wave) {
+                        int harmonic = static_cast<int>(wave) + 1; // Harmonics 1-8
+                        for (int i = 0; i < tableSize; ++i) {
+                                float phase = static_cast<float>(i) / static_cast<float>(tableSize);
+                                float square = phase < 0.5f ? 1.f : -1.f;
+                                float modulator = std::sin(2.f * M_PI * phase * harmonic);
+                                tables[1][wave][i] = square * (0.5f + 0.5f * modulator);
+                        }
+                }
+
+                // Mode 2: SQR2 - like SQR but modulating pitch jumps octave per waveform
+                for (size_t wave = 0; wave < wavesPerMode; ++wave) {
+                        int octaveShift = static_cast<int>(wave); // 0-7 octaves
+                        float modFreq = std::pow(2.f, static_cast<float>(octaveShift));
+                        for (int i = 0; i < tableSize; ++i) {
+                                float phase = static_cast<float>(i) / static_cast<float>(tableSize);
+                                float square = phase < 0.5f ? 1.f : -1.f;
+                                float modPhase = phase * modFreq;
+                                modPhase -= std::floor(modPhase);
+                                float modulator = std::sin(2.f * M_PI * modPhase);
+                                tables[2][wave][i] = square * (0.5f + 0.5f * modulator);
                         }
                 }
 
@@ -75,36 +100,36 @@ struct BitTableOsc {
                 phase += phaseStep;
                 phase -= std::floor(phase);
 
-                float tableIndex = rack::math::clamp(wave, 0.f, 0.999f) * (wavesPerMode - 1);
-                int lowWave = static_cast<int>(std::floor(tableIndex));
-                int highWave = rack::math::clamp(lowWave + 1, 0, wavesPerMode - 1);
-                float waveFrac = tableIndex - static_cast<float>(lowWave);
-
                 float idx = phase * tableSize;
                 int indexA = static_cast<int>(idx) % tableSize;
                 int indexB = (indexA + 1) % tableSize;
                 float frac = idx - std::floor(idx);
 
                 const auto& modeTables = tables[mode];
-                float a0 = modeTables[lowWave][indexA];
-                float a1 = modeTables[lowWave][indexB];
-                float b0 = modeTables[highWave][indexA];
-                float b1 = modeTables[highWave][indexB];
-                float low = rack::math::crossfade(a0, a1, frac);
-                float high = rack::math::crossfade(b0, b1, frac);
-                float digital = rack::math::crossfade(low, high, waveFrac);
 
-                float phaseCentered = phase * 2.f - 1.f;
-                float triangle = 2.f * std::fabs(phaseCentered) - 1.f;
-                float saw = phaseCentered;
-                float square = phase < 0.5f ? 1.f : -1.f;
-                float morph1 = rack::math::clamp(shape * 2.f, 0.f, 1.f);
-                float morph2 = rack::math::clamp((shape - 0.5f) * 2.f, 0.f, 1.f);
-                float analog = rack::math::crossfade(triangle, saw, morph1);
-                analog = rack::math::crossfade(analog, square, morph2);
+                // Waveform parameter selects which waveform in the table (0-7)
+                // Shape parameter controls interpolation/morphing between adjacent waveforms
+                float tableIndex = rack::math::clamp(wave, 0.f, 0.999f) * (wavesPerMode - 1);
+                int baseWave = static_cast<int>(std::floor(tableIndex));
+                int nextWave = rack::math::clamp(baseWave + 1, 0, wavesPerMode - 1);
 
-                float combined = rack::math::crossfade(analog, digital, 0.4f + wave * 0.5f);
-                return rack::math::clamp(combined, -1.1f, 1.1f);
+                // Shape controls how much we blend to the next waveform
+                float morphAmount = rack::math::clamp(shape, 0.f, 1.f);
+
+                // Sample from base waveform
+                float a0 = modeTables[baseWave][indexA];
+                float a1 = modeTables[baseWave][indexB];
+                float baseSample = rack::math::crossfade(a0, a1, frac);
+
+                // Sample from next waveform
+                float b0 = modeTables[nextWave][indexA];
+                float b1 = modeTables[nextWave][indexB];
+                float nextSample = rack::math::crossfade(b0, b1, frac);
+
+                // Morph between them based on shape parameter
+                float output = rack::math::crossfade(baseSample, nextSample, morphAmount);
+
+                return rack::math::clamp(output, -1.1f, 1.1f);
         }
 };
 
@@ -184,7 +209,7 @@ struct AsymmetricSoftFold {
                 float x3 = x2 * bias;
                 float x5 = x3 * x2;
                 constexpr float a = 1.6f;
-                constexpr float b = 0.9f;
+                constexpr float b = 0.6f;
                 float folded = bias - a * x3 + b * x5;
                 folded = rack::math::clamp((folded - 0.5f) * 2.f, -1.2f, 1.2f);
                 float blend = rack::math::clamp(amount * 0.95f, 0.f, 1.f);
@@ -325,10 +350,10 @@ struct AtaraxicIteritasAlia : Module {
                 subPhase += (freq * 0.5f) / sampleRate;
                 if (subPhase >= 1.f)
                         subPhase -= 1.f;
-                float sub = rack::math::clamp(subPhase, 0.f, 1.f);
+                float sub = (subPhase * 2.f - 1.f); // Convert to bipolar saw wave
 
                 float mainOut = rack::math::clamp(combed, -2.5f, 2.5f) * 5.f;
-                float subOut = sub * 10.f;
+                float subOut = rack::math::clamp(sub, -1.f, 1.f) * 5.f;
 
                 if (outputs[MAIN_OUTPUT].isConnected())
                         outputs[MAIN_OUTPUT].setVoltage(mainOut);
