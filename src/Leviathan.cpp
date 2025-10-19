@@ -72,11 +72,32 @@ struct RectifierStage {
         float process(float in, float amount) {
                 if (amount <= 1e-5f)
                         return in;
+
+                // Full-wave rectification
                 float rect = std::fabs(in);
+
+                // DC blocking
                 dcState = rack::math::clamp(alpha * dcState + (1.f - alpha) * rect, -10.f, 10.f);
                 float centered = rect - dcState;
-                float shaped = std::tanh(centered * (3.f + 12.f * amount));
-                return rack::math::crossfade(in, shaped, amount);
+
+                // Much heavier distortion - Pura Ruina style
+                // Pre-gain for more aggressive rectification
+                float preGain = 1.5f + amount * 4.5f;
+                float driven = centered * preGain;
+
+                // Hard clip for more aggressive character
+                driven = rack::math::clamp(driven, -3.f, 3.f);
+
+                // Asymmetric waveshaping for octave-up character
+                float asymmetry = 0.2f + amount * 0.3f;
+                float shaped = std::tanh((driven + asymmetry) * (2.5f + 8.f * amount)) - asymmetry * 0.5f;
+
+                // Add harmonics boost
+                shaped *= (1.f + amount * 0.6f);
+
+                // More wet mix at higher amounts
+                float wetAmount = amount * (0.8f + amount * 0.4f);
+                return rack::math::crossfade(in, shaped, wetAmount);
         }
 };
 
@@ -175,16 +196,17 @@ struct SubOctaveChorus {
                 sub = smoother.process(sub);
 
                 // Detuning that gets worse as amount increases
-                // Slow LFO for pitch warble
-                float detuneSpeed = 0.5f + amount * 2.5f; // Gets faster/more unstable
+                // Slow LFO for pitch warble - starts immediately
+                float detuneSpeed = 1.2f + amount * 2.2f; // Faster base speed
                 detunePhase += detuneSpeed / sampleRate;
                 if (detunePhase >= 1.f)
                         detunePhase -= 1.f;
 
                 float detune = std::sin(2.f * M_PI * detunePhase);
 
-                // Apply detuning - gets more extreme with amount
-                float detuneDepth = amount * amount * 0.7f;
+                // Apply detuning - starts early and gets more extreme
+                // More linear at start, then accelerates
+                float detuneDepth = (0.15f + amount * 0.9f) * amount;
                 float detuned = sub * (1.f + detune * detuneDepth);
 
                 // In top quarter, add overtone buzz
@@ -272,20 +294,35 @@ struct MultiBandSaturator {
                 wHighMid /= weightSum;
                 wHigh /= weightSum;
 
-                float intensity = rack::math::clamp(0.35f + 0.55f * emphasis + smooshBoost, 0.f, 1.f);
+                // Much heavier saturation - Seca Ruina style
+                float intensity = rack::math::clamp(0.6f + 0.8f * emphasis + smooshBoost, 0.f, 1.f);
                 auto saturateBand = [&](float sample, float weight, float softness) {
-                        float drive = 1.f + (6.f + 12.f * weight) * (0.3f + 0.7f * emphasis + 0.5f * smooshBoost);
-                        float shaped = std::tanh(sample * drive);
+                        // More aggressive drive curve
+                        float baseDrive = 2.f + (12.f + 28.f * weight) * (0.5f + 1.2f * emphasis + 0.8f * smooshBoost);
+
+                        // Hard clip before tanh for more aggression
+                        float preClip = rack::math::clamp(sample * baseDrive * 0.5f, -2.5f, 2.5f);
+
+                        // Asymmetric saturation for character
+                        float offset = 0.1f * weight;
+                        float shaped = std::tanh((preClip + offset) * 1.8f) - offset * 0.3f;
+
+                        // Post-gain to compensate
+                        shaped *= (1.f + 0.5f * weight);
+
                         return rack::math::crossfade(sample, shaped, rack::math::clamp(intensity * softness, 0.f, 1.f));
                 };
 
-                float lowSat = saturateBand(lowBand, wLow, 0.9f);
-                float lowMidSat = saturateBand(lowMidBand, wLowMid, 1.0f);
-                float highMidSat = saturateBand(highMidBand, wHighMid, 1.1f);
+                float lowSat = saturateBand(lowBand, wLow, 1.0f);
+                float lowMidSat = saturateBand(lowMidBand, wLowMid, 1.1f);
+                float highMidSat = saturateBand(highMidBand, wHighMid, 1.15f);
                 float highSat = saturateBand(highBand, wHigh, 1.2f);
 
                 float combined = lowSat + lowMidSat + highMidSat + highSat;
-                return rack::math::crossfade(in, combined, rack::math::clamp(0.4f + 0.5f * emphasis + 0.3f * smooshBoost, 0.f, 1.f));
+
+                // More wet mix for heavier saturation
+                float wetAmount = rack::math::clamp(0.7f + 0.7f * emphasis + 0.4f * smooshBoost, 0.f, 1.f);
+                return rack::math::crossfade(in, combined, wetAmount);
         }
 };
 } // namespace
