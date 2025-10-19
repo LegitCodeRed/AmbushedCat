@@ -354,6 +354,15 @@ public:
         void process(float sampleTime, bool clockEdge) {
                 eocPulse = false;
 
+                // Update gate timer before potentially advancing step
+                if (gateTimer > 0.f) {
+                        gateTimer -= sampleTime;
+                        if (gateTimer <= 0.f) {
+                                gateOut = false;
+                                gateTimer = 0.f;
+                        }
+                }
+
                 if (clockEdge) {
                         advanceStep();
                 } else {
@@ -361,14 +370,6 @@ public:
                         if (phase >= currentStepDuration()) {
                                 phase -= currentStepDuration();
                                 advanceStep();
-                        }
-                }
-
-                if (gateTimer > 0.f) {
-                        gateTimer -= sampleTime;
-                        if (gateTimer <= 0.f) {
-                                gateOut = false;
-                                gateTimer = 0.f;
                         }
                 }
         }
@@ -462,6 +463,7 @@ private:
                         lastPitch = snapped;
                         lastVel = shapedVel;
                 } else {
+                        // Inactive step - turn off gate immediately
                         gateOut = false;
                         gateTimer = 0.f;
                 }
@@ -560,6 +562,7 @@ struct Sitri : rack::engine::Module {
                 SCALE_PARAM,
                 TRANSPOSE_PARAM,
                 SEED_PARAM,
+                RESEED_PARAM,
                 PARAMS_LEN
         };
         enum InputIds {
@@ -591,6 +594,7 @@ struct Sitri : rack::engine::Module {
         dsp::SchmittTrigger clockTrigger;
         dsp::SchmittTrigger resetTrigger;
         dsp::SchmittTrigger seedTrigger;
+        dsp::SchmittTrigger reseedTrigger;
 
         float heldSeed = 0.f;
 
@@ -602,19 +606,52 @@ struct Sitri : rack::engine::Module {
                         algoIds.push_back("raxdm");
                 float algoMax = (float)std::max<int>(0, (int)algoIds.size() - 1);
 
-                configParam(TYPE_PARAM, 0.f, algoMax, 0.f, "Algorithm");
-                configParam(DENSITY_PARAM, 0.f, 1.f, 0.6f, "Density");
-                configParam(STEPS_PARAM, 1.f, 32.f, 16.f, "Steps");
-                configParam(OFFSET_PARAM, -16.f, 16.f, 0.f, "Offset");
-                configParam(ACCENT_PARAM, 0.f, 1.f, 0.5f, "Accent");
-                configParam(GATE_PARAM, 0.05f, 1.f, 0.5f, "Gate percent");
-                configParam(DIV_PARAM, -2.f, 4.f, 0.f, "Division");
-                configParam(DIR_PARAM, 0.f, 3.f, 0.f, "Direction");
-                configParam(SWING_PARAM, 0.f, 0.6f, 0.f, "Swing");
-                configParam(ROOT_PARAM, 0.f, 11.f, 0.f, "Root");
-                configParam(SCALE_PARAM, 0.f, (float)(quantizer.scaleNames().size() - 1), 0.f, "Scale");
-                configParam(TRANSPOSE_PARAM, -24.f, 24.f, 0.f, "Transpose");
-                configParam(SEED_PARAM, 0.f, 1.f, 0.5f, "Seed");
+                // Parameters with snapping for discrete values
+                configSwitch(TYPE_PARAM, 0.f, algoMax, 0.f, "Algorithm", {"RAxDOM", "ACxEOM", "XACIDx"});
+                configParam(DENSITY_PARAM, 0.f, 1.f, 0.6f, "Density", "%", 0.f, 100.f);
+
+                auto stepsParam = configParam(STEPS_PARAM, 1.f, 32.f, 16.f, "Sequence Length", " steps");
+                stepsParam->snapEnabled = true;
+
+                auto offsetParam = configParam(OFFSET_PARAM, -16.f, 16.f, 0.f, "Step Offset", " steps");
+                offsetParam->snapEnabled = true;
+
+                configParam(ACCENT_PARAM, 0.f, 1.f, 0.5f, "Accent", "%", 0.f, 100.f);
+                configParam(GATE_PARAM, 0.05f, 1.f, 0.5f, "Gate Length", "%", 0.f, 100.f);
+
+                auto divParam = configParam(DIV_PARAM, -2.f, 4.f, 0.f, "Clock Division", "x", 2.f, 1.f);
+                divParam->snapEnabled = true;
+
+                configSwitch(DIR_PARAM, 0.f, 3.f, 0.f, "Direction", {"Forward", "Reverse", "Ping-Pong", "Random"});
+                configParam(SWING_PARAM, 0.f, 0.6f, 0.f, "Swing", "%", 0.f, 100.f);
+
+                auto rootParam = configParam(ROOT_PARAM, 0.f, 11.f, 0.f, "Root Note");
+                rootParam->snapEnabled = true;
+
+                auto scaleParam = configParam(SCALE_PARAM, 0.f, (float)(quantizer.scaleNames().size() - 1), 0.f, "Scale");
+                scaleParam->snapEnabled = true;
+
+                auto transposeParam = configParam(TRANSPOSE_PARAM, -24.f, 24.f, 0.f, "Transpose", " semitones");
+                transposeParam->snapEnabled = true;
+
+                configParam(SEED_PARAM, 0.f, 1.f, 0.5f, "Random Seed", "%", 0.f, 100.f);
+                configButton(RESEED_PARAM, "Reseed - Generate new pattern");
+
+                // Inputs with proper names
+                configInput(CLOCK_INPUT, "Clock");
+                configInput(RESET_INPUT, "Reset");
+                configInput(ROOT_INPUT, "Root Note CV");
+                configInput(TRANSPOSE_INPUT, "Transpose CV");
+                configInput(DENSITY_INPUT, "Density CV");
+                configInput(ACCENT_INPUT, "Accent CV");
+                configInput(GATE_INPUT, "Gate Length CV");
+                configInput(SEED_INPUT, "Random Seed Trigger");
+
+                // Algorithm Outputs
+                configOutput(PITCH_OUTPUT, "Pitch CV (V/Oct) - Quantized melody from algorithm");
+                configOutput(GATE_OUTPUT, "Gate/Trigger - Note on/off from algorithm");
+                configOutput(VEL_OUTPUT, "Velocity CV (0-10V) - Note dynamics from algorithm");
+                configOutput(EOC_OUTPUT, "End of Cycle Trigger - Fires when sequence loops");
 
                 core.setQuantizer(&quantizer);
                 setAlgorithm(algoId);
@@ -698,6 +735,11 @@ struct Sitri : rack::engine::Module {
                         }
                 }
 
+                // Reseed button - the heart of the module
+                if (reseedTrigger.process(params[RESEED_PARAM].getValue())) {
+                        core.reset(computeSeed());
+                }
+
                 bool resetTrig = resetTrigger.process(inputs[RESET_INPUT].getVoltage());
 
                 bool clockEdge = false;
@@ -728,64 +770,58 @@ struct SitriWidget : rack::app::ModuleWidget {
                 setModule(module);
                 setPanel(createPanel(asset::plugin(pluginInstance, "res/Sitri.svg")));
 
-                const float x = 15.f;
-                float y = 30.f;
-                const float dy = 22.f;
+                addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+                addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+                addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+                addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-                addParam(createParamCentered<rack::componentlibrary::RoundBlackKnob>(rack::math::Vec(x, y), module, Sitri::TYPE_PARAM));
-                y += dy;
-                addParam(createParamCentered<rack::componentlibrary::RoundBlackKnob>(rack::math::Vec(x, y), module, Sitri::DENSITY_PARAM));
-                y += dy;
-                addParam(createParamCentered<rack::componentlibrary::RoundBlackKnob>(rack::math::Vec(x, y), module, Sitri::STEPS_PARAM));
-                y += dy;
-                addParam(createParamCentered<rack::componentlibrary::RoundBlackKnob>(rack::math::Vec(x, y), module, Sitri::OFFSET_PARAM));
-                y += dy;
-                addParam(createParamCentered<rack::componentlibrary::RoundBlackKnob>(rack::math::Vec(x, y), module, Sitri::ACCENT_PARAM));
-                y += dy;
-                addParam(createParamCentered<rack::componentlibrary::RoundBlackKnob>(rack::math::Vec(x, y), module, Sitri::GATE_PARAM));
-                y += dy;
-                addParam(createParamCentered<rack::componentlibrary::RoundBlackKnob>(rack::math::Vec(x, y), module, Sitri::DIV_PARAM));
-                y += dy;
-                addParam(createParamCentered<rack::componentlibrary::RoundBlackKnob>(rack::math::Vec(x, y), module, Sitri::DIR_PARAM));
-                y += dy;
-                addParam(createParamCentered<rack::componentlibrary::RoundBlackKnob>(rack::math::Vec(x, y), module, Sitri::SWING_PARAM));
-                y += dy;
-                addParam(createParamCentered<rack::componentlibrary::RoundBlackKnob>(rack::math::Vec(x, y), module, Sitri::ROOT_PARAM));
-                y += dy;
-                addParam(createParamCentered<rack::componentlibrary::RoundBlackKnob>(rack::math::Vec(x, y), module, Sitri::SCALE_PARAM));
-                y += dy;
-                addParam(createParamCentered<rack::componentlibrary::RoundBlackKnob>(rack::math::Vec(x, y), module, Sitri::TRANSPOSE_PARAM));
-                y += dy;
-                addParam(createParamCentered<rack::componentlibrary::RoundBlackKnob>(rack::math::Vec(x, y), module, Sitri::SEED_PARAM));
+                // Algorithm sequencer - clean, professional layout
+                // 32HP module = 120.952mm width
 
-                y = 300.f;
-                addInput(createInputCentered<rack::componentlibrary::PJ301MPort>(rack::math::Vec(x, y), module, Sitri::CLOCK_INPUT));
-                y += 25.f;
-                addInput(createInputCentered<rack::componentlibrary::PJ301MPort>(rack::math::Vec(x, y), module, Sitri::RESET_INPUT));
-                y += 25.f;
-                addInput(createInputCentered<rack::componentlibrary::PJ301MPort>(rack::math::Vec(x, y), module, Sitri::ROOT_INPUT));
-                y += 25.f;
-                addInput(createInputCentered<rack::componentlibrary::PJ301MPort>(rack::math::Vec(x, y), module, Sitri::TRANSPOSE_INPUT));
-                y += 25.f;
-                addInput(createInputCentered<rack::componentlibrary::PJ301MPort>(rack::math::Vec(x, y), module, Sitri::DENSITY_INPUT));
-                y += 25.f;
-                addInput(createInputCentered<rack::componentlibrary::PJ301MPort>(rack::math::Vec(x, y), module, Sitri::ACCENT_INPUT));
-                y += 25.f;
-                addInput(createInputCentered<rack::componentlibrary::PJ301MPort>(rack::math::Vec(x, y), module, Sitri::GATE_INPUT));
-                y += 25.f;
-                addInput(createInputCentered<rack::componentlibrary::PJ301MPort>(rack::math::Vec(x, y), module, Sitri::SEED_INPUT));
+                // === ALGORITHM SELECTION ===
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(15.0, 20.0)), module, Sitri::TYPE_PARAM));
+                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(30.0, 20.0)), module, Sitri::SEED_PARAM));
 
-                y = 300.f;
-                const float x2 = 45.f;
-                addOutput(createOutputCentered<rack::componentlibrary::PJ301MPort>(rack::math::Vec(x2, y), module, Sitri::PITCH_OUTPUT));
-                y += 25.f;
-                addOutput(createOutputCentered<rack::componentlibrary::PJ301MPort>(rack::math::Vec(x2, y), module, Sitri::GATE_OUTPUT));
-                y += 25.f;
-                addOutput(createOutputCentered<rack::componentlibrary::PJ301MPort>(rack::math::Vec(x2, y), module, Sitri::VEL_OUTPUT));
-                y += 25.f;
-                addOutput(createOutputCentered<rack::componentlibrary::PJ301MPort>(rack::math::Vec(x2, y), module, Sitri::EOC_OUTPUT));
+                // === BIG ACID RESEED BUTTON (the heart of the module) ===
+                addParam(createParamCentered<VCVButton>(mm2px(Vec(16.0, 30.0)), module, Sitri::RESEED_PARAM));
 
-                addChild(createLightCentered<rack::componentlibrary::SmallLight<rack::componentlibrary::GreenLight>>(rack::math::Vec(30.f, 260.f), module, Sitri::ACTIVE_LIGHT));
+                // === SEQUENCE CONTROL ===
+                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10.0, 38.0)), module, Sitri::STEPS_PARAM));
+                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(22.0, 38.0)), module, Sitri::OFFSET_PARAM));
+                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10.0, 50.0)), module, Sitri::DIV_PARAM));
+                addParam(createParamCentered<CKSSThree>(mm2px(Vec(22.0, 50.0)), module, Sitri::DIR_PARAM));
+
+                // === MUSICAL EXPRESSION ===
+                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10.0, 62.0)), module, Sitri::DENSITY_PARAM));
+                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(22.0, 62.0)), module, Sitri::ACCENT_PARAM));
+                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10.0, 74.0)), module, Sitri::GATE_PARAM));
+                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(22.0, 74.0)), module, Sitri::SWING_PARAM));
+
+                // === QUANTIZER ===
+                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10.0, 86.0)), module, Sitri::ROOT_PARAM));
+                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(22.0, 86.0)), module, Sitri::SCALE_PARAM));
+                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(16.0, 97.0)), module, Sitri::TRANSPOSE_PARAM));
+
+                // === CV INPUTS (White ports) ===
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.0, 106.0)), module, Sitri::CLOCK_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(16.0, 106.0)), module, Sitri::RESET_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(22.0, 106.0)), module, Sitri::SEED_INPUT));
+
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.0, 113.5)), module, Sitri::DENSITY_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(16.0, 113.5)), module, Sitri::ACCENT_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(22.0, 113.5)), module, Sitri::GATE_INPUT));
+
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.0, 121.0)), module, Sitri::ROOT_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(16.0, 121.0)), module, Sitri::TRANSPOSE_INPUT));
+
+                // === OUTPUTS (Black ports) ===
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(28.0, 106.0)), module, Sitri::PITCH_OUTPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(28.0, 113.5)), module, Sitri::GATE_OUTPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(28.0, 121.0)), module, Sitri::VEL_OUTPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(22.0, 121.0)), module, Sitri::EOC_OUTPUT));
+
+                // === ACTIVITY INDICATOR ===
+                addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(16.0, 127.0)), module, Sitri::ACTIVE_LIGHT));
         }
 };
 

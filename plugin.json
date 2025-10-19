@@ -81,6 +81,14 @@
         "Effect",
         "Stereo"
       ]
+    },
+     {
+      "slug": "Sitri",
+      "name": "Sitri",
+      "description": "sitri",
+      "tags": [
+        "Sequencer"
+      ]
     }
   ]
 }
