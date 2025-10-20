@@ -228,14 +228,14 @@ public:
         }
 
         float snap(float vOct) const {
-                const float base = root + transpose;
-                float rel = vOct - base;
+                // Apply transpose AFTER quantization so it shifts the entire output
+                float rel = vOct - root;
                 int semitone = (int)std::floor(rel * 12.f + 0.5f);
                 int octave = floorDiv(semitone, 12);
                 int degree = semitone - octave * 12;
                 int snappedDeg = nearestAllowedDegree(degree);
                 int snappedSemitone = octave * 12 + snappedDeg;
-                return snappedSemitone / 12.f + base;
+                return snappedSemitone / 12.f + root + transpose;
         }
 
         const std::vector<std::string>& scaleNames() const {
@@ -344,6 +344,8 @@ public:
                 lastStepActive = false;
                 lastGateFracApplied = clamp(gatePercent, 0.01f, 1.f);
                 quantizerRevision = quantizer ? quantizer->getRevision() : 0;
+                clockPeriod = 0.5f;
+                timeSinceLastClock = 0.f;
                 if (algo)
                         algo->reset(seed);
         }
@@ -393,12 +395,18 @@ public:
                 }
 
                 if (clockEdge) {
-                        advanceStep();
+                        // Measure clock period for external clock
+                        if (timeSinceLastClock > 0.001f) { // Avoid division by zero
+                                clockPeriod = timeSinceLastClock;
+                        }
+                        timeSinceLastClock = 0.f;
+                        advanceStep(true); // true = external clock
                 } else {
+                        timeSinceLastClock += sampleTime;
                         phase += sampleTime;
                         if (phase >= currentStepDuration()) {
                                 phase -= currentStepDuration();
-                                advanceStep();
+                                advanceStep(false); // false = internal clock
                         }
                 }
         }
@@ -435,6 +443,8 @@ private:
 
         float gateTimer = 0.f;
         float currentDuration = 0.5f;
+        float clockPeriod = 0.5f;
+        float timeSinceLastClock = 0.f;
         float lastRawPitch = 0.f;
         float lastGateFracApplied = 0.5f;
         bool lastStepActive = false;
@@ -460,7 +470,7 @@ private:
                 velOut = lastVel * 10.f;
         }
 
-        void advanceStep() {
+        void advanceStep(bool externalClock = false) {
                 if (!algo || !quantizer || steps <= 0)
                         return;
 
@@ -487,7 +497,8 @@ private:
                 if (rand01(prngState) > chance)
                         active = false;
 
-                float duration = 1.f / divHz;
+                // Use external clock period if available, otherwise use internal divHz
+                float duration = externalClock ? clockPeriod : (1.f / divHz);
                 bool oddStep = (totalStepCount % 2) == 1;
                 float swingScale = 1.f;
                 if (swing > 0.f) {
@@ -651,6 +662,7 @@ struct Sitri : rack::engine::Module {
         dsp::SchmittTrigger reseedTrigger;
 
         float heldSeed = 0.f;
+        int voltageRange = 2; // 0 = 1V, 1 = 5V, 2 = 10V (default 10V)
 
         Sitri() {
                 config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -806,12 +818,39 @@ struct Sitri : rack::engine::Module {
 
                 core.process(args.sampleTime, clockEdge);
 
-                outputs[PITCH_OUTPUT].setVoltage(core.pitchOut);
+                // Apply voltage range attenuation (clamps to specified range)
+                float pitchOut = core.pitchOut;
+
+                switch (voltageRange) {
+                case 0: // 1V range: clamp to ±0.5V
+                        pitchOut = clamp(pitchOut, -0.5f, 0.5f);
+                        break;
+                case 1: // 5V range: clamp to ±2.5V
+                        pitchOut = clamp(pitchOut, -2.5f, 2.5f);
+                        break;
+                case 2: // 10V range (default): no clamping
+                default:
+                        break;
+                }
+
+                outputs[PITCH_OUTPUT].setVoltage(pitchOut);
                 outputs[GATE_OUTPUT].setVoltage(core.gateOut ? 10.f : 0.f);
                 outputs[VEL_OUTPUT].setVoltage(core.velOut);
                 outputs[EOC_OUTPUT].setVoltage(core.eocPulse ? 10.f : 0.f);
 
                 lights[ACTIVE_LIGHT].setBrightness(core.gateOut ? 1.f : 0.f);
+        }
+
+        json_t* dataToJson() override {
+                json_t* rootJ = json_object();
+                json_object_set_new(rootJ, "voltageRange", json_integer(voltageRange));
+                return rootJ;
+        }
+
+        void dataFromJson(json_t* rootJ) override {
+                json_t* voltageRangeJ = json_object_get(rootJ, "voltageRange");
+                if (voltageRangeJ)
+                        voltageRange = json_integer_value(voltageRangeJ);
         }
 };
 
@@ -876,6 +915,42 @@ struct SitriWidget : rack::app::ModuleWidget {
 
                 // === ACTIVITY INDICATOR ===
                 addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(16.0, 127.0)), module, Sitri::ACTIVE_LIGHT));
+        }
+
+        void appendContextMenu(Menu* menu) override {
+                Sitri* module = getModule<Sitri>();
+                if (!module)
+                        return;
+
+                menu->addChild(new MenuSeparator);
+                menu->addChild(createMenuLabel("Pitch CV Range"));
+
+                struct VoltageRangeItem : MenuItem {
+                        Sitri* module;
+                        int range;
+                        void onAction(const event::Action& e) override {
+                                module->voltageRange = range;
+                        }
+                        void step() override {
+                                rightText = (module->voltageRange == range) ? "✔" : "";
+                                MenuItem::step();
+                        }
+                };
+
+                VoltageRangeItem* range1V = createMenuItem<VoltageRangeItem>("1V");
+                range1V->module = module;
+                range1V->range = 0;
+                menu->addChild(range1V);
+
+                VoltageRangeItem* range5V = createMenuItem<VoltageRangeItem>("5V");
+                range5V->module = module;
+                range5V->range = 1;
+                menu->addChild(range5V);
+
+                VoltageRangeItem* range10V = createMenuItem<VoltageRangeItem>("10V");
+                range10V->module = module;
+                range10V->range = 2;
+                menu->addChild(range10V);
         }
 };
 
