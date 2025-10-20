@@ -207,12 +207,25 @@ public:
                         index = 0;
                 if (index >= (int)scales().size())
                         index = (int)scales().size() - 1;
-                scaleIndex = index;
-                updateTable();
+                if (scaleIndex != index) {
+                        scaleIndex = index;
+                        updateTable();
+                        ++revision;
+                }
         }
 
-        void setRoot(float v) { root = v; }
-        void setTranspose(float v) { transpose = v; }
+        void setRoot(float v) {
+                if (std::fabs(root - v) > 1e-6f) {
+                        root = v;
+                        ++revision;
+                }
+        }
+        void setTranspose(float v) {
+                if (std::fabs(transpose - v) > 1e-6f) {
+                        transpose = v;
+                        ++revision;
+                }
+        }
 
         float snap(float vOct) const {
                 const float base = root + transpose;
@@ -231,11 +244,14 @@ public:
 
         int getScaleIndex() const { return scaleIndex; }
 
+        uint64_t getRevision() const { return revision; }
+
 private:
-        int scaleIndex = 0;
+        int scaleIndex = -1;
         float root = 0.f;
         float transpose = 0.f;
         std::array<bool, 12> allowed{};
+        uint64_t revision = 0;
 
         void updateTable() {
                 allowed.fill(false);
@@ -307,7 +323,10 @@ public:
                 algo = algoOwner.get();
         }
 
-        void setQuantizer(Quantizer* q) { quantizer = q; }
+        void setQuantizer(Quantizer* q) {
+                quantizer = q;
+                quantizerRevision = quantizer ? quantizer->getRevision() : 0;
+        }
 
         void reset(uint64_t seed) {
                 prngState = seed ? seed : 0x12345678abcdefULL;
@@ -321,6 +340,10 @@ public:
                 lastPitch = 0.f;
                 lastVel = 0.8f;
                 eocPulse = false;
+                lastRawPitch = 0.f;
+                lastStepActive = false;
+                lastGateFracApplied = clamp(gatePercent, 0.01f, 1.f);
+                quantizerRevision = quantizer ? quantizer->getRevision() : 0;
                 if (algo)
                         algo->reset(seed);
         }
@@ -338,7 +361,10 @@ public:
         void setOffset(int o) { offset = o; }
         void setDensity(float d) { density = clamp(d, 0.f, 1.f); }
         void setAccent(float a) { accent = clamp(a, 0.f, 1.f); }
-        void setGatePercent(float g) { gatePercent = clamp(g, 0.05f, 1.f); }
+        void setGatePercent(float g) {
+                gatePercent = clamp(g, 0.05f, 1.f);
+                lastGateFracApplied = clamp(gatePercent, 0.01f, 1.f);
+        }
         void setDivHz(float hz) { divHz = std::max(hz, 0.01f); }
         void setSwing(float s) { swing = clamp(s, 0.f, 0.6f); }
         void setDirection(int dir) {
@@ -353,6 +379,9 @@ public:
 
         void process(float sampleTime, bool clockEdge) {
                 eocPulse = false;
+
+                if (quantizer && quantizer->getRevision() != quantizerRevision)
+                        onQuantizerChanged();
 
                 // Update gate timer before potentially advancing step
                 if (gateTimer > 0.f) {
@@ -406,9 +435,29 @@ private:
 
         float gateTimer = 0.f;
         float currentDuration = 0.5f;
+        float lastRawPitch = 0.f;
+        float lastGateFracApplied = 0.5f;
+        bool lastStepActive = false;
+        uint64_t quantizerRevision = 0;
 
         float currentStepDuration() const {
                 return currentDuration;
+        }
+
+        void onQuantizerChanged() {
+                quantizerRevision = quantizer->getRevision();
+                if (!lastStepActive)
+                        return;
+                float newPitch = quantizer->snap(lastRawPitch);
+                if (std::fabs(newPitch - pitchOut) < 1e-5f)
+                        return;
+
+                float gateFrac = clamp(lastGateFracApplied, 0.01f, 1.f);
+                gateOut = true;
+                gateTimer = currentStepDuration() * gateFrac;
+                pitchOut = newPitch;
+                lastPitch = newPitch;
+                velOut = lastVel * 10.f;
         }
 
         void advanceStep() {
@@ -460,12 +509,17 @@ private:
                         gateOut = true;
                         float gateFrac = clamp(proposal.gateFrac * gatePercent, 0.01f, 1.f);
                         gateTimer = currentDuration * gateFrac;
+                        lastGateFracApplied = gateFrac;
+                        lastRawPitch = rawPitch;
+                        lastStepActive = true;
+                        quantizerRevision = quantizer->getRevision();
                         lastPitch = snapped;
                         lastVel = shapedVel;
                 } else {
                         // Inactive step - turn off gate immediately
                         gateOut = false;
                         gateTimer = 0.f;
+                        lastStepActive = false;
                 }
 
                 advanceCounters();
