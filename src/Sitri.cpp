@@ -560,7 +560,9 @@ public:
         }
 
         void reset(uint64_t seed) {
-                prngState = seed ? seed : 0x12345678abcdefULL;
+                uint64_t actualSeed = seed ? seed : 0x12345678abcdefULL;
+                baseSeed = actualSeed;
+                prngState = actualSeed;
                 gateOut = false;
                 gateTimer = 0.f;
                 phase = 0.f;
@@ -578,8 +580,11 @@ public:
                 clockPeriod = 0.5f;
                 timeSinceLastClock = 0.f;
                 lastRandomStep = -1;
+                cycleResetPending = false;
+                externalClockActive = false;
+                externalClockDivCounter = 0;
                 if (algo)
-                        algo->reset(seed);
+                        algo->reset(actualSeed);
         }
 
         void setSteps(int s) {
@@ -591,6 +596,8 @@ public:
                         pingDir = 1;
                         totalStepCount = 0;
                         lastRandomStep = -1;
+                        cycleResetPending = true;
+                        externalClockDivCounter = 0;
                 }
         }
         void setOffset(int o) { offset = o; }
@@ -600,7 +607,12 @@ public:
                 gatePercent = clamp(g, 0.05f, 1.f);
                 lastGateFracApplied = clamp(gatePercent, 0.01f, 1.f);
         }
-        void setDivHz(float hz) { divHz = std::max(hz, 0.01f); }
+        void setDivHz(float hz) {
+                divHz = std::max(hz, 0.01f);
+                // Calculate clock division for external clocks
+                // divHz of 2Hz = divide by 1, 4Hz = divide by 2, 8Hz = divide by 4, etc.
+                externalClockDivAmount = std::max(1, (int)std::round(divHz / 2.0f));
+        }
         void setSwing(float s) { swing = clamp(s, 0.f, 0.6f); }
         void setDirection(int dir) {
                 if (direction != dir) {
@@ -610,10 +622,12 @@ public:
                         pingDir = 1;
                         totalStepCount = 0;
                         lastRandomStep = -1;
+                        cycleResetPending = true;
+                        externalClockDivCounter = 0;
                 }
         }
 
-        void process(float sampleTime, bool clockEdge) {
+        void process(float sampleTime, bool clockEdge, bool externalClockConnected) {
                 eocPulse = false;
 
                 if (quantizer && quantizer->getRevision() != quantizerRevision)
@@ -628,20 +642,40 @@ public:
                         }
                 }
 
+                if (externalClockActive != externalClockConnected) {
+                        externalClockActive = externalClockConnected;
+                        externalClockDivCounter = 0;
+                        if (!externalClockActive) {
+                                phase = 0.f;
+                                timeSinceLastClock = 0.f;
+                        }
+                }
+
+                timeSinceLastClock += sampleTime;
+
                 if (clockEdge) {
                         // Measure clock period for external clock
-                        if (timeSinceLastClock > 0.001f) { // Avoid division by zero
+                        if (externalClockConnected && timeSinceLastClock > 0.001f) { // Avoid division by zero
                                 clockPeriod = timeSinceLastClock;
                         }
                         timeSinceLastClock = 0.f;
-                        advanceStep(true); // true = external clock
-                } else {
-                        timeSinceLastClock += sampleTime;
+                        phase = 0.f;
+
+                        // Apply clock division for external clock
+                        externalClockDivCounter++;
+                        if (externalClockDivCounter >= externalClockDivAmount) {
+                                externalClockDivCounter = 0;
+                                advanceStep(true); // true = external clock
+                        }
+                } else if (!externalClockConnected) {
                         phase += sampleTime;
                         if (phase >= currentStepDuration()) {
                                 phase -= currentStepDuration();
                                 advanceStep(false); // false = internal clock
                         }
+                } else {
+                        // External clock active but no edge this sample.
+                        phase = 0.f;
                 }
         }
 
@@ -684,6 +718,11 @@ private:
         float lastGateFracApplied = 0.5f;
         bool lastStepActive = false;
         uint64_t quantizerRevision = 0;
+        uint64_t baseSeed = 0x12345678abcdefULL;
+        bool cycleResetPending = false;
+        bool externalClockActive = false;
+        int externalClockDivCounter = 0;
+        int externalClockDivAmount = 1;
 
         float currentStepDuration() const {
                 return currentDuration;
@@ -708,6 +747,9 @@ private:
         void advanceStep(bool externalClock = false) {
                 if (!algo || !quantizer || steps <= 0)
                         return;
+
+                if (cycleResetPending)
+                        restoreCycleState();
 
                 int baseStep = computeBaseStep();
                 int logicalIndex = wrapIndex(baseStep + offset, steps);
@@ -776,17 +818,22 @@ private:
                 switch (direction) {
                 case 0: // forward
                         playCounter = (playCounter + 1) % steps;
-                        if (playCounter == 0)
+                        if (playCounter == 0) {
                                 eocPulse = true;
+                                cycleResetPending = true;
+                        }
                         break;
                 case 1: // reverse
                         playCounter = (playCounter + 1) % steps;
-                        if (playCounter == 0)
+                        if (playCounter == 0) {
                                 eocPulse = true;
+                                cycleResetPending = true;
+                        }
                         break;
                 case 2: // pingpong
                         if (steps <= 1) {
                                 eocPulse = true;
+                                cycleResetPending = true;
                                 break;
                         }
                         pingStep += pingDir;
@@ -794,22 +841,28 @@ private:
                                 pingDir = -1;
                                 pingStep = steps - 2;
                                 eocPulse = true;
+                                cycleResetPending = true;
                         } else if (pingStep < 0) {
                                 pingDir = 1;
                                 pingStep = 1;
                                 eocPulse = true;
+                                cycleResetPending = true;
                         }
                         playCounter = (playCounter + 1) % steps;
                         break;
                 case 3: // random
                         playCounter = (playCounter + 1) % steps;
-                        if (playCounter == 0)
+                        if (playCounter == 0) {
                                 eocPulse = true;
+                                cycleResetPending = true;
+                        }
                         break;
                 default:
                         playCounter = (playCounter + 1) % steps;
-                        if (playCounter == 0)
+                        if (playCounter == 0) {
                                 eocPulse = true;
+                                cycleResetPending = true;
+                        }
                         break;
                 }
         }
@@ -841,6 +894,25 @@ private:
                 default:
                         return playCounter;
                 }
+        }
+
+        void restoreCycleState() {
+                cycleResetPending = false;
+                prngState = baseSeed;
+                if (algo)
+                        algo->reset(baseSeed);
+                lastPitch = 0.f;
+                lastVel = 0.8f;
+                lastRawPitch = 0.f;
+                lastStepActive = false;
+                lastGateFracApplied = clamp(gatePercent, 0.01f, 1.f);
+                gateOut = false;
+                gateTimer = 0.f;
+                totalStepCount = 0;
+                pingStep = 0;
+                pingDir = 1;
+                lastRandomStep = -1;
+                phase = 0.f;
         }
 
         static int wrapIndex(int i, int m) {
@@ -1061,7 +1133,7 @@ struct Sitri : rack::engine::Module {
                 core.setGatePercent(clamp(gatePct, 0.05f, 1.f));
 
                 float divPow = params[DIV_PARAM].getValue();
-                float divHz = std::pow(2.f, divPow) * 0.5f; // 0.125 .. 8 Hz roughly
+                float divHz = std::pow(2.f, divPow) * 2.f; // 0.5 .. 32 Hz (30 - 1920 BPM)
                 core.setDivHz(divHz);
 
                 int dir = clamp((int)std::round(params[DIR_PARAM].getValue()), 0, 3);
@@ -1093,15 +1165,16 @@ struct Sitri : rack::engine::Module {
 
                 bool resetTrig = resetTrigger.process(inputs[RESET_INPUT].getVoltage());
 
+                bool clockConnected = inputs[CLOCK_INPUT].isConnected();
                 bool clockEdge = false;
-                if (inputs[CLOCK_INPUT].isConnected()) {
+                if (clockConnected) {
                         clockEdge = clockTrigger.process(inputs[CLOCK_INPUT].getVoltage());
                 }
 
                 if (resetTrig)
                         core.reset(computeSeed());
 
-                core.process(args.sampleTime, clockEdge);
+                core.process(args.sampleTime, clockEdge, clockConnected);
 
                 // Apply voltage range attenuation (clamps to specified range)
                 float pitchOut = core.pitchOut;
