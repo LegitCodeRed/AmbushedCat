@@ -49,6 +49,15 @@ static inline float degToVolts(int deg) {
         return deg / 12.f;
 }
 
+static inline bool euclidHit(int step, int steps, int pulses) {
+        if (steps <= 0 || pulses <= 0)
+                return false;
+        int wrappedStep = (step % steps + steps) % steps;
+        int prevBucket = (wrappedStep * pulses) / steps;
+        int nextBucket = ((wrappedStep + 1) * pulses) / steps;
+        return prevBucket != nextBucket;
+}
+
 // -----------------------------------------------------------------------------
 // Step event + algo context
 // -----------------------------------------------------------------------------
@@ -97,8 +106,18 @@ public:
         void registerAlgo(const std::string& id, AlgoFactory f) {
                 if (factories.count(id))
                         return;
+
+                AlgoFactory factory = std::move(f);
+                AlgoFactory probe = factory;
+                std::string display = id;
+                if (probe) {
+                        if (auto sample = probe())
+                                display = sample->displayName();
+                }
+
                 order.push_back(id);
-                factories[id] = std::move(f);
+                factories[id] = std::move(factory);
+                displayNames[id] = display;
         }
 
         std::vector<std::string> ids() const {
@@ -112,8 +131,16 @@ public:
                 return it->second();
         }
 
+        std::string getDisplayName(const std::string& id) const {
+                auto it = displayNames.find(id);
+                if (it != displayNames.end())
+                        return it->second;
+                return id;
+        }
+
 private:
         std::map<std::string, AlgoFactory> factories;
+        std::map<std::string, std::string> displayNames;
         std::vector<std::string> order;
 };
 
@@ -187,6 +214,202 @@ struct AlgoAcid : public IAlgorithm {
 };
 REGISTER_ALGO("xacidx", AlgoAcid);
 
+struct AlgoStingPulse : public IAlgorithm {
+        const char* id() const override { return "sting"; }
+        const char* displayName() const override { return "STING Pulse"; }
+
+        void reset(uint64_t) override {
+                leadOffset = 0;
+        }
+
+        StepEvent generate(const AlgoContext& c) override {
+                AlgoContext ctx = c;
+                StepEvent e;
+                static constexpr std::array<bool, 16> anchorMask = {
+                    true, false, false, false, true, false, true, false,
+                    true, false, false, false, true, false, true, false};
+                static constexpr std::array<bool, 16> ghostMask = {
+                    false, true, false, true, false, true, false, true,
+                    false, true, false, true, false, true, false, true};
+                static constexpr std::array<int, 16> degreePattern = {
+                    0, 7, 2, 9, 0, 7, 5, 10, 0, 7, 2, 9, 0, 7, 5, 10};
+                static constexpr std::array<float, 16> accentShape = {
+                    1.f, 0.3f, 0.2f, 0.4f, 0.9f, 0.3f, 0.7f, 0.35f,
+                    1.f, 0.35f, 0.25f, 0.45f, 0.85f, 0.35f, 0.75f, 0.4f};
+
+                int idx = ctx.stepIndex % 16;
+                bool anchor = anchorMask[idx];
+                bool ghost = ghostMask[idx];
+
+                float anchorProbability = clamp(0.65f + 0.25f * ctx.density + 0.1f * ctx.accent, 0.f, 1.f);
+                float ghostProbability = clamp(0.25f + 0.55f * ctx.density, 0.f, 1.f);
+                float improvProbability = clamp(0.08f + ctx.seedNoise * 0.4f, 0.f, 1.f);
+
+                bool active = false;
+                float trigger = rand01(ctx.prngState);
+                if (anchor)
+                        active = trigger < anchorProbability;
+                else if (ghost)
+                        active = trigger < ghostProbability;
+                else
+                        active = trigger < (0.15f + 0.5f * ctx.density);
+
+                if (!active && rand01(ctx.prngState) < improvProbability)
+                        active = true;
+
+                e.active = active;
+                e.prob = active ? 1.f : 0.f;
+
+                int degree = degreePattern[idx];
+                if (anchor && rand01(ctx.prngState) < (0.35f + 0.35f * ctx.accent))
+                        degree += 12;
+                if (ghost && rand01(ctx.prngState) < (0.25f * ctx.seedNoise))
+                        degree += randChoice({-12, 12}, ctx.prngState);
+
+                float expressiveNudge = (rand01(ctx.prngState) - 0.5f) * 0.12f;
+                e.pitch = degToVolts(degree + leadOffset) + expressiveNudge;
+
+                if (anchor && rand01(ctx.prngState) < (0.15f + 0.35f * ctx.seedNoise)) {
+                        leadOffset = clamp(leadOffset + randChoice({-7, -5, 5, 7}, ctx.prngState), -12, 24);
+                }
+
+                float baseVel = anchor ? 0.8f : (ghost ? 0.58f : 0.48f);
+                baseVel += accentShape[idx] * 0.22f * ctx.accent;
+                baseVel += (rand01(ctx.prngState) - 0.5f) * 0.1f;
+                e.vel = clamp(baseVel, 0.f, 1.f);
+
+                float gate = anchor ? 0.6f : 0.38f;
+                if (ghost)
+                        gate -= 0.08f;
+                gate += 0.18f * ctx.accent;
+                gate = clamp(gate, 0.2f, 0.95f);
+                e.gateFrac = gate;
+
+                return e;
+        }
+
+private:
+        int leadOffset = 0;
+};
+REGISTER_ALGO("sting", AlgoStingPulse);
+
+struct AlgoStingSwarm : public IAlgorithm {
+        const char* id() const override { return "sting2"; }
+        const char* displayName() const override { return "STING Swarm"; }
+
+        void reset(uint64_t) override {
+                lastStep = -1;
+                phrase = 0;
+                runningDegree = 0;
+        }
+
+        StepEvent generate(const AlgoContext& c) override {
+                AlgoContext ctx = c;
+                StepEvent e;
+
+                if (lastStep >= 0 && ctx.stepIndex < lastStep)
+                        phrase = (phrase + 1) % 8;
+                lastStep = ctx.stepIndex;
+
+                int length = std::max(4, ctx.steps);
+                int idx = (ctx.stepIndex + phrase) % length;
+                int pulses = clamp((int)std::round((0.3f + 0.65f * ctx.density) * length), 1, length);
+                int accentPulses = clamp(pulses / 2 + 1, 1, length);
+                bool hit = euclidHit(idx, length, pulses);
+                bool accent = euclidHit((idx + phrase * 3) % length, length, accentPulses);
+
+                float improv = clamp(0.1f + ctx.seedNoise * 0.5f, 0.f, 1.f);
+                if (!hit && rand01(ctx.prngState) < improv)
+                        hit = true;
+
+                e.active = hit;
+                e.prob = hit ? 1.f : 0.f;
+
+                if (hit) {
+                        int motion = accent ? randChoice({7, 5, 12}, ctx.prngState)
+                                            : randChoice({0, 2, -3, 3}, ctx.prngState);
+                        if (rand01(ctx.prngState) < (0.2f * ctx.seedNoise))
+                                motion = randChoice({-12, -7, 12, 14}, ctx.prngState);
+                        runningDegree = clamp(runningDegree + motion, -24, 36);
+                        e.pitch = degToVolts(runningDegree);
+
+                        float vel = accent ? 0.88f : 0.6f;
+                        vel += 0.22f * ctx.accent;
+                        vel += (rand01(ctx.prngState) - 0.5f) * 0.12f;
+                        e.vel = clamp(vel, 0.f, 1.f);
+
+                        float gate = accent ? 0.72f : 0.48f;
+                        gate += 0.15f * ctx.accent;
+                        gate = clamp(gate, 0.25f, 0.95f);
+                        e.gateFrac = gate;
+                } else {
+                        e.pitch = ctx.lastPitch;
+                        e.vel = 0.4f;
+                        e.gateFrac = 0.3f;
+                }
+
+                return e;
+        }
+
+private:
+        int lastStep = -1;
+        int phrase = 0;
+        int runningDegree = 0;
+};
+REGISTER_ALGO("sting2", AlgoStingSwarm);
+
+struct AlgoEuclidGroove : public IAlgorithm {
+        const char* id() const override { return "eucl"; }
+        const char* displayName() const override { return "EUCLIDEAN"; }
+
+        void reset(uint64_t) override {
+                lastDegree = 0;
+        }
+
+        StepEvent generate(const AlgoContext& c) override {
+                AlgoContext ctx = c;
+                StepEvent e;
+
+                int length = std::max(1, ctx.steps);
+                int pulses = clamp((int)std::round(ctx.density * length), 1, length);
+                int rotate = clamp((int)std::round(ctx.seedNoise * length), 0, length - 1);
+                int idx = (ctx.stepIndex + rotate) % length;
+                bool hit = euclidHit(idx, length, pulses);
+
+                e.active = hit;
+                e.prob = hit ? 1.f : 0.f;
+
+                if (hit) {
+                        bool accent = euclidHit((idx + length / 3) % length, length, std::max(1, pulses / 2));
+                        int motion = accent ? randChoice({7, 5, 12}, ctx.prngState)
+                                            : randChoice({0, 2, -2, -5}, ctx.prngState);
+                        if (rand01(ctx.prngState) < (0.2f * ctx.seedNoise))
+                                motion = randChoice({-12, 12}, ctx.prngState);
+                        lastDegree = clamp(lastDegree + motion, -36, 36);
+                        e.pitch = degToVolts(lastDegree);
+
+                        float vel = accent ? 0.9f : 0.6f;
+                        vel += 0.2f * ctx.accent;
+                        vel += (rand01(ctx.prngState) - 0.5f) * 0.1f;
+                        e.vel = clamp(vel, 0.f, 1.f);
+
+                        float gate = accent ? 0.75f : 0.45f;
+                        gate += 0.15f * ctx.accent;
+                        e.gateFrac = clamp(gate, 0.2f, 0.95f);
+                } else {
+                        e.pitch = ctx.lastPitch;
+                        e.vel = 0.4f;
+                        e.gateFrac = 0.3f;
+                }
+
+                return e;
+        }
+
+private:
+        int lastDegree = 0;
+};
+REGISTER_ALGO("eucl", AlgoEuclidGroove);
+
 // -----------------------------------------------------------------------------
 // Quantizer
 // -----------------------------------------------------------------------------
@@ -244,6 +467,8 @@ public:
 
         int getScaleIndex() const { return scaleIndex; }
 
+        float getRoot() const { return root; }
+
         uint64_t getRevision() const { return revision; }
 
 private:
@@ -298,6 +523,12 @@ private:
                     {"Mixolydian", {0, 2, 4, 5, 7, 9, 10}},
                     {"Locrian", {0, 1, 3, 5, 6, 8, 10}},
                     {"Whole", {0, 2, 4, 6, 8, 10}},
+                    {"Harmonic Minor", {0, 2, 3, 5, 7, 8, 11}},
+                    {"Melodic Minor", {0, 2, 3, 5, 7, 9, 11}},
+                    {"Minor Pent", {0, 3, 5, 7, 10}},
+                    {"Major Pent", {0, 2, 4, 7, 9}},
+                    {"Phrygian Dom", {0, 1, 4, 5, 7, 8, 10}},
+                    {"Whole-Half", {0, 2, 3, 5, 6, 8, 9, 11}},
                 };
                 return defs;
         }
@@ -346,6 +577,7 @@ public:
                 quantizerRevision = quantizer ? quantizer->getRevision() : 0;
                 clockPeriod = 0.5f;
                 timeSinceLastClock = 0.f;
+                lastRandomStep = -1;
                 if (algo)
                         algo->reset(seed);
         }
@@ -358,6 +590,7 @@ public:
                         pingStep = 0;
                         pingDir = 1;
                         totalStepCount = 0;
+                        lastRandomStep = -1;
                 }
         }
         void setOffset(int o) { offset = o; }
@@ -376,6 +609,7 @@ public:
                         pingStep = 0;
                         pingDir = 1;
                         totalStepCount = 0;
+                        lastRandomStep = -1;
                 }
         }
 
@@ -440,6 +674,7 @@ private:
         int pingDir = 1;
         int pingStep = 0;
         int totalStepCount = 0;
+        int lastRandomStep = -1;
 
         float gateTimer = 0.f;
         float currentDuration = 0.5f;
@@ -587,10 +822,22 @@ private:
                         return steps - 1 - playCounter;
                 case 2: // pingpong
                         return clamp(pingStep, 0, steps - 1);
-                case 3: // random
+                case 3: { // random
                         if (steps <= 0)
                                 return 0;
-                        return randRange(prngState, steps);
+                        if (steps == 1) {
+                                lastRandomStep = 0;
+                                return 0;
+                        }
+                        int candidate = randRange(prngState, steps);
+                        int guard = 0;
+                        while (candidate == lastRandomStep && guard < 8) {
+                                candidate = randRange(prngState, steps);
+                                ++guard;
+                        }
+                        lastRandomStep = candidate;
+                        return candidate;
+                }
                 default:
                         return playCounter;
                 }
@@ -613,6 +860,40 @@ private:
 // -----------------------------------------------------------------------------
 
 struct Sitri : rack::engine::Module {
+        struct RootNoteParamQuantity : rack::engine::ParamQuantity {
+                std::string getDisplayValueString() override {
+                        static const std::array<const char*, 12> names = {
+                            "C",  "C#", "D",  "D#", "E",  "F",
+                            "F#", "G",  "G#", "A",  "A#", "B"};
+                        int idx = clamp((int)std::round(getValue()), 0, 11);
+                        return names[idx];
+                }
+        };
+
+        struct ScaleParamQuantity : rack::engine::ParamQuantity {
+                std::string getDisplayValueString() override {
+                        auto* sitri = dynamic_cast<Sitri*>(module);
+                        if (!sitri)
+                                return rack::engine::ParamQuantity::getDisplayValueString();
+                        const auto& names = sitri->quantizer.scaleNames();
+                        if (names.empty())
+                                return rack::engine::ParamQuantity::getDisplayValueString();
+                        int idx = clamp((int)std::round(getValue()), 0, (int)names.size() - 1);
+                        return names[idx];
+                }
+        };
+
+        struct AlgorithmParamQuantity : rack::engine::ParamQuantity {
+                std::string getDisplayValueString() override {
+                        auto* sitri = dynamic_cast<Sitri*>(module);
+                        if (!sitri || sitri->algoIds.empty())
+                                return rack::engine::ParamQuantity::getDisplayValueString();
+                        int idx = clamp((int)std::round(getValue()), 0, (int)sitri->algoIds.size() - 1);
+                        const std::string& id = sitri->algoIds[idx];
+                        return sitri::AlgoRegistry::instance().getDisplayName(id);
+                }
+        };
+
         enum ParamIds {
                 TYPE_PARAM,
                 DENSITY_PARAM,
@@ -673,13 +954,14 @@ struct Sitri : rack::engine::Module {
                 float algoMax = (float)std::max<int>(0, (int)algoIds.size() - 1);
 
                 // Parameters with snapping for discrete values
-                configSwitch(TYPE_PARAM, 0.f, algoMax, 0.f, "Algorithm", {"RAxDOM", "ACxEOM", "XACIDx"});
+                auto algoParam = configParam<AlgorithmParamQuantity>(TYPE_PARAM, 0.f, algoMax, 0.f, "Algorithm");
+                algoParam->snapEnabled = true;
                 configParam(DENSITY_PARAM, 0.f, 1.f, 0.6f, "Density", "%", 0.f, 100.f);
 
-                auto stepsParam = configParam(STEPS_PARAM, 1.f, 32.f, 16.f, "Sequence Length", " steps");
+                auto stepsParam = configParam(STEPS_PARAM, 1.f, 64.f, 16.f, "Sequence Length", " steps");
                 stepsParam->snapEnabled = true;
 
-                auto offsetParam = configParam(OFFSET_PARAM, -16.f, 16.f, 0.f, "Step Offset", " steps");
+                auto offsetParam = configParam(OFFSET_PARAM, -64.f, 64.f, 0.f, "Step Offset", " steps");
                 offsetParam->snapEnabled = true;
 
                 configParam(ACCENT_PARAM, 0.f, 1.f, 0.5f, "Accent", "%", 0.f, 100.f);
@@ -691,10 +973,10 @@ struct Sitri : rack::engine::Module {
                 configSwitch(DIR_PARAM, 0.f, 3.f, 0.f, "Direction", {"Forward", "Reverse", "Ping-Pong", "Random"});
                 configParam(SWING_PARAM, 0.f, 0.6f, 0.f, "Swing", "%", 0.f, 100.f);
 
-                auto rootParam = configParam(ROOT_PARAM, 0.f, 11.f, 0.f, "Root Note");
+                auto rootParam = configParam<RootNoteParamQuantity>(ROOT_PARAM, 0.f, 11.f, 0.f, "Root Note");
                 rootParam->snapEnabled = true;
 
-                auto scaleParam = configParam(SCALE_PARAM, 0.f, (float)(quantizer.scaleNames().size() - 1), 0.f, "Scale");
+                auto scaleParam = configParam<ScaleParamQuantity>(SCALE_PARAM, 0.f, (float)(quantizer.scaleNames().size() - 1), 0.f, "Scale");
                 scaleParam->snapEnabled = true;
 
                 auto transposeParam = configParam(TRANSPOSE_PARAM, -24.f, 24.f, 0.f, "Transpose", " semitones");
@@ -721,8 +1003,6 @@ struct Sitri : rack::engine::Module {
 
                 core.setQuantizer(&quantizer);
                 setAlgorithm(algoId);
-                auto it = std::find(algoIds.begin(), algoIds.end(), algoId);
-                lastAlgoIndex = (it != algoIds.end()) ? (int)std::distance(algoIds.begin(), it) : 0;
         }
 
         void onReset() override {
@@ -744,6 +1024,11 @@ struct Sitri : rack::engine::Module {
                 }
                 core.setAlgorithm(std::move(newAlgo));
                 algoId = resolved;
+                auto it = std::find(algoIds.begin(), algoIds.end(), algoId);
+                if (it != algoIds.end()) {
+                        lastAlgoIndex = (int)std::distance(algoIds.begin(), it);
+                        params[TYPE_PARAM].setValue((float)lastAlgoIndex);
+                }
                 core.reset(computeSeed());
         }
 
@@ -951,6 +1236,65 @@ struct SitriWidget : rack::app::ModuleWidget {
                 range10V->module = module;
                 range10V->range = 2;
                 menu->addChild(range10V);
+
+                menu->addChild(new MenuSeparator);
+                menu->addChild(createMenuLabel("Root Note"));
+
+                struct RootMenuItem : MenuItem {
+                        Sitri* module = nullptr;
+                        int index = 0;
+                        void onAction(const event::Action&) override {
+                                if (!module)
+                                        return;
+                                module->params[Sitri::ROOT_PARAM].setValue((float)index);
+                        }
+                        void step() override {
+                                if (module && std::round(module->params[Sitri::ROOT_PARAM].getValue()) == index)
+                                        rightText = "✔";
+                                else
+                                        rightText.clear();
+                                MenuItem::step();
+                        }
+                };
+
+                static const std::array<const char*, 12> rootNames = {
+                    "C",  "C#", "D",  "D#", "E",  "F",
+                    "F#", "G",  "G#", "A",  "A#", "B"};
+                for (size_t i = 0; i < rootNames.size(); ++i) {
+                        RootMenuItem* item = createMenuItem<RootMenuItem>(rootNames[i]);
+                        item->module = module;
+                        item->index = (int)i;
+                        menu->addChild(item);
+                }
+
+                menu->addChild(new MenuSeparator);
+                menu->addChild(createMenuLabel("Scale"));
+
+                struct ScaleMenuItem : MenuItem {
+                        Sitri* module = nullptr;
+                        int index = 0;
+                        void onAction(const event::Action&) override {
+                                if (!module)
+                                        return;
+                                module->params[Sitri::SCALE_PARAM].setValue((float)index);
+                                module->quantizer.setScaleIndex(index);
+                        }
+                        void step() override {
+                                if (module && module->quantizer.getScaleIndex() == index)
+                                        rightText = "✔";
+                                else
+                                        rightText.clear();
+                                MenuItem::step();
+                        }
+                };
+
+                const auto& scaleNames = module->quantizer.scaleNames();
+                for (size_t i = 0; i < scaleNames.size(); ++i) {
+                        ScaleMenuItem* item = createMenuItem<ScaleMenuItem>(scaleNames[i]);
+                        item->module = module;
+                        item->index = (int)i;
+                        menu->addChild(item);
+                }
         }
 };
 
