@@ -68,6 +68,7 @@ struct StepEvent {
         float prob = 1.f;
         float vel = 0.8f;
         float gateFrac = 0.5f;
+        float detune = 0.f; // Post-quantization detune in volts (e.g., 0.01 = ~12 cents)
 };
 
 struct AlgoContext {
@@ -535,6 +536,121 @@ private:
 };
 REGISTER_ALGO("eucl", AlgoEuclidGroove);
 
+struct AlgoHypnotic : public IAlgorithm {
+        const char* id() const override { return "hypno"; }
+        const char* displayName() const override { return "HYPNOTIC"; }
+
+        void reset(uint64_t seed) override {
+                // Generate a hypnotic pattern with one detuned note position
+                uint64_t state = seed ? seed : 1;
+                // Pick which step will be the detuned "hypnotic" note (typically position 3, 5, or 7 in 8-step)
+                detunedStep = randChoice({3, 5, 7}, state);
+                // Pick the detune amount (slightly off to create tension)
+                detuneAmount = 0.15f + rand01(state) * 0.25f; // 15-40 cents sharp
+                if (rand01(state) < 0.3f) {
+                        detuneAmount = -detuneAmount; // Sometimes flat instead
+                }
+                // Create a simple melodic pattern
+                baseDegree = 0;
+        }
+
+        StepEvent generate(const AlgoContext& c) override {
+                AlgoContext ctx = c;
+                StepEvent e;
+
+                // Force pattern to work best with 8 or 16 steps
+                int effectiveSteps = (ctx.steps <= 8) ? 8 : 16;
+                int patternIdx = ctx.stepIndex % effectiveSteps;
+
+                // Define a hypnotic rhythm pattern - mostly on, with strategic rests
+                static constexpr std::array<bool, 16> rhythmMask = {
+                    true, true, true, true, true, true, true, false,
+                    true, true, true, true, true, true, true, false};
+
+                // Check if this is the detuned step position (wraps for 16-step)
+                bool isDetunedNote = (patternIdx % 8) == detunedStep;
+
+                // Slightly higher probability to keep the hypnotic groove going
+                float hitProb = rhythmMask[patternIdx] ? (0.85f + 0.15f * ctx.density) : (0.05f + 0.2f * ctx.density);
+                e.active = rand01(ctx.prngState) < hitProb;
+
+                if (e.active) {
+                        // Simple melodic pattern - mostly root with occasional movement
+                        int degree;
+                        if (isDetunedNote) {
+                                // The hypnotic detuned note - typically a fifth or fourth
+                                degree = randChoice({5, 7}, ctx.prngState); // Perfect fourth or fifth
+                        } else {
+                                // Regular notes follow simple pattern
+                                switch (patternIdx % 8) {
+                                case 0:
+                                case 4:
+                                        degree = 0; // Root
+                                        break;
+                                case 1:
+                                case 5:
+                                        degree = rand01(ctx.prngState) < 0.7f ? 0 : 2; // Mostly root, sometimes second
+                                        break;
+                                case 2:
+                                case 6:
+                                        degree = randChoice({0, 2, 4}, ctx.prngState); // Root, second, or third
+                                        break;
+                                case 3:
+                                case 7:
+                                        degree = randChoice({0, 5}, ctx.prngState); // Root or fifth
+                                        break;
+                                default:
+                                        degree = 0;
+                                }
+                        }
+
+                        // Occasional octave jumps for variety, but keep it minimal for hypnotic effect
+                        if (rand01(ctx.prngState) < 0.1f) {
+                                degree += randChoice({-12, 12}, ctx.prngState);
+                        }
+
+                        e.pitch = degToVolts(degree + baseDegree);
+
+                        // Apply detune to the special hypnotic note (post-quantization)
+                        if (isDetunedNote) {
+                                e.detune = detuneAmount; // Will be added AFTER quantization
+                        } else {
+                                e.detune = 0.f;
+                        }
+
+                        // Velocity - the detuned note gets accented
+                        if (isDetunedNote) {
+                                e.vel = 0.85f + 0.15f * ctx.accent;
+                        } else {
+                                e.vel = 0.55f + 0.25f * ctx.accent;
+                        }
+                        e.vel += (rand01(ctx.prngState) - 0.5f) * 0.1f;
+                        e.vel = clamp(e.vel, 0.f, 1.f);
+
+                        // Gate lengths - hypnotic patterns work well with consistent medium-long gates
+                        if (isDetunedNote) {
+                                // Detuned note slightly longer for emphasis
+                                e.gateFrac = 0.7f + 0.25f * rand01(ctx.prngState);
+                        } else {
+                                // Regular notes medium length
+                                e.gateFrac = 0.5f + 0.2f * rand01(ctx.prngState);
+                        }
+                } else {
+                        e.pitch = ctx.lastPitch;
+                        e.vel = 0.4f;
+                        e.gateFrac = 0.3f;
+                }
+
+                return e;
+        }
+
+private:
+        int detunedStep = 3;    // Which step in the 8-step pattern is detuned
+        float detuneAmount = 0.2f; // How much to detune (in volts, ~20 cents)
+        int baseDegree = 0;
+};
+REGISTER_ALGO("hypno", AlgoHypnotic);
+
 // -----------------------------------------------------------------------------
 // Quantizer
 // -----------------------------------------------------------------------------
@@ -699,6 +815,7 @@ public:
                 lastVel = 0.8f;
                 eocPulse = false;
                 lastRawPitch = 0.f;
+                lastDetune = 0.f;
                 lastStepActive = false;
                 lastGateFracApplied = clamp(gatePercent, 0.01f, 1.f);
                 quantizerRevision = quantizer ? quantizer->getRevision() : 0;
@@ -875,6 +992,7 @@ private:
         float clockPeriod = 0.5f;
         float timeSinceLastClock = 0.f;
         float lastRawPitch = 0.f;
+        float lastDetune = 0.f;
         float lastGateFracApplied = 0.5f;
         bool lastStepActive = false;
         uint64_t quantizerRevision = 0;
@@ -895,14 +1013,16 @@ private:
                 if (!lastStepActive)
                         return;
                 float newPitch = quantizer->snap(lastRawPitch);
-                if (std::fabs(newPitch - pitchOut) < 1e-5f)
+                // Apply the detune after quantization
+                float finalPitch = newPitch + lastDetune;
+                if (std::fabs(finalPitch - pitchOut) < 1e-5f)
                         return;
 
                 float gateFrac = clamp(lastGateFracApplied, 0.01f, 1.f);
                 gateOut = true;
                 gateTimer = currentStepDuration() * gateFrac;
-                pitchOut = newPitch;
-                lastPitch = newPitch;
+                pitchOut = finalPitch;
+                lastPitch = finalPitch;
                 velOut = lastVel * 10.f;
         }
 
@@ -983,22 +1103,26 @@ private:
                         shapedVel = clamp(shapedVel, 0.f, 1.f);
                         float rawPitch = proposal.pitch;
                         float snapped = quantizer->snap(rawPitch);
-                        pitchOut = snapped;
+                        // Apply post-quantization detune (for algorithms like HYPNOTIC)
+                        float finalPitch = snapped + proposal.detune;
+                        pitchOut = finalPitch;
                         velOut = shapedVel * 10.f;
                         gateOut = true;
                         float gateFrac = clamp(proposal.gateFrac * gatePercent, 0.01f, 1.f);
                         gateTimer = currentDuration * gateFrac;
                         lastGateFracApplied = gateFrac;
                         lastRawPitch = rawPitch;
+                        lastDetune = proposal.detune; // Store detune for quantizer changes
                         lastStepActive = true;
                         quantizerRevision = quantizer->getRevision();
-                        lastPitch = snapped;
+                        lastPitch = finalPitch;
                         lastVel = shapedVel;
                 } else {
                         // Inactive step - turn off gate immediately
                         gateOut = false;
                         gateTimer = 0.f;
                         lastStepActive = false;
+                        lastDetune = 0.f;
                 }
 
                 advanceCounters();
@@ -1100,6 +1224,7 @@ private:
                 lastPitch = 0.f;
                 lastVel = 0.8f;
                 lastRawPitch = 0.f;
+                lastDetune = 0.f;
                 lastStepActive = false;
                 lastGateFracApplied = clamp(gatePercent, 0.01f, 1.f);
                 gateOut = false;
