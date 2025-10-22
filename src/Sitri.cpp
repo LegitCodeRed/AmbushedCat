@@ -708,6 +708,7 @@ public:
                 cycleResetPending = false;
                 externalClockActive = false;
                 externalClockDivCounter = 0;
+                externalClockMultCounter = 0;
                 if (algo)
                         algo->reset(actualSeed);
         }
@@ -732,6 +733,7 @@ public:
                         lastRandomStep = -1;
                         cycleResetPending = true;
                         externalClockDivCounter = 0;
+                        externalClockMultCounter = 0;
                 }
         }
         void setOffset(int o) { offset = o; }
@@ -743,9 +745,17 @@ public:
         }
         void setDivHz(float hz) {
                 divHz = std::max(hz, 0.01f);
-                // Calculate clock division for external clocks
-                // divHz of 2Hz = divide by 1, 4Hz = divide by 2, 8Hz = divide by 4, etc.
-                externalClockDivAmount = std::max(1, (int)std::round(divHz / 2.0f));
+                // Calculate clock division/multiplication for external clocks
+                // divHz < 2Hz = slower (multiply), divHz >= 2Hz = faster (divide)
+                if (divHz >= 2.0f) {
+                        // Faster: divide incoming clock
+                        externalClockDivAmount = std::max(1, (int)std::round(divHz / 2.0f));
+                        externalClockMultAmount = 1;
+                } else {
+                        // Slower: multiply clock period (no division, use counter for multiplication)
+                        externalClockDivAmount = 1;
+                        externalClockMultAmount = std::max(1, (int)std::round(2.0f / divHz));
+                }
         }
         void setSwing(float s) { swing = clamp(s, 0.f, 0.6f); }
         void setDirection(int dir) {
@@ -758,6 +768,7 @@ public:
                         lastRandomStep = -1;
                         cycleResetPending = true;
                         externalClockDivCounter = 0;
+                        externalClockMultCounter = 0;
                 }
         }
 
@@ -779,6 +790,7 @@ public:
                 if (externalClockActive != externalClockConnected) {
                         externalClockActive = externalClockConnected;
                         externalClockDivCounter = 0;
+                        externalClockMultCounter = 0;
                         if (!externalClockActive) {
                                 phase = 0.f;
                                 timeSinceLastClock = 0.f;
@@ -795,11 +807,21 @@ public:
                         timeSinceLastClock = 0.f;
                         phase = 0.f;
 
-                        // Apply clock division for external clock
-                        externalClockDivCounter++;
-                        if (externalClockDivCounter >= externalClockDivAmount) {
-                                externalClockDivCounter = 0;
-                                advanceStep(true); // true = external clock
+                        // Apply clock division/multiplication for external clock
+                        if (externalClockMultAmount > 1) {
+                                // Slower: need multiple clock edges before advancing
+                                externalClockMultCounter++;
+                                if (externalClockMultCounter >= externalClockMultAmount) {
+                                        externalClockMultCounter = 0;
+                                        advanceStep(true); // true = external clock
+                                }
+                        } else {
+                                // Faster: divide incoming clock
+                                externalClockDivCounter++;
+                                if (externalClockDivCounter >= externalClockDivAmount) {
+                                        externalClockDivCounter = 0;
+                                        advanceStep(true); // true = external clock
+                                }
                         }
                 } else if (!externalClockConnected) {
                         phase += sampleTime;
@@ -857,6 +879,8 @@ private:
         bool externalClockActive = false;
         int externalClockDivCounter = 0;
         int externalClockDivAmount = 1;
+        int externalClockMultAmount = 1;
+        int externalClockMultCounter = 0;
 
         float currentStepDuration() const {
                 return currentDuration;
@@ -999,15 +1023,20 @@ private:
                                 cycleResetPending = true;
                                 break;
                         }
+                        // Move in current direction
                         pingStep += pingDir;
-                        if (pingStep >= steps) {
+
+                        // Check if we need to reverse direction at the end
+                        if (pingStep >= steps - 1) {
+                                pingStep = steps - 1;
                                 pingDir = -1;
-                                pingStep = steps - 2;
                                 eocPulse = true;
                                 cycleResetPending = true;
-                        } else if (pingStep < 0) {
+                        }
+                        // Check if we need to reverse direction at the beginning
+                        else if (pingStep <= 0) {
+                                pingStep = 0;
                                 pingDir = 1;
-                                pingStep = 1;
                                 eocPulse = true;
                                 cycleResetPending = true;
                         }
