@@ -1112,6 +1112,7 @@ struct Sitri : rack::engine::Module {
                 SCALE_PARAM,
                 TRANSPOSE_PARAM,
                 RESEED_PARAM,
+                RUN_PARAM,
                 PARAMS_LEN
         };
         enum InputIds {
@@ -1131,7 +1132,7 @@ struct Sitri : rack::engine::Module {
                 EOC_OUTPUT,
                 OUTPUTS_LEN
         };
-        enum LightIds { ACTIVE_LIGHT, LIGHTS_LEN };
+        enum LightIds { ACTIVE_LIGHT, RUN_LIGHT, LIGHTS_LEN };
 
         sitri::SequencerCore core;
         sitri::Quantizer quantizer;
@@ -1142,7 +1143,10 @@ struct Sitri : rack::engine::Module {
         dsp::SchmittTrigger clockTrigger;
         dsp::SchmittTrigger resetTrigger;
         dsp::SchmittTrigger reseedTrigger;
+        dsp::SchmittTrigger runTrigger;
         std::random_device randomDevice; // For true random seed generation
+        bool seedLoaded = false; // Track if seed was loaded from JSON
+        bool running = true; // Run/stop state
 
         Sitri() {
                 config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -1182,6 +1186,7 @@ struct Sitri : rack::engine::Module {
                 transposeParam->snapEnabled = true;
 
                 configButton(RESEED_PARAM, "Random - Generate completely new random sequence");
+                configButton(RUN_PARAM, "Run/Stop");
 
                 // Inputs with proper names
                 configInput(CLOCK_INPUT, "Clock");
@@ -1203,7 +1208,11 @@ struct Sitri : rack::engine::Module {
         }
 
         void onReset() override {
-                core.reset(computeSeed());
+                // Only generate new seed if one wasn't loaded from JSON
+                if (!seedLoaded) {
+                        core.reset(computeSeed());
+                        seedLoaded = true; // Mark that we now have a seed
+                }
         }
 
         uint64_t computeSeed() {
@@ -1225,7 +1234,7 @@ struct Sitri : rack::engine::Module {
                         lastAlgoIndex = (int)std::distance(algoIds.begin(), it);
                         params[TYPE_PARAM].setValue((float)lastAlgoIndex);
                 }
-                core.reset(computeSeed());
+                // Don't reset seed here - let onReset() handle initialization
         }
 
         void process(const ProcessArgs& args) override {
@@ -1275,6 +1284,11 @@ struct Sitri : rack::engine::Module {
                 float transposeCv = inputs[TRANSPOSE_INPUT].isConnected() ? inputs[TRANSPOSE_INPUT].getVoltage() : 0.f;
                 quantizer.setTranspose(transposeKnob + transposeCv);
 
+                // Run/Stop button - toggle running state
+                if (runTrigger.process(params[RUN_PARAM].getValue())) {
+                        running = !running;
+                }
+
                 // Reseed button - generates a completely new random sequence
                 if (reseedTrigger.process(params[RESEED_PARAM].getValue())) {
                         // Generate truly random seed using random_device
@@ -1287,21 +1301,37 @@ struct Sitri : rack::engine::Module {
                 bool clockConnected = inputs[CLOCK_INPUT].isConnected();
                 bool clockEdge = false;
                 if (clockConnected) {
+                        // Always process clock trigger to keep state updated
                         clockEdge = clockTrigger.process(inputs[CLOCK_INPUT].getVoltage());
+                        // But only use the edge if running
+                        if (!running) {
+                                clockEdge = false;
+                        }
                 }
 
                 if (resetTrig)
                         core.restart();  // Restart sequence from beginning without reseeding
 
-                core.process(args.sampleTime, clockEdge, clockConnected);
+                // Update run light
+                lights[RUN_LIGHT].setBrightness(running ? 1.f : 0.f);
 
-                // No voltage range clamping - let algorithms explore full 10V range
-                outputs[PITCH_OUTPUT].setVoltage(core.pitchOut);
-                outputs[GATE_OUTPUT].setVoltage(core.gateOut ? 10.f : 0.f);
-                outputs[VEL_OUTPUT].setVoltage(core.velOut);
-                outputs[EOC_OUTPUT].setVoltage(core.eocPulse ? 10.f : 0.f);
+                // Only process if running
+                if (running) {
+                        core.process(args.sampleTime, clockEdge, clockConnected);
 
-                lights[ACTIVE_LIGHT].setBrightness(core.gateOut ? 1.f : 0.f);
+                        // Output when running
+                        outputs[PITCH_OUTPUT].setVoltage(core.pitchOut);
+                        outputs[GATE_OUTPUT].setVoltage(core.gateOut ? 10.f : 0.f);
+                        outputs[VEL_OUTPUT].setVoltage(core.velOut);
+                        outputs[EOC_OUTPUT].setVoltage(core.eocPulse ? 10.f : 0.f);
+                        lights[ACTIVE_LIGHT].setBrightness(core.gateOut ? 1.f : 0.f);
+                } else {
+                        // When stopped, turn off gate and clear outputs
+                        outputs[GATE_OUTPUT].setVoltage(0.f);
+                        outputs[EOC_OUTPUT].setVoltage(0.f);
+                        lights[ACTIVE_LIGHT].setBrightness(0.f);
+                        // Keep pitch and velocity at last values
+                }
         }
 
         json_t* dataToJson() override {
@@ -1309,6 +1339,8 @@ struct Sitri : rack::engine::Module {
                 // Save the current seed so the sequence is preserved across sessions
                 uint64_t seed = core.getSeed();
                 json_object_set_new(rootJ, "seed", json_integer(seed));
+                // Save run/stop state
+                json_object_set_new(rootJ, "running", json_boolean(running));
                 return rootJ;
         }
 
@@ -1318,6 +1350,14 @@ struct Sitri : rack::engine::Module {
                 if (seedJ) {
                         uint64_t savedSeed = json_integer_value(seedJ);
                         core.reset(savedSeed);
+                        seedLoaded = true; // Mark that we loaded a seed so onReset() doesn't overwrite it
+                }
+                // Restore run/stop state (defaults to true if not found)
+                json_t* runningJ = json_object_get(rootJ, "running");
+                if (runningJ) {
+                        running = json_boolean_value(runningJ);
+                } else {
+                        running = true; // Default to running for old patches
                 }
         }
 };
@@ -1342,8 +1382,10 @@ struct SitriWidget : rack::app::ModuleWidget {
                 // === ALGORITHM SELECTION ===
                 addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(15.0, 20.0)), module, Sitri::TYPE_PARAM));
 
-                // === BIG ACID RESEED BUTTON (the heart of the module) ===
-                addParam(createParamCentered<VCVButton>(mm2px(Vec(16.0, 30.0)), module, Sitri::RESEED_PARAM));
+                // === CONTROL BUTTONS ===
+                addParam(createParamCentered<VCVButton>(mm2px(Vec(12.0, 30.0)), module, Sitri::RUN_PARAM));
+                addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(12.0, 30.0)), module, Sitri::RUN_LIGHT));
+                addParam(createParamCentered<VCVButton>(mm2px(Vec(20.0, 30.0)), module, Sitri::RESEED_PARAM));
 
                 // === SEQUENCE CONTROL ===
                 addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10.0, 38.0)), module, Sitri::STEPS_PARAM));
