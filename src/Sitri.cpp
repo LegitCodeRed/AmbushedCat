@@ -746,15 +746,17 @@ public:
         void setDivHz(float hz) {
                 divHz = std::max(hz, 0.01f);
                 // Calculate clock division/multiplication for external clocks
-                // divHz < 2Hz = slower (multiply), divHz >= 2Hz = faster (divide)
-                if (divHz >= 2.0f) {
-                        // Faster: divide incoming clock
-                        externalClockDivAmount = std::max(1, (int)std::round(divHz / 2.0f));
-                        externalClockMultAmount = 1;
-                } else {
-                        // Slower: multiply clock period (no division, use counter for multiplication)
+                // divHz < 2Hz = slower (need multiple clocks per step)
+                // divHz > 2Hz = faster (generate multiple steps per clock)
+                if (divHz < 2.0f) {
+                        // Slower: need multiple incoming clocks before advancing one step
                         externalClockDivAmount = 1;
                         externalClockMultAmount = std::max(1, (int)std::round(2.0f / divHz));
+                } else {
+                        // Faster or equal: generate multiple steps per clock using internal subdivision
+                        // When external clock connected, we'll subdivide the clock period
+                        externalClockDivAmount = std::max(1, (int)std::round(divHz / 2.0f));
+                        externalClockMultAmount = 1;
                 }
         }
         void setSwing(float s) { swing = clamp(s, 0.f, 0.6f); }
@@ -807,31 +809,33 @@ public:
                         timeSinceLastClock = 0.f;
                         phase = 0.f;
 
-                        // Apply clock division/multiplication for external clock
+                        // Handle clock multiplication (slower speeds - need multiple clocks per step)
                         if (externalClockMultAmount > 1) {
-                                // Slower: need multiple clock edges before advancing
                                 externalClockMultCounter++;
                                 if (externalClockMultCounter >= externalClockMultAmount) {
                                         externalClockMultCounter = 0;
                                         advanceStep(true); // true = external clock
                                 }
                         } else {
-                                // Faster: divide incoming clock
-                                externalClockDivCounter++;
-                                if (externalClockDivCounter >= externalClockDivAmount) {
-                                        externalClockDivCounter = 0;
-                                        advanceStep(true); // true = external clock
-                                }
+                                // At base speed or faster - advance on every clock
+                                advanceStep(true);
                         }
                 } else if (!externalClockConnected) {
+                        // Internal clock - use divHz directly
                         phase += sampleTime;
                         if (phase >= currentStepDuration()) {
                                 phase -= currentStepDuration();
                                 advanceStep(false); // false = internal clock
                         }
-                } else {
-                        // External clock active but no edge this sample.
-                        phase = 0.f;
+                } else if (externalClockConnected && externalClockDivAmount > 1) {
+                        // External clock connected and we want faster speeds
+                        // Subdivide the clock period to generate multiple steps per clock
+                        phase += sampleTime;
+                        float subdivisionPeriod = clockPeriod / (float)externalClockDivAmount;
+                        if (phase >= subdivisionPeriod) {
+                                phase -= subdivisionPeriod;
+                                advanceStep(true);
+                        }
                 }
         }
 
