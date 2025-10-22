@@ -222,26 +222,57 @@ struct AlgoAccrete : public IAlgorithm {
 REGISTER_ALGO("acxom", AlgoAccrete);
 
 struct AlgoAcid : public IAlgorithm {
-        int lastScaleDeg = 0;
+        int runningDegree = 0;
+        int stepsSinceRecenter = 0;
         const char* id() const override { return "xacidx"; }
         const char* displayName() const override { return "XACIDx"; }
+
+        void reset(uint64_t) override {
+                runningDegree = 0;
+                stepsSinceRecenter = 0;
+        }
+
         StepEvent generate(const AlgoContext& c) override {
                 AlgoContext ctx = c;
                 StepEvent e;
-                e.active = rand01(ctx.prngState) < (0.8f * ctx.density + 0.1f);
-                int delta = (rand01(ctx.prngState) < 0.8f) ? randChoice({-1, 0, 1}, ctx.prngState)
-                                                          : randChoice({-5, 5}, ctx.prngState);
-                // Expand range to ±60 semitones (5 octaves in each direction = 10V range)
-                lastScaleDeg = clamp(lastScaleDeg + delta, -60, 60);
-                // More frequent octave jumps for wider exploration
-                float octave = 0.f;
-                float octaveRoll = rand01(ctx.prngState);
-                if (octaveRoll < 0.15f) octave = 1.f;        // Up 1 octave
-                else if (octaveRoll < 0.25f) octave = -1.f;  // Down 1 octave
-                else if (octaveRoll < 0.30f) octave = 2.f;   // Up 2 octaves
-                else if (octaveRoll < 0.33f) octave = -2.f;  // Down 2 octaves
-                e.pitch = degToVolts(lastScaleDeg) + octave;
-                e.vel = 0.7f + 0.3f * ctx.accent;
+                e.active = rand01(ctx.prngState) < (0.75f + 0.25f * ctx.density);
+
+                // Recenter periodically to prevent drift
+                stepsSinceRecenter++;
+                if (stepsSinceRecenter > 16 || std::abs(runningDegree) > 24) {
+                        // Pull back towards center
+                        if (runningDegree > 12) {
+                                runningDegree -= randChoice({3, 5, 7, 12}, ctx.prngState);
+                        } else if (runningDegree < -12) {
+                                runningDegree += randChoice({3, 5, 7, 12}, ctx.prngState);
+                        }
+                        stepsSinceRecenter = 0;
+                }
+
+                // Classic acid movement: mostly small steps with occasional jumps
+                int motion;
+                float moveRoll = rand01(ctx.prngState);
+                if (moveRoll < 0.6f) {
+                        // Small chromatic steps
+                        motion = randChoice({-1, 0, 1}, ctx.prngState);
+                } else if (moveRoll < 0.85f) {
+                        // Scale-based jumps
+                        motion = randChoice({-5, -3, 3, 5, 7}, ctx.prngState);
+                } else {
+                        // Octave jump
+                        motion = randChoice({-12, 12}, ctx.prngState);
+                }
+
+                runningDegree = clamp(runningDegree + motion, -36, 36); // ±3 octaves
+                e.pitch = degToVolts(runningDegree);
+
+                // Velocity with accent
+                e.vel = 0.65f + 0.35f * ctx.accent;
+                if (rand01(ctx.prngState) < ctx.accent) {
+                        e.vel += 0.15f * rand01(ctx.prngState);
+                }
+                e.vel = clamp(e.vel, 0.f, 1.f);
+
                 // Acid: Classic acid slides vs short stabs
                 float gateRoll = rand01(ctx.prngState);
                 if (gateRoll < 0.35f) {
@@ -902,8 +933,8 @@ private:
                 prngState = ctx.prngState;
 
                 bool active = proposal.active;
-                float chance = clamp(proposal.prob * density, 0.f, 1.f);
-                if (rand01(prngState) > chance)
+                // Apply probability (algorithms already handle density internally)
+                if (proposal.prob < 1.f && rand01(prngState) > proposal.prob)
                         active = false;
 
                 // Use external clock period if available, otherwise use internal divHz
@@ -1293,7 +1324,12 @@ struct Sitri : rack::engine::Module {
                 if (reseedTrigger.process(params[RESEED_PARAM].getValue())) {
                         // Generate truly random seed using random_device
                         uint64_t newSeed = ((uint64_t)randomDevice() << 32) | randomDevice();
+                        // Ensure we get a non-zero seed
+                        if (newSeed == 0) {
+                                newSeed = 0x12345678abcdefULL;
+                        }
                         core.reset(newSeed);
+                        seedLoaded = true; // Mark that we have a valid seed
                 }
 
                 bool resetTrig = resetTrigger.process(inputs[RESET_INPUT].getVoltage());
