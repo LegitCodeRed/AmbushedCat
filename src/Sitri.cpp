@@ -1103,7 +1103,6 @@ struct Sitri : rack::engine::Module {
         dsp::SchmittTrigger clockTrigger;
         dsp::SchmittTrigger resetTrigger;
         dsp::SchmittTrigger reseedTrigger;
-        int voltageRange = 2; // 0 = 1V, 1 = 5V, 2 = 10V (default 10V)
         std::random_device randomDevice; // For true random seed generation
 
         Sitri() {
@@ -1265,18 +1264,6 @@ struct Sitri : rack::engine::Module {
 
                 lights[ACTIVE_LIGHT].setBrightness(core.gateOut ? 1.f : 0.f);
         }
-
-        json_t* dataToJson() override {
-                json_t* rootJ = json_object();
-                json_object_set_new(rootJ, "voltageRange", json_integer(voltageRange));
-                return rootJ;
-        }
-
-        void dataFromJson(json_t* rootJ) override {
-                json_t* voltageRangeJ = json_object_get(rootJ, "voltageRange");
-                if (voltageRangeJ)
-                        voltageRange = json_integer_value(voltageRangeJ);
-        }
 };
 
 // -----------------------------------------------------------------------------
@@ -1344,36 +1331,6 @@ struct SitriWidget : rack::app::ModuleWidget {
                 Sitri* module = getModule<Sitri>();
                 if (!module)
                         return;
-
-                menu->addChild(new MenuSeparator);
-                menu->addChild(createMenuLabel("Pitch CV Range"));
-
-                struct VoltageRangeItem : MenuItem {
-                        Sitri* module;
-                        int range;
-                        void onAction(const event::Action& e) override {
-                                module->voltageRange = range;
-                        }
-                        void step() override {
-                                rightText = (module->voltageRange == range) ? "✔" : "";
-                                MenuItem::step();
-                        }
-                };
-
-                VoltageRangeItem* range1V = createMenuItem<VoltageRangeItem>("1V");
-                range1V->module = module;
-                range1V->range = 0;
-                menu->addChild(range1V);
-
-                VoltageRangeItem* range5V = createMenuItem<VoltageRangeItem>("5V");
-                range5V->module = module;
-                range5V->range = 1;
-                menu->addChild(range5V);
-
-                VoltageRangeItem* range10V = createMenuItem<VoltageRangeItem>("10V");
-                range10V->module = module;
-                range10V->range = 2;
-                menu->addChild(range10V);
 
                 menu->addChild(new MenuSeparator);
                 menu->addChild(createMenuLabel("Root Note"));
