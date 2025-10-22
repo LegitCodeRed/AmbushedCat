@@ -846,16 +846,46 @@ private:
                         restoreCycleState();
 
                 int baseStep = computeBaseStep();
-                int logicalIndex = wrapIndex(baseStep + offset, steps);
+
+                // Calculate the actual step we're generating (with offset rotation)
+                int rotatedIndex = wrapIndex(baseStep + offset, steps);
+
+                // Calculate PRNG state for this rotated step
+                uint64_t stepPrngState = baseSeed;
+                if (algo)
+                        algo->reset(baseSeed);
+                float stepLastPitch = 0.f;
+                float stepLastVel = 0.8f;
+
+                // Advance PRNG to the rotated step position
+                for (int i = 0; i < rotatedIndex; ++i) {
+                        AlgoContext tmpCtx;
+                        tmpCtx.stepIndex = i;
+                        tmpCtx.steps = steps;
+                        tmpCtx.density = density;
+                        tmpCtx.accent = accent;
+                        tmpCtx.prngState = stepPrngState;
+                        tmpCtx.lastPitch = stepLastPitch;
+                        tmpCtx.lastVel = stepLastVel;
+                        tmpCtx.phase01 = 0.f;
+                        tmpCtx.divHz = divHz;
+
+                        if (algo) {
+                                StepEvent e = algo->generate(tmpCtx);
+                                stepPrngState = tmpCtx.prngState;
+                                stepLastPitch = e.pitch;
+                                stepLastVel = e.vel;
+                        }
+                }
 
                 AlgoContext ctx;
-                ctx.stepIndex = logicalIndex;
+                ctx.stepIndex = rotatedIndex;
                 ctx.steps = steps;
                 ctx.density = density;
                 ctx.accent = accent;
-                ctx.prngState = prngState;
-                ctx.lastPitch = lastPitch;
-                ctx.lastVel = lastVel;
+                ctx.prngState = stepPrngState;
+                ctx.lastPitch = stepLastPitch;
+                ctx.lastVel = stepLastVel;
                 ctx.phase01 = 0.f;
                 ctx.divHz = divHz;
 
