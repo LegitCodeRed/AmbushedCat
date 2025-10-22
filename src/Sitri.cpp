@@ -1215,10 +1215,11 @@ public:
                                 clockPeriod = timeSinceLastClock;
                         }
                         timeSinceLastClock = 0.f;
-                        phase = 0.f;
 
                         // Handle clock multiplication (slower speeds - need multiple clocks per step)
                         if (externalClockMultAmount > 1) {
+                                // Don't reset phase - we're not subdividing
+                                phase = 0.f;
                                 externalClockMultCounter++;
                                 if (externalClockMultCounter >= externalClockMultAmount) {
                                         externalClockMultCounter = 0;
@@ -1226,12 +1227,16 @@ public:
                                 }
                         } else {
                                 // At base speed or faster - advance on every clock
+                                // Don't reset phase if we're subdividing (externalClockDivAmount > 1)
+                                if (externalClockDivAmount == 1) {
+                                        phase = 0.f;
+                                }
                                 advanceStep(true);
                         }
                 } else if (!externalClockConnected) {
                         // Internal clock - use divHz directly
                         phase += sampleTime;
-                        if (phase >= currentStepDuration()) {
+                        while (phase >= currentStepDuration()) {
                                 phase -= currentStepDuration();
                                 advanceStep(false); // false = internal clock
                         }
@@ -1240,7 +1245,8 @@ public:
                         // Subdivide the clock period to generate multiple steps per clock
                         phase += sampleTime;
                         float subdivisionPeriod = clockPeriod / (float)externalClockDivAmount;
-                        if (phase >= subdivisionPeriod) {
+                        // Use while loop to handle accumulated phase properly (prevents skipped steps)
+                        while (phase >= subdivisionPeriod) {
                                 phase -= subdivisionPeriod;
                                 advanceStep(true);
                         }
@@ -1329,42 +1335,15 @@ private:
                 // Calculate the actual step we're generating (with offset rotation)
                 int rotatedIndex = wrapIndex(baseStep + offset, steps);
 
-                // Calculate PRNG state for this rotated step
-                uint64_t stepPrngState = baseSeed;
-                if (algo)
-                        algo->reset(baseSeed);
-                float stepLastPitch = 0.f;
-                float stepLastVel = 0.8f;
-
-                // Advance PRNG to the rotated step position
-                for (int i = 0; i < rotatedIndex; ++i) {
-                        AlgoContext tmpCtx;
-                        tmpCtx.stepIndex = i;
-                        tmpCtx.steps = steps;
-                        tmpCtx.density = density;
-                        tmpCtx.accent = accent;
-                        tmpCtx.prngState = stepPrngState;
-                        tmpCtx.lastPitch = stepLastPitch;
-                        tmpCtx.lastVel = stepLastVel;
-                        tmpCtx.phase01 = 0.f;
-                        tmpCtx.divHz = divHz;
-
-                        if (algo) {
-                                StepEvent e = algo->generate(tmpCtx);
-                                stepPrngState = tmpCtx.prngState;
-                                stepLastPitch = e.pitch;
-                                stepLastVel = e.vel;
-                        }
-                }
-
+                // Build context for current step
                 AlgoContext ctx;
-                ctx.stepIndex = rotatedIndex;
+                ctx.stepIndex = baseStep; // Use baseStep, not rotatedIndex, for step index
                 ctx.steps = steps;
                 ctx.density = density;
                 ctx.accent = accent;
-                ctx.prngState = stepPrngState;
-                ctx.lastPitch = stepLastPitch;
-                ctx.lastVel = stepLastVel;
+                ctx.prngState = prngState;
+                ctx.lastPitch = lastPitch;
+                ctx.lastVel = lastVel;
                 ctx.phase01 = 0.f;
                 ctx.divHz = divHz;
 
@@ -1387,7 +1366,7 @@ private:
                                 swingScale = std::max(0.1f, 1.f - swing);
                 }
                 currentDuration = duration * swingScale;
-                phase = 0.f;
+                // Don't reset phase here - it needs to continue accumulating for subdivisions
 
                 if (active) {
                         float shapedVel = proposal.vel * (0.4f + 0.6f * accent);
