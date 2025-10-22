@@ -75,7 +75,6 @@ struct AlgoContext {
         int steps = 16;
         float density = 0.5f;
         float accent = 0.5f;
-        float seedNoise = 0.f;
         mutable uint64_t prngState = 1;
         float lastPitch = 0.f;
         float lastVel = 0.8f;
@@ -166,10 +165,27 @@ struct AlgoRandom : public IAlgorithm {
                 AlgoContext ctx = c;
                 StepEvent e;
                 e.active = rand01(ctx.prngState) < ctx.density;
-                float step = (rand01(ctx.prngState) - 0.5f) * 0.8f;
-                e.pitch = ctx.lastPitch + step;
+                // Allow random jumps across the full 10V range (±5V)
+                // Mix small steps with occasional large octave jumps
+                float step;
+                if (rand01(ctx.prngState) < 0.3f) {
+                        // 30% chance of large octave jump (±4 octaves)
+                        step = (rand01(ctx.prngState) - 0.5f) * 8.0f;
+                } else {
+                        // 70% chance of smaller melodic movement
+                        step = (rand01(ctx.prngState) - 0.5f) * 2.0f;
+                }
+                e.pitch = clamp(ctx.lastPitch + step, -5.0f, 5.0f);
                 e.vel = 0.4f + 0.6f * rand01(ctx.prngState);
-                e.gateFrac = 0.25f + 0.65f * rand01(ctx.prngState);
+                // Varied gate lengths: short stabs, medium notes, long sustained
+                float gateRoll = rand01(ctx.prngState);
+                if (gateRoll < 0.25f) {
+                        e.gateFrac = 0.15f + 0.15f * rand01(ctx.prngState); // Short staccato
+                } else if (gateRoll < 0.65f) {
+                        e.gateFrac = 0.35f + 0.25f * rand01(ctx.prngState); // Medium
+                } else {
+                        e.gateFrac = 0.65f + 0.35f * rand01(ctx.prngState); // Long sustained
+                }
                 return e;
         }
 };
@@ -184,11 +200,22 @@ struct AlgoAccrete : public IAlgorithm {
                 AlgoContext ctx = c;
                 StepEvent e;
                 e.active = rand01(ctx.prngState) < (0.6f * ctx.density + 0.2f);
-                center += (rand01(ctx.prngState) - 0.5f) * 0.06f;
+                // Allow center to drift across wider range for octave exploration
+                center += (rand01(ctx.prngState) - 0.5f) * 0.5f;
+                center = clamp(center, -4.0f, 4.0f); // Keep center within ±4 octaves
                 float target = 0.7f * center + 0.3f * ctx.lastPitch;
-                e.pitch = target + (rand01(ctx.prngState) - 0.5f) * 0.2f;
+                // Add larger expressive variations
+                e.pitch = clamp(target + (rand01(ctx.prngState) - 0.5f) * 1.5f, -5.0f, 5.0f);
                 e.vel = 0.5f + 0.5f * ctx.accent * rand01(ctx.prngState);
-                e.gateFrac = 0.35f + 0.4f * ctx.density;
+                // Accrete has flowing, varied gate lengths - sometimes sustained, sometimes shorter
+                float gateRoll = rand01(ctx.prngState);
+                if (gateRoll < 0.3f) {
+                        e.gateFrac = 0.2f + 0.2f * rand01(ctx.prngState); // Short
+                } else if (gateRoll < 0.7f) {
+                        e.gateFrac = 0.45f + 0.25f * rand01(ctx.prngState); // Medium
+                } else {
+                        e.gateFrac = 0.7f + 0.3f * rand01(ctx.prngState); // Long sustained
+                }
                 return e;
         }
 };
@@ -204,11 +231,26 @@ struct AlgoAcid : public IAlgorithm {
                 e.active = rand01(ctx.prngState) < (0.8f * ctx.density + 0.1f);
                 int delta = (rand01(ctx.prngState) < 0.8f) ? randChoice({-1, 0, 1}, ctx.prngState)
                                                           : randChoice({-5, 5}, ctx.prngState);
-                lastScaleDeg = clamp(lastScaleDeg + delta, -12, 12);
-                float octave = (rand01(ctx.prngState) < 0.15f) ? 1.f : 0.f;
+                // Expand range to ±60 semitones (5 octaves in each direction = 10V range)
+                lastScaleDeg = clamp(lastScaleDeg + delta, -60, 60);
+                // More frequent octave jumps for wider exploration
+                float octave = 0.f;
+                float octaveRoll = rand01(ctx.prngState);
+                if (octaveRoll < 0.15f) octave = 1.f;        // Up 1 octave
+                else if (octaveRoll < 0.25f) octave = -1.f;  // Down 1 octave
+                else if (octaveRoll < 0.30f) octave = 2.f;   // Up 2 octaves
+                else if (octaveRoll < 0.33f) octave = -2.f;  // Down 2 octaves
                 e.pitch = degToVolts(lastScaleDeg) + octave;
                 e.vel = 0.7f + 0.3f * ctx.accent;
-                e.gateFrac = (rand01(ctx.prngState) < 0.3f) ? 0.95f : 0.45f;
+                // Acid: Classic acid slides vs short stabs
+                float gateRoll = rand01(ctx.prngState);
+                if (gateRoll < 0.35f) {
+                        e.gateFrac = 0.88f + 0.12f * rand01(ctx.prngState); // Long slide
+                } else if (gateRoll < 0.75f) {
+                        e.gateFrac = 0.4f + 0.2f * rand01(ctx.prngState); // Medium
+                } else {
+                        e.gateFrac = 0.1f + 0.15f * rand01(ctx.prngState); // Short stab
+                }
                 return e;
         }
 };
@@ -243,7 +285,7 @@ struct AlgoStingPulse : public IAlgorithm {
 
                 float anchorProbability = clamp(0.65f + 0.25f * ctx.density + 0.1f * ctx.accent, 0.f, 1.f);
                 float ghostProbability = clamp(0.25f + 0.55f * ctx.density, 0.f, 1.f);
-                float improvProbability = clamp(0.08f + ctx.seedNoise * 0.4f, 0.f, 1.f);
+                float improvProbability = clamp(0.08f + 0.32f, 0.f, 1.f);
 
                 bool active = false;
                 float trigger = rand01(ctx.prngState);
@@ -261,16 +303,19 @@ struct AlgoStingPulse : public IAlgorithm {
                 e.prob = active ? 1.f : 0.f;
 
                 int degree = degreePattern[idx];
-                if (anchor && rand01(ctx.prngState) < (0.35f + 0.35f * ctx.accent))
-                        degree += 12;
-                if (ghost && rand01(ctx.prngState) < (0.25f * ctx.seedNoise))
-                        degree += randChoice({-12, 12}, ctx.prngState);
+                // More frequent octave jumps for anchors
+                if (anchor && rand01(ctx.prngState) < (0.45f + 0.35f * ctx.accent))
+                        degree += randChoice({12, 24, -12}, ctx.prngState);
+                // More dramatic ghost note variations
+                if (ghost && rand01(ctx.prngState) < 0.12f)
+                        degree += randChoice({-24, -12, 12, 24}, ctx.prngState);
 
                 float expressiveNudge = (rand01(ctx.prngState) - 0.5f) * 0.12f;
                 e.pitch = degToVolts(degree + leadOffset) + expressiveNudge;
 
-                if (anchor && rand01(ctx.prngState) < (0.15f + 0.35f * ctx.seedNoise)) {
-                        leadOffset = clamp(leadOffset + randChoice({-7, -5, 5, 7}, ctx.prngState), -12, 24);
+                // Wider leadOffset range for octave exploration (±60 semitones = 5 octaves)
+                if (anchor && rand01(ctx.prngState) < 0.3f) {
+                        leadOffset = clamp(leadOffset + randChoice({-12, -7, -5, 5, 7, 12}, ctx.prngState), -60, 60);
                 }
 
                 float baseVel = anchor ? 0.8f : (ghost ? 0.58f : 0.48f);
@@ -278,12 +323,28 @@ struct AlgoStingPulse : public IAlgorithm {
                 baseVel += (rand01(ctx.prngState) - 0.5f) * 0.1f;
                 e.vel = clamp(baseVel, 0.f, 1.f);
 
-                float gate = anchor ? 0.6f : 0.38f;
-                if (ghost)
-                        gate -= 0.08f;
-                gate += 0.18f * ctx.accent;
-                gate = clamp(gate, 0.2f, 0.95f);
-                e.gateFrac = gate;
+                // STING Pulse: Varied gate patterns - anchors can be long or punchy, ghosts are quick
+                float gateRoll = rand01(ctx.prngState);
+                if (anchor) {
+                        // Anchors: mix of sustained and punchy
+                        if (gateRoll < 0.4f) {
+                                e.gateFrac = 0.7f + 0.25f * rand01(ctx.prngState); // Long
+                        } else if (gateRoll < 0.75f) {
+                                e.gateFrac = 0.45f + 0.2f * rand01(ctx.prngState); // Medium
+                        } else {
+                                e.gateFrac = 0.15f + 0.15f * rand01(ctx.prngState); // Short punch
+                        }
+                } else if (ghost) {
+                        // Ghost notes: mostly short with occasional medium
+                        if (gateRoll < 0.7f) {
+                                e.gateFrac = 0.1f + 0.15f * rand01(ctx.prngState); // Very short
+                        } else {
+                                e.gateFrac = 0.3f + 0.2f * rand01(ctx.prngState); // Medium ghost
+                        }
+                } else {
+                        // Fill notes: varied
+                        e.gateFrac = 0.2f + 0.5f * rand01(ctx.prngState);
+                }
 
                 return e;
         }
@@ -318,19 +379,19 @@ struct AlgoStingSwarm : public IAlgorithm {
                 bool hit = euclidHit(idx, length, pulses);
                 bool accent = euclidHit((idx + phrase * 3) % length, length, accentPulses);
 
-                float improv = clamp(0.1f + ctx.seedNoise * 0.5f, 0.f, 1.f);
-                if (!hit && rand01(ctx.prngState) < improv)
+                if (!hit && rand01(ctx.prngState) < 0.15f)
                         hit = true;
 
                 e.active = hit;
                 e.prob = hit ? 1.f : 0.f;
 
                 if (hit) {
-                        int motion = accent ? randChoice({7, 5, 12}, ctx.prngState)
+                        int motion = accent ? randChoice({7, 5, 12, 24}, ctx.prngState)
                                             : randChoice({0, 2, -3, 3}, ctx.prngState);
-                        if (rand01(ctx.prngState) < (0.2f * ctx.seedNoise))
-                                motion = randChoice({-12, -7, 12, 14}, ctx.prngState);
-                        runningDegree = clamp(runningDegree + motion, -24, 36);
+                        if (rand01(ctx.prngState) < 0.1f)
+                                motion = randChoice({-24, -12, -7, 12, 14, 24}, ctx.prngState);
+                        // Expand to full 10V range (±60 semitones)
+                        runningDegree = clamp(runningDegree + motion, -60, 60);
                         e.pitch = degToVolts(runningDegree);
 
                         float vel = accent ? 0.88f : 0.6f;
@@ -338,10 +399,25 @@ struct AlgoStingSwarm : public IAlgorithm {
                         vel += (rand01(ctx.prngState) - 0.5f) * 0.12f;
                         e.vel = clamp(vel, 0.f, 1.f);
 
-                        float gate = accent ? 0.72f : 0.48f;
-                        gate += 0.15f * ctx.accent;
-                        gate = clamp(gate, 0.25f, 0.95f);
-                        e.gateFrac = gate;
+                        // STING Swarm: Swarming rhythms with varied gate lengths
+                        float gateRoll = rand01(ctx.prngState);
+                        if (accent) {
+                                // Accented notes: sustained or punchy
+                                if (gateRoll < 0.5f) {
+                                        e.gateFrac = 0.75f + 0.25f * rand01(ctx.prngState); // Long
+                                } else {
+                                        e.gateFrac = 0.45f + 0.25f * rand01(ctx.prngState); // Medium-long
+                                }
+                        } else {
+                                // Non-accent: quick buzzing swarm notes with some variety
+                                if (gateRoll < 0.4f) {
+                                        e.gateFrac = 0.15f + 0.2f * rand01(ctx.prngState); // Short
+                                } else if (gateRoll < 0.75f) {
+                                        e.gateFrac = 0.4f + 0.2f * rand01(ctx.prngState); // Medium
+                                } else {
+                                        e.gateFrac = 0.65f + 0.2f * rand01(ctx.prngState); // Occasional long
+                                }
+                        }
                 } else {
                         e.pitch = ctx.lastPitch;
                         e.vel = 0.4f;
@@ -372,8 +448,7 @@ struct AlgoEuclidGroove : public IAlgorithm {
 
                 int length = std::max(1, ctx.steps);
                 int pulses = clamp((int)std::round(ctx.density * length), 1, length);
-                int rotate = clamp((int)std::round(ctx.seedNoise * length), 0, length - 1);
-                int idx = (ctx.stepIndex + rotate) % length;
+                int idx = ctx.stepIndex % length;
                 bool hit = euclidHit(idx, length, pulses);
 
                 e.active = hit;
@@ -381,11 +456,12 @@ struct AlgoEuclidGroove : public IAlgorithm {
 
                 if (hit) {
                         bool accent = euclidHit((idx + length / 3) % length, length, std::max(1, pulses / 2));
-                        int motion = accent ? randChoice({7, 5, 12}, ctx.prngState)
+                        int motion = accent ? randChoice({7, 5, 12, 24}, ctx.prngState)
                                             : randChoice({0, 2, -2, -5}, ctx.prngState);
-                        if (rand01(ctx.prngState) < (0.2f * ctx.seedNoise))
-                                motion = randChoice({-12, 12}, ctx.prngState);
-                        lastDegree = clamp(lastDegree + motion, -36, 36);
+                        if (rand01(ctx.prngState) < 0.1f)
+                                motion = randChoice({-24, -12, 12, 24}, ctx.prngState);
+                        // Expand to full 10V range (±60 semitones)
+                        lastDegree = clamp(lastDegree + motion, -60, 60);
                         e.pitch = degToVolts(lastDegree);
 
                         float vel = accent ? 0.9f : 0.6f;
@@ -393,9 +469,27 @@ struct AlgoEuclidGroove : public IAlgorithm {
                         vel += (rand01(ctx.prngState) - 0.5f) * 0.1f;
                         e.vel = clamp(vel, 0.f, 1.f);
 
-                        float gate = accent ? 0.75f : 0.45f;
-                        gate += 0.15f * ctx.accent;
-                        e.gateFrac = clamp(gate, 0.2f, 0.95f);
+                        // EUCLIDEAN: Groovy patterns with varied gate lengths
+                        float gateRoll = rand01(ctx.prngState);
+                        if (accent) {
+                                // Accents: mostly sustained with occasional punch
+                                if (gateRoll < 0.6f) {
+                                        e.gateFrac = 0.75f + 0.25f * rand01(ctx.prngState); // Long
+                                } else if (gateRoll < 0.85f) {
+                                        e.gateFrac = 0.5f + 0.2f * rand01(ctx.prngState); // Medium
+                                } else {
+                                        e.gateFrac = 0.2f + 0.2f * rand01(ctx.prngState); // Short accent
+                                }
+                        } else {
+                                // Regular beats: mix of all lengths for groove
+                                if (gateRoll < 0.35f) {
+                                        e.gateFrac = 0.15f + 0.2f * rand01(ctx.prngState); // Short
+                                } else if (gateRoll < 0.75f) {
+                                        e.gateFrac = 0.4f + 0.25f * rand01(ctx.prngState); // Medium
+                                } else {
+                                        e.gateFrac = 0.7f + 0.25f * rand01(ctx.prngState); // Long
+                                }
+                        }
                 } else {
                         e.pitch = ctx.lastPitch;
                         e.vel = 0.4f;
@@ -759,7 +853,6 @@ private:
                 ctx.steps = steps;
                 ctx.density = density;
                 ctx.accent = accent;
-                ctx.seedNoise = rand01(prngState);
                 ctx.prngState = prngState;
                 ctx.lastPitch = lastPitch;
                 ctx.lastVel = lastVel;
@@ -979,7 +1072,6 @@ struct Sitri : rack::engine::Module {
                 ROOT_PARAM,
                 SCALE_PARAM,
                 TRANSPOSE_PARAM,
-                SEED_PARAM,
                 RESEED_PARAM,
                 PARAMS_LEN
         };
@@ -991,7 +1083,6 @@ struct Sitri : rack::engine::Module {
                 DENSITY_INPUT,
                 ACCENT_INPUT,
                 GATE_INPUT,
-                SEED_INPUT,
                 INPUTS_LEN
         };
         enum OutputIds {
@@ -1011,11 +1102,9 @@ struct Sitri : rack::engine::Module {
 
         dsp::SchmittTrigger clockTrigger;
         dsp::SchmittTrigger resetTrigger;
-        dsp::SchmittTrigger seedTrigger;
         dsp::SchmittTrigger reseedTrigger;
-
-        float heldSeed = 0.f;
         int voltageRange = 2; // 0 = 1V, 1 = 5V, 2 = 10V (default 10V)
+        std::random_device randomDevice; // For true random seed generation
 
         Sitri() {
                 config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -1054,8 +1143,7 @@ struct Sitri : rack::engine::Module {
                 auto transposeParam = configParam(TRANSPOSE_PARAM, -24.f, 24.f, 0.f, "Transpose", " semitones");
                 transposeParam->snapEnabled = true;
 
-                configParam(SEED_PARAM, 0.f, 1.f, 0.5f, "Random Seed", "%", 0.f, 100.f);
-                configButton(RESEED_PARAM, "Reseed - Generate new pattern");
+                configButton(RESEED_PARAM, "Random - Generate completely new random sequence");
 
                 // Inputs with proper names
                 configInput(CLOCK_INPUT, "Clock");
@@ -1065,7 +1153,6 @@ struct Sitri : rack::engine::Module {
                 configInput(DENSITY_INPUT, "Density CV");
                 configInput(ACCENT_INPUT, "Accent CV");
                 configInput(GATE_INPUT, "Gate Length CV");
-                configInput(SEED_INPUT, "Random Seed Trigger");
 
                 // Algorithm Outputs
                 configOutput(PITCH_OUTPUT, "Pitch CV (V/Oct) - Quantized melody from algorithm");
@@ -1082,9 +1169,8 @@ struct Sitri : rack::engine::Module {
         }
 
         uint64_t computeSeed() {
-                uint64_t base = (uint64_t)std::round(params[SEED_PARAM].getValue() * 1000000.0f);
-                uint64_t cv = (uint64_t)std::round(heldSeed * 9973.0f);
-                return base ^ (cv << 16) ^ 0x9E3779B97F4A7C15ull;
+                // Generate truly random seed using random_device
+                return ((uint64_t)randomDevice() << 32) | randomDevice();
         }
 
         void setAlgorithm(const std::string& id) {
@@ -1151,16 +1237,11 @@ struct Sitri : rack::engine::Module {
                 float transposeCv = inputs[TRANSPOSE_INPUT].isConnected() ? inputs[TRANSPOSE_INPUT].getVoltage() : 0.f;
                 quantizer.setTranspose(transposeKnob + transposeCv);
 
-                if (inputs[SEED_INPUT].isConnected()) {
-                        if (seedTrigger.process(inputs[SEED_INPUT].getVoltage())) {
-                                heldSeed = inputs[SEED_INPUT].getVoltage();
-                                core.reset(computeSeed());
-                        }
-                }
-
-                // Reseed button - the heart of the module
+                // Reseed button - generates a completely new random sequence
                 if (reseedTrigger.process(params[RESEED_PARAM].getValue())) {
-                        core.reset(computeSeed());
+                        // Generate truly random seed using random_device
+                        uint64_t newSeed = ((uint64_t)randomDevice() << 32) | randomDevice();
+                        core.reset(newSeed);
                 }
 
                 bool resetTrig = resetTrigger.process(inputs[RESET_INPUT].getVoltage());
@@ -1176,22 +1257,8 @@ struct Sitri : rack::engine::Module {
 
                 core.process(args.sampleTime, clockEdge, clockConnected);
 
-                // Apply voltage range attenuation (clamps to specified range)
-                float pitchOut = core.pitchOut;
-
-                switch (voltageRange) {
-                case 0: // 1V range: clamp to ±0.5V
-                        pitchOut = clamp(pitchOut, -0.5f, 0.5f);
-                        break;
-                case 1: // 5V range: clamp to ±2.5V
-                        pitchOut = clamp(pitchOut, -2.5f, 2.5f);
-                        break;
-                case 2: // 10V range (default): no clamping
-                default:
-                        break;
-                }
-
-                outputs[PITCH_OUTPUT].setVoltage(pitchOut);
+                // No voltage range clamping - let algorithms explore full 10V range
+                outputs[PITCH_OUTPUT].setVoltage(core.pitchOut);
                 outputs[GATE_OUTPUT].setVoltage(core.gateOut ? 10.f : 0.f);
                 outputs[VEL_OUTPUT].setVoltage(core.velOut);
                 outputs[EOC_OUTPUT].setVoltage(core.eocPulse ? 10.f : 0.f);
@@ -1231,7 +1298,6 @@ struct SitriWidget : rack::app::ModuleWidget {
 
                 // === ALGORITHM SELECTION ===
                 addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(15.0, 20.0)), module, Sitri::TYPE_PARAM));
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(30.0, 20.0)), module, Sitri::SEED_PARAM));
 
                 // === BIG ACID RESEED BUTTON (the heart of the module) ===
                 addParam(createParamCentered<VCVButton>(mm2px(Vec(16.0, 30.0)), module, Sitri::RESEED_PARAM));
@@ -1256,7 +1322,6 @@ struct SitriWidget : rack::app::ModuleWidget {
                 // === CV INPUTS (White ports) ===
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.0, 106.0)), module, Sitri::CLOCK_INPUT));
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(16.0, 106.0)), module, Sitri::RESET_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(22.0, 106.0)), module, Sitri::SEED_INPUT));
 
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.0, 113.5)), module, Sitri::DENSITY_INPUT));
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(16.0, 113.5)), module, Sitri::ACCENT_INPUT));
