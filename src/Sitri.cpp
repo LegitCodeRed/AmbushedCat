@@ -540,116 +540,407 @@ struct AlgoHypnotic : public IAlgorithm {
         const char* id() const override { return "hypno"; }
         const char* displayName() const override { return "HYPNOTIC"; }
 
+        struct HypnoticStep {
+                bool active;
+                int degree;
+                float vel;
+                float gateFrac;
+                bool isDetuned;
+        };
+
         void reset(uint64_t seed) override {
-                // Generate a hypnotic pattern with one detuned note position
+                // Generate a FIXED hypnotic pattern that will loop identically
                 uint64_t state = seed ? seed : 1;
+
                 // Pick which step will be the detuned "hypnotic" note (typically position 3, 5, or 7 in 8-step)
                 detunedStep = randChoice({3, 5, 7}, state);
+
                 // Pick the detune amount (slightly off to create tension)
                 detuneAmount = 0.15f + rand01(state) * 0.25f; // 15-40 cents sharp
                 if (rand01(state) < 0.3f) {
                         detuneAmount = -detuneAmount; // Sometimes flat instead
                 }
-                // Create a simple melodic pattern
+
                 baseDegree = 0;
-        }
 
-        StepEvent generate(const AlgoContext& c) override {
-                AlgoContext ctx = c;
-                StepEvent e;
-
-                // Force pattern to work best with 8 or 16 steps
-                int effectiveSteps = (ctx.steps <= 8) ? 8 : 16;
-                int patternIdx = ctx.stepIndex % effectiveSteps;
-
-                // Define a hypnotic rhythm pattern - mostly on, with strategic rests
+                // Pre-generate the entire 16-step pattern for perfect repetition
                 static constexpr std::array<bool, 16> rhythmMask = {
                     true, true, true, true, true, true, true, false,
                     true, true, true, true, true, true, true, false};
 
-                // Check if this is the detuned step position (wraps for 16-step)
-                bool isDetunedNote = (patternIdx % 8) == detunedStep;
+                for (int i = 0; i < 16; ++i) {
+                        HypnoticStep& step = pattern[i];
+                        int patternIdx = i % 8;
+                        bool isDetunedNote = patternIdx == detunedStep;
 
-                // Slightly higher probability to keep the hypnotic groove going
-                float hitProb = rhythmMask[patternIdx] ? (0.85f + 0.15f * ctx.density) : (0.05f + 0.2f * ctx.density);
-                e.active = rand01(ctx.prngState) < hitProb;
+                        // Determine if step is active (deterministic based on density and rhythm)
+                        float hitProb = rhythmMask[i] ? 0.95f : 0.1f;
+                        step.active = rand01(state) < hitProb;
+
+                        if (step.active) {
+                                // Generate fixed melodic pattern
+                                if (isDetunedNote) {
+                                        // The hypnotic detuned note - pick one permanently
+                                        step.degree = randChoice({5, 7}, state);
+                                } else {
+                                        // Regular notes follow simple pattern
+                                        switch (patternIdx) {
+                                        case 0:
+                                        case 4:
+                                                step.degree = 0; // Root
+                                                break;
+                                        case 1:
+                                        case 5:
+                                                step.degree = rand01(state) < 0.7f ? 0 : 2;
+                                                break;
+                                        case 2:
+                                        case 6:
+                                                step.degree = randChoice({0, 2, 4}, state);
+                                                break;
+                                        case 3:
+                                        case 7:
+                                                step.degree = randChoice({0, 5}, state);
+                                                break;
+                                        default:
+                                                step.degree = 0;
+                                        }
+                                }
+
+                                // Occasional octave jumps (fixed per step)
+                                if (rand01(state) < 0.1f) {
+                                        step.degree += randChoice({-12, 12}, state);
+                                }
+
+                                // Fixed velocity per step (with slight variation per step, not per play)
+                                if (isDetunedNote) {
+                                        step.vel = 0.85f + 0.1f * rand01(state);
+                                } else {
+                                        step.vel = 0.55f + 0.15f * rand01(state);
+                                }
+
+                                // Fixed gate length per step
+                                if (isDetunedNote) {
+                                        step.gateFrac = 0.7f + 0.25f * rand01(state);
+                                } else {
+                                        step.gateFrac = 0.5f + 0.2f * rand01(state);
+                                }
+
+                                step.isDetuned = isDetunedNote;
+                        }
+                }
+        }
+
+        StepEvent generate(const AlgoContext& c) override {
+                StepEvent e;
+
+                // Force pattern to work best with 8 or 16 steps
+                int effectiveSteps = (c.steps <= 8) ? 8 : 16;
+                int patternIdx = c.stepIndex % effectiveSteps;
+
+                // Look up the pre-generated pattern
+                const HypnoticStep& step = pattern[patternIdx];
+
+                e.active = step.active;
 
                 if (e.active) {
-                        // Simple melodic pattern - mostly root with occasional movement
-                        int degree;
-                        if (isDetunedNote) {
-                                // The hypnotic detuned note - typically a fifth or fourth
-                                degree = randChoice({5, 7}, ctx.prngState); // Perfect fourth or fifth
-                        } else {
-                                // Regular notes follow simple pattern
-                                switch (patternIdx % 8) {
-                                case 0:
-                                case 4:
-                                        degree = 0; // Root
-                                        break;
-                                case 1:
-                                case 5:
-                                        degree = rand01(ctx.prngState) < 0.7f ? 0 : 2; // Mostly root, sometimes second
-                                        break;
-                                case 2:
-                                case 6:
-                                        degree = randChoice({0, 2, 4}, ctx.prngState); // Root, second, or third
-                                        break;
-                                case 3:
-                                case 7:
-                                        degree = randChoice({0, 5}, ctx.prngState); // Root or fifth
-                                        break;
-                                default:
-                                        degree = 0;
-                                }
-                        }
-
-                        // Occasional octave jumps for variety, but keep it minimal for hypnotic effect
-                        if (rand01(ctx.prngState) < 0.1f) {
-                                degree += randChoice({-12, 12}, ctx.prngState);
-                        }
-
-                        e.pitch = degToVolts(degree + baseDegree);
+                        e.pitch = degToVolts(step.degree + baseDegree);
 
                         // Apply detune to the special hypnotic note (post-quantization)
-                        if (isDetunedNote) {
-                                e.detune = detuneAmount; // Will be added AFTER quantization
-                        } else {
-                                e.detune = 0.f;
-                        }
+                        e.detune = step.isDetuned ? detuneAmount : 0.f;
 
-                        // Velocity - the detuned note gets accented
-                        if (isDetunedNote) {
-                                e.vel = 0.85f + 0.15f * ctx.accent;
-                        } else {
-                                e.vel = 0.55f + 0.25f * ctx.accent;
-                        }
-                        e.vel += (rand01(ctx.prngState) - 0.5f) * 0.1f;
+                        // Apply accent control to velocity but keep pattern consistent
+                        e.vel = step.vel * (0.5f + 0.5f * c.accent);
                         e.vel = clamp(e.vel, 0.f, 1.f);
 
-                        // Gate lengths - hypnotic patterns work well with consistent medium-long gates
-                        if (isDetunedNote) {
-                                // Detuned note slightly longer for emphasis
-                                e.gateFrac = 0.7f + 0.25f * rand01(ctx.prngState);
-                        } else {
-                                // Regular notes medium length
-                                e.gateFrac = 0.5f + 0.2f * rand01(ctx.prngState);
-                        }
+                        e.gateFrac = step.gateFrac;
                 } else {
-                        e.pitch = ctx.lastPitch;
+                        e.pitch = c.lastPitch;
                         e.vel = 0.4f;
                         e.gateFrac = 0.3f;
+                        e.detune = 0.f;
                 }
 
                 return e;
         }
 
 private:
-        int detunedStep = 3;    // Which step in the 8-step pattern is detuned
-        float detuneAmount = 0.2f; // How much to detune (in volts, ~20 cents)
+        int detunedStep = 3;
+        float detuneAmount = 0.2f;
         int baseDegree = 0;
+        std::array<HypnoticStep, 16> pattern;
 };
 REGISTER_ALGO("hypno", AlgoHypnotic);
+
+struct AlgoHypnoticEvolve : public IAlgorithm {
+        const char* id() const override { return "hypnoev"; }
+        const char* displayName() const override { return "HYPNO EVOLVE"; }
+
+        void reset(uint64_t seed) override {
+                uint64_t state = seed ? seed : 1;
+
+                // Pick which step will be the detuned "hypnotic" note
+                detunedStep = randChoice({3, 5, 7}, state);
+
+                // Pick the detune amount
+                detuneAmount = 0.15f + rand01(state) * 0.25f;
+                if (rand01(state) < 0.3f) {
+                        detuneAmount = -detuneAmount;
+                }
+
+                baseDegree = 0;
+                evolutionCounter = 0;
+
+                // Generate initial pattern
+                generatePattern(state);
+        }
+
+        void generatePattern(uint64_t& state) {
+                static constexpr std::array<bool, 16> rhythmMask = {
+                    true, true, true, true, true, true, true, false,
+                    true, true, true, true, true, true, true, false};
+
+                for (int i = 0; i < 16; ++i) {
+                        HypnoticStep& step = pattern[i];
+                        int patternIdx = i % 8;
+                        bool isDetunedNote = patternIdx == detunedStep;
+
+                        float hitProb = rhythmMask[i] ? 0.95f : 0.1f;
+                        step.active = rand01(state) < hitProb;
+
+                        if (step.active) {
+                                if (isDetunedNote) {
+                                        step.degree = randChoice({5, 7}, state);
+                                } else {
+                                        switch (patternIdx) {
+                                        case 0:
+                                        case 4:
+                                                step.degree = 0;
+                                                break;
+                                        case 1:
+                                        case 5:
+                                                step.degree = rand01(state) < 0.7f ? 0 : 2;
+                                                break;
+                                        case 2:
+                                        case 6:
+                                                step.degree = randChoice({0, 2, 4}, state);
+                                                break;
+                                        case 3:
+                                        case 7:
+                                                step.degree = randChoice({0, 5}, state);
+                                                break;
+                                        default:
+                                                step.degree = 0;
+                                        }
+                                }
+
+                                if (rand01(state) < 0.1f) {
+                                        step.degree += randChoice({-12, 12}, state);
+                                }
+
+                                if (isDetunedNote) {
+                                        step.vel = 0.85f + 0.1f * rand01(state);
+                                } else {
+                                        step.vel = 0.55f + 0.15f * rand01(state);
+                                }
+
+                                if (isDetunedNote) {
+                                        step.gateFrac = 0.7f + 0.25f * rand01(state);
+                                } else {
+                                        step.gateFrac = 0.5f + 0.2f * rand01(state);
+                                }
+
+                                step.isDetuned = isDetunedNote;
+                        }
+                }
+        }
+
+        StepEvent generate(const AlgoContext& c) override {
+                StepEvent e;
+
+                int effectiveSteps = (c.steps <= 8) ? 8 : 16;
+                int patternIdx = c.stepIndex % effectiveSteps;
+
+                // Evolve the pattern every 4-8 loops based on density
+                if (patternIdx == 0) {
+                        evolutionCounter++;
+                        int evolutionInterval = (int)(4 + 4 * (1.0f - c.density));
+                        if (evolutionCounter >= evolutionInterval) {
+                                evolutionCounter = 0;
+                                // Subtle evolution: mutate 1-2 steps
+                                uint64_t evolveState = c.prngState;
+                                int mutateCount = randChoice({1, 2}, evolveState);
+                                for (int m = 0; m < mutateCount; ++m) {
+                                        int mutateIdx = randRange(evolveState, 16);
+                                        // Don't mutate the detuned step - keep it sacred
+                                        if ((mutateIdx % 8) != detunedStep && pattern[mutateIdx].active) {
+                                                // Subtle degree shift
+                                                int shift = randChoice({-2, 0, 0, 2}, evolveState);
+                                                pattern[mutateIdx].degree = clamp(pattern[mutateIdx].degree + shift, -12, 12);
+                                        }
+                                }
+                        }
+                }
+
+                const HypnoticStep& step = pattern[patternIdx];
+                e.active = step.active;
+
+                if (e.active) {
+                        e.pitch = degToVolts(step.degree + baseDegree);
+                        e.detune = step.isDetuned ? detuneAmount : 0.f;
+                        e.vel = step.vel * (0.5f + 0.5f * c.accent);
+                        e.vel = clamp(e.vel, 0.f, 1.f);
+                        e.gateFrac = step.gateFrac;
+                } else {
+                        e.pitch = c.lastPitch;
+                        e.vel = 0.4f;
+                        e.gateFrac = 0.3f;
+                        e.detune = 0.f;
+                }
+
+                return e;
+        }
+
+private:
+        struct HypnoticStep {
+                bool active;
+                int degree;
+                float vel;
+                float gateFrac;
+                bool isDetuned;
+        };
+
+        int detunedStep = 3;
+        float detuneAmount = 0.2f;
+        int baseDegree = 0;
+        std::array<HypnoticStep, 16> pattern;
+        int evolutionCounter = 0;
+};
+REGISTER_ALGO("hypnoev", AlgoHypnoticEvolve);
+
+// -----------------------------------------------------------------------------
+// Algorithm Documentation
+// -----------------------------------------------------------------------------
+/*
+ * SITRI ALGORITHM GUIDE
+ * =====================
+ *
+ * This module provides various generative algorithms for creating melodic sequences.
+ * Each algorithm has a different character and use case.
+ *
+ * ALGORITHMS:
+ * -----------
+ *
+ * RAxDOM (Random)
+ * - Character: Chaotic, exploratory, unpredictable
+ * - Use when: You want wild melodic jumps and experimental sequences
+ * - Features: Large octave jumps mixed with small steps, varied gate lengths
+ * - Density control: Affects note probability
+ * - Best for: Experimental music, ambient textures, generative chaos
+ *
+ * ACxEOM (Accrete)
+ * - Character: Drifting, organic, evolving around a center point
+ * - Use when: You want melodies that wander but stay coherent
+ * - Features: Center point that drifts slowly, notes orbit around it
+ * - Density control: Affects hit probability (0.6-0.8 recommended)
+ * - Best for: Ambient, evolving pads, organic melodic movement
+ *
+ * XACIDx (Acid)
+ * - Character: Classic TB-303 style acid sequences
+ * - Use when: You want squelchy, funky acid basslines
+ * - Features: Chromatic steps, scale jumps, octave leaps, periodic recentering
+ * - Accent control: Heavily affects velocity for classic acid accents
+ * - Best for: Acid techno, electro, funky basslines
+ * - Gate tip: Mix of slides (long) and stabs (short) for authentic acid feel
+ *
+ * STING Pulse
+ * - Character: Complex polyrhythmic patterns with anchor notes
+ * - Use when: You want intricate, musical sequences with ghost notes
+ * - Features: Anchor beats, ghost notes, improvisation fills, accent shaping
+ * - Density control: Affects ghost note and fill probability
+ * - Best for: Techno, house, complex melodic sequences
+ *
+ * STING Swarm
+ * - Character: Euclidean rhythms with swarming melodic movement
+ * - Use when: You want mathematically perfect rhythmic patterns
+ * - Features: Euclidean hit distribution, phrase rotation, accent layer
+ * - Density control: Directly affects euclidean pulse count
+ * - Best for: Hypnotic techno, polyrhythmic sequences, rhythmic exploration
+ *
+ * EUCLIDEAN
+ * - Character: Pure euclidean rhythm with melodic movement
+ * - Use when: You want mathematically distributed rhythms
+ * - Features: Euclidean distribution, accent layer, scale-based melody
+ * - Density control: Determines number of hits in the pattern
+ * - Best for: Grooves, polyrhythms, world music-inspired patterns
+ *
+ * HYPNOTIC
+ * - Character: Locked, repetitive patterns with one detuned note
+ * - Use when: You want a hypnotic, trance-inducing loop with tension
+ * - Features:
+ *   * 100% identical loops - pattern never changes
+ *   * One note is detuned 15-40 cents for hypnotic tension
+ *   * Focuses on 8/16 step sequences
+ *   * Simple, repetitive melodic patterns
+ *   * The detuned note is accented in velocity and gate length
+ * - Density control: Fixed pattern, density doesn't affect much
+ * - Best for: Minimal techno, hypnotic house, trance, repetitive grooves
+ * - Technical: Uses post-quantization detune (see developer notes below)
+ *
+ * HYPNO EVOLVE
+ * - Character: Hypnotic patterns that slowly evolve over time
+ * - Use when: You want hypnotic loops that subtly change
+ * - Features:
+ *   * Starts like HYPNOTIC with locked pattern
+ *   * Slowly evolves: 1-2 notes mutate every 4-8 loops
+ *   * Evolution speed controlled by density (low = slow evolution)
+ *   * The sacred detuned note NEVER changes - always the anchor
+ *   * Mutations are subtle: ±2 semitone shifts
+ * - Density control: Higher density = faster evolution
+ * - Best for: Long evolving tracks, hypnotic grooves that develop, live performance
+ * - Technical: Uses post-quantization detune (see developer notes below)
+ *
+ * PARAMETER GUIDE:
+ * ----------------
+ * - Density: Algorithm-specific, usually controls note probability or pattern complexity
+ * - Accent: Affects velocity shaping and accent patterns
+ * - Gate: Global gate length multiplier (applied to algorithm's gate suggestions)
+ * - Steps: Sequence length (some algorithms optimize for specific lengths)
+ * - Offset: Rotates the sequence playback position
+ * - Direction: Forward, Reverse, Ping-Pong, Random
+ * - Swing: Adds groove by lengthening odd steps
+ * - Division: Clock speed multiplier/divider
+ *
+ * DEVELOPER NOTES - POST-QUANTIZATION DETUNE:
+ * -------------------------------------------
+ * The StepEvent structure includes a 'detune' field for algorithms that need
+ * to intentionally detune notes AFTER quantization. This is crucial for
+ * algorithms like HYPNOTIC that rely on microtonal detuning for their effect.
+ *
+ * How it works:
+ * 1. Algorithm generates pitch as usual (scale degrees)
+ * 2. Sequencer quantizes pitch to selected scale
+ * 3. Sequencer then adds the 'detune' value (in volts)
+ * 4. Final pitch = quantized_pitch + detune
+ *
+ * Usage in your algorithm:
+ *   StepEvent e;
+ *   e.pitch = degToVolts(5);        // Generate a fifth
+ *   e.detune = 0.02f;                // Detune by ~24 cents (0.02V = 24 cents)
+ *
+ * The detune is preserved when:
+ * - User changes scale/root
+ * - Quantizer settings are modified
+ * - Pattern loops
+ *
+ * Typical detune values:
+ * - 0.01V = ~12 cents (subtle)
+ * - 0.02V = ~24 cents (noticeable)
+ * - 0.03V = ~36 cents (strong tension)
+ * - 0.05V = ~60 cents (quarter-tone)
+ *
+ * Note: Use detune sparingly! Most algorithms should set detune = 0.
+ *       It's specifically for creating intentional harmonic tension.
+ */
 
 // -----------------------------------------------------------------------------
 // Quantizer
