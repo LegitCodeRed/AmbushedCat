@@ -681,6 +681,15 @@ public:
                         algo->reset(actualSeed);
         }
 
+        void restart() {
+                // Restart the sequence from the beginning WITHOUT changing the seed
+                cycleResetPending = true;
+        }
+
+        uint64_t getSeed() const {
+                return baseSeed;
+        }
+
         void setSteps(int s) {
                 s = clamp(s, 1, 64);
                 if (steps != s) {
@@ -1282,7 +1291,7 @@ struct Sitri : rack::engine::Module {
                 }
 
                 if (resetTrig)
-                        core.reset(computeSeed());
+                        core.restart();  // Restart sequence from beginning without reseeding
 
                 core.process(args.sampleTime, clockEdge, clockConnected);
 
@@ -1293,6 +1302,23 @@ struct Sitri : rack::engine::Module {
                 outputs[EOC_OUTPUT].setVoltage(core.eocPulse ? 10.f : 0.f);
 
                 lights[ACTIVE_LIGHT].setBrightness(core.gateOut ? 1.f : 0.f);
+        }
+
+        json_t* dataToJson() override {
+                json_t* rootJ = json_object();
+                // Save the current seed so the sequence is preserved across sessions
+                uint64_t seed = core.getSeed();
+                json_object_set_new(rootJ, "seed", json_integer(seed));
+                return rootJ;
+        }
+
+        void dataFromJson(json_t* rootJ) override {
+                // Restore the saved seed to get the same sequence
+                json_t* seedJ = json_object_get(rootJ, "seed");
+                if (seedJ) {
+                        uint64_t savedSeed = json_integer_value(seedJ);
+                        core.reset(savedSeed);
+                }
         }
 };
 
