@@ -38,7 +38,9 @@ struct Lilith : rack::engine::Module {
 	int currentStep = 0;
 	float triggerTimer = 0.f;
 
-	SitriBus::ExpanderToMaster expanderMessage{};
+	// Message buffers for expander communication
+	SitriBus::MasterToExpander consumerMessage{};  // Receive from Sitri
+	SitriBus::ExpanderToMaster producerMessage{};  // Send to Sitri (for future chain support)
 
 	Lilith() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -62,26 +64,36 @@ struct Lilith : rack::engine::Module {
 		configOutput(CV_OUTPUT, "CV");
 		configOutput(GATE_OUTPUT, "Gate");
 
-		expanderMessage.magic = SitriBus::MAGIC;
-		expanderMessage.version = 1;
+		// Set up expander message buffers
+		leftExpander.producerMessage = &producerMessage;
+		leftExpander.consumerMessage = &consumerMessage;
+
+		// Initialize producer message (for potential future use)
+		producerMessage.magic = SitriBus::MAGIC;
+		producerMessage.version = 1;
 		for (int i = 0; i < 8; ++i) {
-			expanderMessage.gateMode[i] = SitriBus::GateMode::EXPAND;
-			expanderMessage.stepCV[i] = 0.f;
+			producerMessage.gateMode[i] = SitriBus::GateMode::EXPAND;
+			producerMessage.stepCV[i] = 0.f;
 		}
-		leftExpander.producerMessage = &expanderMessage;
 	}
 
 	void process(const ProcessArgs& args) override {
 		int knobSteps = clamp((int)std::round(params[STEPS_PARAM].getValue()), 1, 8);
 		float trigLenSec = clamp(params[TRIGLEN_PARAM].getValue(), 0.001f, 0.1f);
 
+		// Check if we're attached to Sitri on the left
 		Module* leftModule = leftExpander.module;
 		bool attachedToSitri = leftModule && leftModule->model == modelSitri;
 		const SitriBus::MasterToExpander* busMessage = nullptr;
-		if (attachedToSitri && leftExpander.consumerMessage) {
-			auto* msg = reinterpret_cast<const SitriBus::MasterToExpander*>(leftExpander.consumerMessage);
-			if (msg && msg->magic == SitriBus::MAGIC && msg->version == 1)
-				busMessage = msg;
+
+		if (attachedToSitri) {
+			// Get the message from Sitri
+			if (leftExpander.consumerMessage) {
+				auto* msg = reinterpret_cast<const SitriBus::MasterToExpander*>(leftExpander.consumerMessage);
+				if (msg && msg->magic == SitriBus::MAGIC && msg->version == 1) {
+					busMessage = msg;
+				}
+			}
 		}
 
 		bool jackReset = resetTrigger.process(inputs[RESET_INPUT].getVoltage());
@@ -192,15 +204,14 @@ struct Lilith : rack::engine::Module {
 			lights[GATE_LIGHT_BASE + i].setBrightness(gateLit ? 1.f : 0.f);
 		}
 
-		expanderMessage.magic = SitriBus::MAGIC;
-		expanderMessage.version = 1;
+		// Update producer message (for future expander chain support)
+		producerMessage.magic = SitriBus::MAGIC;
+		producerMessage.version = 1;
 		for (int i = 0; i < 8; ++i) {
 			int mode = clamp((int)std::round(params[MODE_PARAMS_BASE + i].getValue()), 0, 2);
-			expanderMessage.gateMode[i] = static_cast<SitriBus::GateMode>(mode);
-			expanderMessage.stepCV[i] = params[CV_PARAMS_BASE + i].getValue();
+			producerMessage.gateMode[i] = static_cast<SitriBus::GateMode>(mode);
+			producerMessage.stepCV[i] = params[CV_PARAMS_BASE + i].getValue();
 		}
-		leftExpander.producerMessage = &expanderMessage;
-		leftExpander.requestMessageFlip();
 	}
 };
 

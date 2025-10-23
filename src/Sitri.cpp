@@ -1631,6 +1631,7 @@ struct Sitri : rack::engine::Module {
         bool running = true; // Run/stop state
 
         SitriBus::MasterToExpander masterMessage{};
+        SitriBus::ExpanderToMaster expanderMessage{};  // Receive from expander
 
         Sitri() {
                 config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -1642,7 +1643,10 @@ struct Sitri : rack::engine::Module {
                 masterMessage.running = running ? 1 : 0;
                 masterMessage.resetEdge = 0;
                 masterMessage.clockEdge = 0;
+
+                // Set up expander communication (both send and receive)
                 rightExpander.producerMessage = &masterMessage;
+                rightExpander.consumerMessage = &expanderMessage;
 
                 algoIds = sitri::AlgoRegistry::instance().ids();
                 if (algoIds.empty())
