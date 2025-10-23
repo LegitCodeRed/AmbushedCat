@@ -1337,7 +1337,7 @@ private:
 
                 // Build context for current step
                 AlgoContext ctx;
-                ctx.stepIndex = baseStep; // Use baseStep, not rotatedIndex, for step index
+                ctx.stepIndex = rotatedIndex; // Use rotated index for pattern lookup (offset support)
                 ctx.steps = steps;
                 ctx.density = density;
                 ctx.accent = accent;
