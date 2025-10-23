@@ -86,8 +86,19 @@
       "slug": "Sitri",
       "name": "Sitri",
       "description": "sitri",
-      "tags": [
+     "tags": [
         "Sequencer"
+      ]
+    }
+    ,
+    {
+      "slug": "Lilith",
+      "name": "Lilith",
+      "description": "8-step expander and standalone lane for Sitri with per-step CV and gate modes.",
+      "tags": [
+        "Sequencer",
+        "Expander",
+        "Clocked"
       ]
     }
   ]

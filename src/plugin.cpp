@@ -14,6 +14,7 @@ void init(Plugin* p) {
         p->addModel(modelAhriman);
         p->addModel(modelLeviathan);
         p->addModel(modelSitri);
+        p->addModel(modelLilith);
         // Add modules here
         // p->addModel(modelMyModule);
 

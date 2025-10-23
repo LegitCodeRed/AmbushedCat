@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "SitriBus.hpp"
 
 #include <algorithm>
 #include <array>
@@ -1091,6 +1092,14 @@ public:
                 quantizerRevision = quantizer ? quantizer->getRevision() : 0;
         }
 
+        int getCurrentStepIndex() const { return currentStepIndex; }
+        int getStepCount() const { return steps; }
+        bool takeStepEdge() {
+                bool edge = stepEdge;
+                stepEdge = false;
+                return edge;
+        }
+
         void reset(uint64_t seed) {
                 uint64_t actualSeed = seed ? seed : 0x12345678abcdefULL;
                 baseSeed = actualSeed;
@@ -1117,6 +1126,8 @@ public:
                 externalClockActive = false;
                 externalClockDivCounter = 0;
                 externalClockMultCounter = 0;
+                currentStepIndex = 0;
+                stepEdge = false;
                 if (algo)
                         algo->reset(actualSeed);
         }
@@ -1124,6 +1135,8 @@ public:
         void restart() {
                 // Restart the sequence from the beginning WITHOUT changing the seed
                 cycleResetPending = true;
+                currentStepIndex = 0;
+                stepEdge = false;
         }
 
         uint64_t getSeed() const {
@@ -1143,6 +1156,7 @@ public:
                         externalClockDivCounter = 0;
                         externalClockMultCounter = 0;
                 }
+                currentStepIndex = clamp(currentStepIndex, 0, steps - 1);
         }
         void setOffset(int o) { offset = o; }
         void setDensity(float d) { density = clamp(d, 0.f, 1.f); }
@@ -1184,6 +1198,7 @@ public:
 
         void process(float sampleTime, bool clockEdge, bool externalClockConnected) {
                 eocPulse = false;
+                stepEdge = false;
 
                 if (quantizer && quantizer->getRevision() != quantizerRevision)
                         onQuantizerChanged();
@@ -1284,6 +1299,9 @@ private:
         int totalStepCount = 0;
         int lastRandomStep = -1;
 
+        int currentStepIndex = 0;
+        bool stepEdge = false;
+
         float gateTimer = 0.f;
         float currentDuration = 0.5f;
         float clockPeriod = 0.5f;
@@ -1334,6 +1352,9 @@ private:
 
                 // Calculate the actual step we're generating (with offset rotation)
                 int rotatedIndex = wrapIndex(baseStep + offset, steps);
+
+                currentStepIndex = rotatedIndex;
+                stepEdge = true;
 
                 // Build context for current step
                 AlgoContext ctx;
@@ -1504,6 +1525,8 @@ private:
                 pingDir = 1;
                 lastRandomStep = -1;
                 phase = 0.f;
+                currentStepIndex = clamp(currentStepIndex, 0, steps - 1);
+                stepEdge = false;
         }
 
         static int wrapIndex(int i, int m) {
@@ -1607,8 +1630,19 @@ struct Sitri : rack::engine::Module {
         bool seedLoaded = false; // Track if seed was loaded from JSON
         bool running = true; // Run/stop state
 
+        SitriBus::MasterToExpander masterMessage{};
+
         Sitri() {
                 config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
+
+                masterMessage.magic = SitriBus::MAGIC;
+                masterMessage.version = 1;
+                masterMessage.stepIndex = 1;
+                masterMessage.numSteps = 1;
+                masterMessage.running = running ? 1 : 0;
+                masterMessage.resetEdge = 0;
+                masterMessage.clockEdge = 0;
+                rightExpander.producerMessage = &masterMessage;
 
                 algoIds = sitri::AlgoRegistry::instance().ids();
                 if (algoIds.empty())
@@ -1796,6 +1830,30 @@ struct Sitri : rack::engine::Module {
                         lights[ACTIVE_LIGHT].setBrightness(0.f);
                         // Keep pitch and velocity at last values
                 }
+
+                bool stepEdge = core.takeStepEdge();
+                int coreSteps = core.getStepCount();
+                int busSteps = clamp(coreSteps, 1, 8);
+                int stepIndex = core.getCurrentStepIndex();
+                if (busSteps > 0) {
+                        stepIndex %= busSteps;
+                        if (stepIndex < 0)
+                                stepIndex += busSteps;
+                } else {
+                        busSteps = 1;
+                        stepIndex = 0;
+                }
+
+                masterMessage.magic = SitriBus::MAGIC;
+                masterMessage.version = 1;
+                masterMessage.running = running ? 1 : 0;
+                masterMessage.numSteps = (uint8_t)busSteps;
+                masterMessage.stepIndex = (uint8_t)clamp(stepIndex + 1, 1, busSteps);
+                masterMessage.resetEdge = resetTrig ? 1 : 0;
+                masterMessage.clockEdge = stepEdge ? 1 : 0;
+
+                rightExpander.producerMessage = &masterMessage;
+                rightExpander.requestMessageFlip();
         }
 
         json_t* dataToJson() override {
