@@ -1272,6 +1272,7 @@ public:
         float pitchOut = 0.f;
         float velOut = 0.f;
         bool eocPulse = false;
+        bool newNoteTrigger = false;  // True when a new note starts (pitch changed or gate re-triggered)
 
         uint64_t prngState = 0x12345678abcdefULL;
 
@@ -1396,6 +1397,12 @@ private:
                         float snapped = quantizer->snap(rawPitch);
                         // Apply post-quantization detune (for algorithms like HYPNOTIC)
                         float finalPitch = snapped + proposal.detune;
+
+                        // Detect if this is a new note (pitch changed or gate was off)
+                        bool pitchChanged = std::fabs(finalPitch - lastPitch) > 1e-5f;
+                        bool gateWasOff = !gateOut;
+                        newNoteTrigger = pitchChanged || gateWasOff;
+
                         pitchOut = finalPitch;
                         velOut = shapedVel * 10.f;
                         gateOut = true;
@@ -1414,6 +1421,7 @@ private:
                         gateTimer = 0.f;
                         lastStepActive = false;
                         lastDetune = 0.f;
+                        newNoteTrigger = false;
                 }
 
                 advanceCounters();
@@ -1852,17 +1860,13 @@ struct Sitri : rack::engine::Module {
                                 msg->resetEdge = resetTrig ? 1 : 0;
                                 msg->clockEdge = stepEdge ? 1 : 0;
 
+                                // Send current step's pitch, gate, and note trigger status to Lilith
+                                msg->currentPitch = core.pitchOut;
+                                msg->currentGate = core.gateOut ? 1 : 0;
+                                msg->newNote = core.newNoteTrigger ? 1 : 0;
+
                                 // Request VCV Rack to flip the buffers
                                 rightModule->leftExpander.requestMessageFlip();
-
-                                // Debug: log status periodically
-                                static int sitriDebugCounter = 0;
-                                sitriDebugCounter++;
-                                if (sitriDebugCounter >= 48000) {  // ~1 second at 48kHz
-                                        sitriDebugCounter = 0;
-                                        INFO("Sitri: Writing to Lilith - running=%d step=%d addr=%p",
-                                             msg->running, msg->stepIndex, (void*)msg);
-                                }
                         }
                 }
         }

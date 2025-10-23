@@ -95,43 +95,15 @@ struct Lilith : rack::engine::Module {
 		int knobSteps = clamp((int)std::round(params[STEPS_PARAM].getValue()), 1, 8);
 		float trigLenSec = clamp(params[TRIGLEN_PARAM].getValue(), 0.001f, 0.1f);
 
-                // Debug: Always log status once per second to confirm Lilith is running
-                static int globalDebugCounter = 0;
-                globalDebugCounter++;
-		if (globalDebugCounter >= 48000) {
-			globalDebugCounter = 0;
-			bool hasLeftModule = getLeftExpander().module != nullptr;
-			bool hasModel = hasLeftModule && getLeftExpander().module->model != nullptr;
-			std::string slug = hasModel ? getLeftExpander().module->model->slug : "none";
-			INFO("Lilith: Running - leftModule=%d, hasModel=%d, slug='%s'",
-			     hasLeftModule, hasModel, slug.c_str());
-		}
-
-		// Check if we're attached to Sitri on the left (use string comparison like TuringGateExpander)
+		// Check if we're attached to Sitri on the left
 		bool attachedToSitri = getLeftExpander().module &&
 		                       getLeftExpander().module->model &&
 		                       getLeftExpander().module->model->slug == "Sitri";
 		const SitriBus::MasterToExpander* busMessage = nullptr;
 
 		if (attachedToSitri) {
-			// Get the message from Sitri. VCV Rack automatically copies
-			// Sitri's rightExpander.producerMessage to our leftExpander.consumerMessage.
+			// Get the message from Sitri via VCV Rack's message flipping system
 			auto* msg = reinterpret_cast<const SitriBus::MasterToExpander*>(getLeftExpander().consumerMessage);
-
-			// Debug: log message address and status once per second
-			if (globalDebugCounter == 0) {
-				INFO("Lilith: Consumer=%p Producer=%p Module=%p",
-				     (void*)getLeftExpander().consumerMessage,
-				     (void*)getLeftExpander().producerMessage,
-				     (void*)getLeftExpander().module);
-
-				if (!msg) {
-					INFO("Lilith: consumerMessage is NULL!");
-				} else {
-					INFO("Lilith: Inbound magic=0x%08X running=%d stepIndex=%d",
-					     msg->magic, msg->running, msg->stepIndex);
-				}
-			}
 
 			if (msg && msg->magic == SitriBus::MAGIC && msg->version == 1) {
 				busMessage = msg;
@@ -158,22 +130,19 @@ struct Lilith : rack::engine::Module {
 			bool sitriRunning = busMessage->running != 0;
 			if (sitriRunning) {
 				usingSitriClock = true;
-				// busMessage->stepIndex is 1-based, convert to 0-based
-				int targetStep = (int)busMessage->stepIndex - 1;
-				targetStep = clamp(targetStep, 0, activeSteps - 1);
-				if (targetStep != currentStep)
-					enteringStep = true;
 				clockEdge = busMessage->clockEdge != 0;
 				resetEdge = busMessage->resetEdge != 0;
-				currentStep = targetStep;
 
-				// Debug log (once per second)
-				static int lilithDebugCounter = 0;
-				lilithDebugCounter++;
-				if (lilithDebugCounter >= 48000) {
-					lilithDebugCounter = 0;
-					INFO("Lilith: Synced - currentStep=%d, targetStep=%d, enteringStep=%d, clockEdge=%d",
-					     currentStep, targetStep, enteringStep, clockEdge);
+				// Only update step position on clock or reset edges for clean sync
+				if (clockEdge || resetEdge) {
+					// busMessage->stepIndex is 1-based, convert to 0-based
+					int targetStep = (int)busMessage->stepIndex - 1;
+					targetStep = clamp(targetStep, 0, activeSteps - 1);
+
+					if (targetStep != currentStep) {
+						enteringStep = true;
+						currentStep = targetStep;
+					}
 				}
 			}
 		}
@@ -210,6 +179,27 @@ struct Lilith : rack::engine::Module {
 			enteringStep = true;
 
 		int stepIndex = clamp(currentStep, 0, activeSteps - 1);
+
+		// When synced to Sitri, update current step's parameters to match Sitri's output
+		if (usingSitriClock && busMessage && enteringStep) {
+			// Set CV knob to match Sitri's pitch output
+			params[CV_PARAMS_BASE + stepIndex].setValue(busMessage->currentPitch);
+
+			// Set gate mode intelligently based on Sitri's behavior:
+			// - TRIGGER: New note is being triggered (pitch changed or gate re-triggered)
+			// - EXPAND: Gate is high but note is being held/extended (legato)
+			// - MUTE: Gate is low (rest/silence)
+			SitriBus::GateMode gateMode;
+			if (!busMessage->currentGate) {
+				gateMode = SitriBus::GateMode::MUTE;  // Gate off = mute
+			} else if (busMessage->newNote) {
+				gateMode = SitriBus::GateMode::TRIGGER;  // New note = trigger
+			} else {
+				gateMode = SitriBus::GateMode::EXPAND;  // Holding note = expand
+			}
+			params[MODE_PARAMS_BASE + stepIndex].setValue((float)gateMode);
+		}
+
 		int modeValue = clamp((int)std::round(params[MODE_PARAMS_BASE + stepIndex].getValue()), 0, 2);
 
 		if (modeValue == SitriBus::GateMode::TRIGGER) {
