@@ -1622,10 +1622,6 @@ struct Sitri : rack::engine::Module {
         std::vector<std::string> algoIds;
         int lastAlgoIndex = -1;
 
-        // Expander communication buffer for Lilith
-        SitriBus::MasterToExpander masterMessage{};
-        SitriBus::ExpanderToMaster expanderMessage{};
-
         dsp::SchmittTrigger clockTrigger;
         dsp::SchmittTrigger resetTrigger;
         dsp::SchmittTrigger reseedTrigger;
@@ -1692,18 +1688,8 @@ struct Sitri : rack::engine::Module {
                 core.setQuantizer(&quantizer);
                 setAlgorithm(algoId);
 
-                // Register expander message buffer for Lilith
-                masterMessage.magic = SitriBus::MAGIC;
-                masterMessage.version = 1;
-                masterMessage.stepIndex = 1;
-                masterMessage.numSteps = 1;
-                masterMessage.running = running ? 1 : 0;
-                masterMessage.resetEdge = 0;
-                masterMessage.clockEdge = 0;
-                expanderMessage.magic = SitriBus::MAGIC;
-                expanderMessage.version = 1;
-                getRightExpander().producerMessage = &masterMessage;
-                getRightExpander().consumerMessage = &expanderMessage;
+                // Expander messages are initialized but not registered here
+                // Sitri will write directly to Lilith's producer buffer in process()
         }
 
         void onReset() override {
@@ -1850,28 +1836,33 @@ struct Sitri : rack::engine::Module {
                         stepIndex = 0;
                 }
 
-                // Write to producer message for the expander
+                // Write to Lilith expander using VCV Rack's message flipping system
                 Module* rightModule = getRightExpander().module;
                 bool connectedToLilith = rightModule && rightModule->model && rightModule->model->slug == "Lilith";
 
-                masterMessage.magic = SitriBus::MAGIC;
-                masterMessage.version = 1;
-                masterMessage.running = running ? 1 : 0;
-                masterMessage.numSteps = (uint8_t)busSteps;
-                masterMessage.stepIndex = (uint8_t)clamp(stepIndex + 1, 1, busSteps);
-                masterMessage.resetEdge = resetTrig ? 1 : 0;
-                masterMessage.clockEdge = stepEdge ? 1 : 0;
-
                 if (connectedToLilith) {
-                        getRightExpander().producerMessage = &masterMessage;
+                        // Write to Lilith's producer buffer (VCV will flip it to consumer on Lilith's side)
+                        auto* msg = static_cast<SitriBus::MasterToExpander*>(rightModule->leftExpander.producerMessage);
+                        if (msg) {
+                                msg->magic = SitriBus::MAGIC;
+                                msg->version = 1;
+                                msg->running = running ? 1 : 0;
+                                msg->numSteps = (uint8_t)busSteps;
+                                msg->stepIndex = (uint8_t)clamp(stepIndex + 1, 1, busSteps);
+                                msg->resetEdge = resetTrig ? 1 : 0;
+                                msg->clockEdge = stepEdge ? 1 : 0;
 
-                        // Debug: log buffer address and status periodically
-                        static int sitriDebugCounter = 0;
-                        sitriDebugCounter++;
-                        if (sitriDebugCounter >= 48000) {  // ~1 second at 48kHz
-                                sitriDebugCounter = 0;
-                                INFO("Sitri: Producer addr=%p running=%d",
-                                     (void*)getRightExpander().producerMessage, masterMessage.running);
+                                // Request VCV Rack to flip the buffers
+                                rightModule->leftExpander.requestMessageFlip();
+
+                                // Debug: log status periodically
+                                static int sitriDebugCounter = 0;
+                                sitriDebugCounter++;
+                                if (sitriDebugCounter >= 48000) {  // ~1 second at 48kHz
+                                        sitriDebugCounter = 0;
+                                        INFO("Sitri: Writing to Lilith - running=%d step=%d addr=%p",
+                                             msg->running, msg->stepIndex, (void*)msg);
+                                }
                         }
                 }
         }

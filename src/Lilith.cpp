@@ -38,8 +38,10 @@ struct Lilith : rack::engine::Module {
 	int currentStep = 0;
 	float triggerTimer = 0.f;
 
-        // Expander message for communication with Sitri
-        SitriBus::ExpanderToMaster outboundMessage{};       // Send back (for future chain support)
+        // Expander message buffers for communication with Sitri
+        // Double buffering: VCV Rack flips between these two buffers
+        SitriBus::MasterToExpander inboundMessages[2]{};    // Receive from Sitri
+        SitriBus::ExpanderToMaster outboundMessages[2]{};   // Send back (for future chain support)
 
 
 	Lilith() {
@@ -64,15 +66,28 @@ struct Lilith : rack::engine::Module {
 		configOutput(CV_OUTPUT, "CV");
 		configOutput(GATE_OUTPUT, "Gate");
 
-                // Register buffer for Rack expander messaging.
-                getLeftExpander().producerMessage = &outboundMessage;
+                // Register double buffers for VCV Rack expander messaging
+                // VCV Rack will flip between buffer [0] and [1] when requestMessageFlip() is called
+                leftExpander.producerMessage = &inboundMessages[0];
+                leftExpander.consumerMessage = &inboundMessages[1];
 
-                // Initialise outbound messages with sensible defaults
-                outboundMessage.magic = SitriBus::MAGIC;
-                outboundMessage.version = 1;
-                for (int j = 0; j < 8; ++j) {
-                        outboundMessage.gateMode[j] = SitriBus::GateMode::EXPAND;
-                        outboundMessage.stepCV[j] = 0.f;
+                // Initialize both inbound buffers
+                for (int i = 0; i < 2; ++i) {
+                        inboundMessages[i].magic = SitriBus::MAGIC;
+                        inboundMessages[i].version = 1;
+                        inboundMessages[i].running = 0;
+                        inboundMessages[i].stepIndex = 1;
+                        inboundMessages[i].numSteps = 1;
+                }
+
+                // For future chain support (Lilith sending data back)
+                for (int i = 0; i < 2; ++i) {
+                        outboundMessages[i].magic = SitriBus::MAGIC;
+                        outboundMessages[i].version = 1;
+                        for (int j = 0; j < 8; ++j) {
+                                outboundMessages[i].gateMode[j] = SitriBus::GateMode::EXPAND;
+                                outboundMessages[i].stepCV[j] = 0.f;
+                        }
                 }
 	}
 
@@ -99,16 +114,22 @@ struct Lilith : rack::engine::Module {
 		const SitriBus::MasterToExpander* busMessage = nullptr;
 
 		if (attachedToSitri) {
-			// Get the message from Sitri
+			// Get the message from Sitri. VCV Rack automatically copies
+			// Sitri's rightExpander.producerMessage to our leftExpander.consumerMessage.
 			auto* msg = reinterpret_cast<const SitriBus::MasterToExpander*>(getLeftExpander().consumerMessage);
 
 			// Debug: log message address and status once per second
 			if (globalDebugCounter == 0) {
+				INFO("Lilith: Consumer=%p Producer=%p Module=%p",
+				     (void*)getLeftExpander().consumerMessage,
+				     (void*)getLeftExpander().producerMessage,
+				     (void*)getLeftExpander().module);
+
 				if (!msg) {
 					INFO("Lilith: consumerMessage is NULL!");
 				} else {
-					INFO("Lilith: Consumer addr=%p magic=0x%08X running=%d stepIndex=%d",
-					     (void*)msg, msg->magic, msg->running, msg->stepIndex);
+					INFO("Lilith: Inbound magic=0x%08X running=%d stepIndex=%d",
+					     msg->magic, msg->running, msg->stepIndex);
 				}
 			}
 
@@ -241,18 +262,7 @@ struct Lilith : rack::engine::Module {
 			lights[GATE_LIGHT_BASE + i].setBrightness(gateLit ? 1.f : 0.f);
 		}
 
-                // Update outbound message (for future expander chain support)
-                if (attachedToSitri) {
-                        outboundMessage.magic = SitriBus::MAGIC;
-                        outboundMessage.version = 1;
-                        for (int i = 0; i < 8; ++i) {
-                                int mode = clamp((int)std::round(params[MODE_PARAMS_BASE + i].getValue()), 0, 2);
-                                outboundMessage.gateMode[i] = static_cast<SitriBus::GateMode>(mode);
-                                outboundMessage.stepCV[i] = params[CV_PARAMS_BASE + i].getValue();
-                        }
-
-                        getLeftExpander().producerMessage = &outboundMessage;
-                }
+                // TODO: Future expander chain support - write to outboundMessages and flip
 	}
 };
 
