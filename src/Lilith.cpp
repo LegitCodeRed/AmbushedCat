@@ -38,9 +38,9 @@ struct Lilith : rack::engine::Module {
 	int currentStep = 0;
 	float triggerTimer = 0.f;
 
-	// Message buffers for expander communication
-	SitriBus::MasterToExpander consumerMessage{};  // Receive from Sitri
-	SitriBus::ExpanderToMaster producerMessage{};  // Send to Sitri (for future chain support)
+	// Expander message buffer for sending (VCV Rack manages consumer automatically)
+	SitriBus::ExpanderToMaster producerMessage{};  // Send back (for future chain support)
+
 
 	Lilith() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -64,9 +64,9 @@ struct Lilith : rack::engine::Module {
 		configOutput(CV_OUTPUT, "CV");
 		configOutput(GATE_OUTPUT, "Gate");
 
-		// Set up expander message buffers
-		leftExpander.producerMessage = &producerMessage;
-		leftExpander.consumerMessage = &consumerMessage;
+		// Set up producer only - consumer is set by VCV Rack to point to Sitri's producer
+		getLeftExpander().producerMessage = &producerMessage;
+		// DON'T set consumerMessage - VCV Rack sets this automatically!
 
 		// Initialize producer message (for potential future use)
 		producerMessage.magic = SitriBus::MAGIC;
@@ -81,18 +81,40 @@ struct Lilith : rack::engine::Module {
 		int knobSteps = clamp((int)std::round(params[STEPS_PARAM].getValue()), 1, 8);
 		float trigLenSec = clamp(params[TRIGLEN_PARAM].getValue(), 0.001f, 0.1f);
 
-		// Check if we're attached to Sitri on the left
-		Module* leftModule = leftExpander.module;
-		bool attachedToSitri = leftModule && leftModule->model == modelSitri;
+		// Debug: Always log status once per second to confirm Lilith is running
+		static int globalDebugCounter = 0;
+		globalDebugCounter++;
+		if (globalDebugCounter >= 48000) {
+			globalDebugCounter = 0;
+			bool hasLeftModule = getLeftExpander().module != nullptr;
+			bool hasModel = hasLeftModule && getLeftExpander().module->model != nullptr;
+			std::string slug = hasModel ? getLeftExpander().module->model->slug : "none";
+			INFO("Lilith: Running - leftModule=%d, hasModel=%d, slug='%s'",
+			     hasLeftModule, hasModel, slug.c_str());
+		}
+
+		// Check if we're attached to Sitri on the left (use string comparison like TuringGateExpander)
+		bool attachedToSitri = getLeftExpander().module &&
+		                       getLeftExpander().module->model &&
+		                       getLeftExpander().module->model->slug == "Sitri";
 		const SitriBus::MasterToExpander* busMessage = nullptr;
 
 		if (attachedToSitri) {
 			// Get the message from Sitri
-			if (leftExpander.consumerMessage) {
-				auto* msg = reinterpret_cast<const SitriBus::MasterToExpander*>(leftExpander.consumerMessage);
-				if (msg && msg->magic == SitriBus::MAGIC && msg->version == 1) {
-					busMessage = msg;
+			auto* msg = reinterpret_cast<const SitriBus::MasterToExpander*>(getLeftExpander().consumerMessage);
+
+			// Debug: log message address and status once per second
+			if (globalDebugCounter == 0) {
+				if (!msg) {
+					INFO("Lilith: consumerMessage is NULL!");
+				} else {
+					INFO("Lilith: Consumer addr=%p magic=0x%08X running=%d stepIndex=%d",
+					     (void*)msg, msg->magic, msg->running, msg->stepIndex);
 				}
+			}
+
+			if (msg && msg->magic == SitriBus::MAGIC && msg->version == 1) {
+				busMessage = msg;
 			}
 		}
 
@@ -124,6 +146,15 @@ struct Lilith : rack::engine::Module {
 				clockEdge = busMessage->clockEdge != 0;
 				resetEdge = busMessage->resetEdge != 0;
 				currentStep = targetStep;
+
+				// Debug log (once per second)
+				static int lilithDebugCounter = 0;
+				lilithDebugCounter++;
+				if (lilithDebugCounter >= 48000) {
+					lilithDebugCounter = 0;
+					INFO("Lilith: Synced - currentStep=%d, targetStep=%d, enteringStep=%d, clockEdge=%d",
+					     currentStep, targetStep, enteringStep, clockEdge);
+				}
 			}
 		}
 

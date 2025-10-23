@@ -1630,23 +1630,27 @@ struct Sitri : rack::engine::Module {
         bool seedLoaded = false; // Track if seed was loaded from JSON
         bool running = true; // Run/stop state
 
-        SitriBus::MasterToExpander masterMessage{};
-        SitriBus::ExpanderToMaster expanderMessage{};  // Receive from expander
+        // Double-buffer for expander messages (VCV Rack requirement)
+        SitriBus::MasterToExpander masterMessages[2]{};
+        SitriBus::ExpanderToMaster expanderMessages[2]{};  // Receive from expander
 
         Sitri() {
                 config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
-                masterMessage.magic = SitriBus::MAGIC;
-                masterMessage.version = 1;
-                masterMessage.stepIndex = 1;
-                masterMessage.numSteps = 1;
-                masterMessage.running = running ? 1 : 0;
-                masterMessage.resetEdge = 0;
-                masterMessage.clockEdge = 0;
+                // Initialize both message buffers
+                for (int i = 0; i < 2; i++) {
+                        masterMessages[i].magic = SitriBus::MAGIC;
+                        masterMessages[i].version = 1;
+                        masterMessages[i].stepIndex = 1;
+                        masterMessages[i].numSteps = 1;
+                        masterMessages[i].running = running ? 1 : 0;
+                        masterMessages[i].resetEdge = 0;
+                        masterMessages[i].clockEdge = 0;
+                }
 
-                // Set up expander communication (both send and receive)
-                rightExpander.producerMessage = &masterMessage;
-                rightExpander.consumerMessage = &expanderMessage;
+                // Set up expander double-buffering (VCV Rack pattern)
+                getRightExpander().producerMessage = &masterMessages[0];
+                getRightExpander().consumerMessage = &masterMessages[1];
 
                 algoIds = sitri::AlgoRegistry::instance().ids();
                 if (algoIds.empty())
@@ -1848,16 +1852,30 @@ struct Sitri : rack::engine::Module {
                         stepIndex = 0;
                 }
 
-                masterMessage.magic = SitriBus::MAGIC;
-                masterMessage.version = 1;
-                masterMessage.running = running ? 1 : 0;
-                masterMessage.numSteps = (uint8_t)busSteps;
-                masterMessage.stepIndex = (uint8_t)clamp(stepIndex + 1, 1, busSteps);
-                masterMessage.resetEdge = resetTrig ? 1 : 0;
-                masterMessage.clockEdge = stepEdge ? 1 : 0;
+                // Write to producer message (double-buffer pattern)
+                auto* msg = static_cast<SitriBus::MasterToExpander*>(getRightExpander().producerMessage);
+                if (msg) {
+                        msg->magic = SitriBus::MAGIC;
+                        msg->version = 1;
+                        msg->running = running ? 1 : 0;
+                        msg->numSteps = (uint8_t)busSteps;
+                        msg->stepIndex = (uint8_t)clamp(stepIndex + 1, 1, busSteps);
+                        msg->resetEdge = resetTrig ? 1 : 0;
+                        msg->clockEdge = stepEdge ? 1 : 0;
 
-                rightExpander.producerMessage = &masterMessage;
-                rightExpander.requestMessageFlip();
+                        // Debug: log buffer addresses and values
+                        static int sitriDebugCounter = 0;
+                        sitriDebugCounter++;
+                        if (sitriDebugCounter >= 48000) {  // ~1 second at 48kHz
+                                sitriDebugCounter = 0;
+                                INFO("Sitri: Producer addr=%p running=%d | Consumer addr=%p running=%d",
+                                     (void*)getRightExpander().producerMessage, msg->running,
+                                     (void*)getRightExpander().consumerMessage,
+                                     static_cast<SitriBus::MasterToExpander*>(getRightExpander().consumerMessage)->running);
+                        }
+
+                        getRightExpander().requestMessageFlip();
+                }
         }
 
         json_t* dataToJson() override {
