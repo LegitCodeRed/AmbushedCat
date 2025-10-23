@@ -109,22 +109,26 @@ struct Lilith : rack::engine::Module {
 			activeSteps = clamp((int)busMessage->numSteps, 1, 8);
 		}
 
-		if (attachedToSitri) {
-			if (busMessage) {
-				// Only follow Sitri if it's running
-				bool sitriRunning = busMessage->running != 0;
-				if (sitriRunning) {
-					// busMessage->stepIndex is 1-based, convert to 0-based
-					int targetStep = (int)busMessage->stepIndex - 1;
-					targetStep = clamp(targetStep, 0, activeSteps - 1);
-					if (targetStep != currentStep)
-						enteringStep = true;
-					clockEdge = busMessage->clockEdge != 0;
-					resetEdge = busMessage->resetEdge != 0;
-					currentStep = targetStep;
-				}
+		// Determine if we should use Sitri's clock or our own
+		bool usingSitriClock = false;
+		if (attachedToSitri && busMessage) {
+			// Only follow Sitri if it's running
+			bool sitriRunning = busMessage->running != 0;
+			if (sitriRunning) {
+				usingSitriClock = true;
+				// busMessage->stepIndex is 1-based, convert to 0-based
+				int targetStep = (int)busMessage->stepIndex - 1;
+				targetStep = clamp(targetStep, 0, activeSteps - 1);
+				if (targetStep != currentStep)
+					enteringStep = true;
+				clockEdge = busMessage->clockEdge != 0;
+				resetEdge = busMessage->resetEdge != 0;
+				currentStep = targetStep;
 			}
-		} else {
+		}
+
+		// Fall back to own clock inputs if not using Sitri's clock
+		if (!usingSitriClock) {
 			bool clkTrig = clockTrigger.process(inputs[CLK_INPUT].getVoltage());
 			if (clkTrig) {
 				clockEdge = true;
@@ -186,13 +190,16 @@ struct Lilith : rack::engine::Module {
 		outputs[CV_OUTPUT].setVoltage(cvOut);
 		outputs[GATE_OUTPUT].setVoltage(gateHigh ? 10.f : 0.f);
 
-		// RUN light: blinks on clock when attached to Sitri, solid when standalone and receiving clock
+		// RUN light: Shows connection and operation status
+		// - Solid green: Connected to Sitri and receiving valid clock
+		// - Blinking: Standalone mode receiving clock
+		// - Off: Not receiving clock (check connections!)
 		float runBrightness = 0.f;
-		if (attachedToSitri && busMessage) {
-			// Connected to Sitri: show if Sitri is running
-			runBrightness = (busMessage->running != 0) ? 1.f : 0.f;
+		if (usingSitriClock) {
+			// Successfully using Sitri's clock - solid green
+			runBrightness = 1.f;
 		} else {
-			// Standalone mode: blink on clock
+			// Standalone or fallback mode - blink on clock
 			runBrightness = runPulse.process(args.sampleTime) ? 1.f : 0.f;
 		}
 		lights[RUN_LIGHT].setBrightness(runBrightness);
