@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="50.8mm" height="128.5mm" viewBox="0 0 50.8 128.5">
+  <defs>
+    <linearGradient id="panelGradient" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#2b2d33" />
+      <stop offset="1" stop-color="#1b1d22" />
+    </linearGradient>
+    <style>
+      .title { font-family: 'Roboto', 'Liberation Sans', sans-serif; font-size: 4.2px; fill: #f5f6fa; font-weight: 600; letter-spacing: 0.8px; }
+      .label { font-family: 'Roboto', 'Liberation Sans', sans-serif; font-size: 3.2px; fill: #cfd3dc; text-anchor: middle; }
+      .sub { font-family: 'Roboto', 'Liberation Sans', sans-serif; font-size: 2.6px; fill: #a7acb7; text-anchor: middle; }
+      .jack { font-family: 'Roboto', 'Liberation Sans', sans-serif; font-size: 3px; fill: #d9dde5; text-anchor: middle; }
+      .divider { stroke: #434750; stroke-width: 0.25; stroke-linecap: round; }
+    </style>
+  </defs>
+  <rect width="50.8" height="128.5" fill="url(#panelGradient)" rx="2" ry="2" />
+  <rect x="2.5" y="10" width="45.8" height="18" fill="#202228" stroke="#3a3d46" stroke-width="0.4" rx="2" />
+  <text class="title" x="25.4" y="8.5">LILITH — SITRI EXPANDER</text>
+  <text class="label" x="14" y="17.2">STEPS</text>
+  <text class="label" x="35" y="17.2">TRIG LEN</text>
+  <text class="sub" x="24.6" y="33">EXP   MUTE   TRIG</text>
+  <line class="divider" x1="4.5" y1="34" x2="46.3" y2="34" />
+  <line class="divider" x1="4.5" y1="101" x2="46.3" y2="101" />
+  <text class="jack" x="14" y="111">CLK</text>
+  <text class="jack" x="27" y="111">RESET</text>
+  <text class="jack" x="40" y="111">CV OUT</text>
+  <text class="jack" x="47.5" y="111">GATE</text>
+  <text class="sub" x="25.4" y="125">AMBUSHEDCAT</text>
+</svg>
