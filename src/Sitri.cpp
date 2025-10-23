@@ -1637,6 +1637,7 @@ struct Sitri : rack::engine::Module {
         std::random_device randomDevice; // For true random seed generation
         bool seedLoaded = false; // Track if seed was loaded from JSON
         bool running = true; // Run/stop state
+        bool reseedTriggered = false; // Track reseed button press for expander
 
         Sitri() {
                 config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -1783,6 +1784,7 @@ struct Sitri : rack::engine::Module {
                 }
 
                 // Reseed button - generates a completely new random sequence
+                reseedTriggered = false;
                 if (reseedTrigger.process(params[RESEED_PARAM].getValue())) {
                         // Generate truly random seed using random_device
                         uint64_t newSeed = ((uint64_t)randomDevice() << 32) | randomDevice();
@@ -1792,6 +1794,7 @@ struct Sitri : rack::engine::Module {
                         }
                         core.reset(newSeed);
                         seedLoaded = true; // Mark that we have a valid seed
+                        reseedTriggered = true; // Signal to expander
                 }
 
                 bool resetTrig = resetTrigger.process(inputs[RESET_INPUT].getVoltage());
@@ -1859,11 +1862,16 @@ struct Sitri : rack::engine::Module {
                                 msg->stepIndex = (uint8_t)clamp(stepIndex + 1, 1, busSteps);
                                 msg->resetEdge = resetTrig ? 1 : 0;
                                 msg->clockEdge = stepEdge ? 1 : 0;
+                                msg->eocPulse = core.eocPulse ? 1 : 0;
+                                msg->reseedEdge = reseedTriggered ? 1 : 0;
 
                                 // Send current step's pitch, gate, and note trigger status to Lilith
                                 msg->currentPitch = core.pitchOut;
                                 msg->currentGate = core.gateOut ? 1 : 0;
                                 msg->newNote = core.newNoteTrigger ? 1 : 0;
+
+                                // Send global parameters
+                                msg->gateLength = params[GATE_PARAM].getValue();
 
                                 // Request VCV Rack to flip the buffers
                                 rightModule->leftExpander.requestMessageFlip();

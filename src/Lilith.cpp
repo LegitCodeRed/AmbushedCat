@@ -9,7 +9,7 @@ using rack::math::clamp;
 struct Lilith : rack::engine::Module {
 	enum ParamIds {
 		STEPS_PARAM,
-		TRIGLEN_PARAM,
+		GATE_PARAM,
 		CV_PARAMS_BASE,
 		MODE_PARAMS_BASE = CV_PARAMS_BASE + 8,
 		NUM_PARAMS = MODE_PARAMS_BASE + 8
@@ -36,7 +36,10 @@ struct Lilith : rack::engine::Module {
 	dsp::PulseGenerator runPulse;
 
 	int currentStep = 0;
-	float triggerTimer = 0.f;
+	float gateTimer = 0.f;
+	bool captureMode = true;  // True = capturing sequence, False = playing back snapshot
+	float lastClockTime = 0.f;
+	float clockPeriod = 0.5f;  // Estimated clock period in seconds
 
         // Expander message buffers for communication with Sitri
         // Double buffering: VCV Rack flips between these two buffers
@@ -50,7 +53,7 @@ struct Lilith : rack::engine::Module {
 		auto* stepsQuantity = configParam(STEPS_PARAM, 1.f, 8.f, 8.f, "Number of active steps", " steps");
 		stepsQuantity->snapEnabled = true;
 
-		configParam(TRIGLEN_PARAM, 0.001f, 0.1f, 0.01f, "Trigger length", " ms", 1000.f);
+		configParam(GATE_PARAM, 0.05f, 1.f, 0.5f, "Gate Length", "%", 0.f, 100.f);
 
 		for (int i = 0; i < 8; ++i) {
 			configParam(CV_PARAMS_BASE + i, -10.f, 10.f, 0.f,
@@ -93,7 +96,7 @@ struct Lilith : rack::engine::Module {
 
 	void process(const ProcessArgs& args) override {
 		int knobSteps = clamp((int)std::round(params[STEPS_PARAM].getValue()), 1, 8);
-		float trigLenSec = clamp(params[TRIGLEN_PARAM].getValue(), 0.001f, 0.1f);
+		float gateLength = clamp(params[GATE_PARAM].getValue(), 0.05f, 1.f);
 
 		// Check if we're attached to Sitri on the left
 		bool attachedToSitri = getLeftExpander().module &&
@@ -107,6 +110,35 @@ struct Lilith : rack::engine::Module {
 
 			if (msg && msg->magic == SitriBus::MAGIC && msg->version == 1) {
 				busMessage = msg;
+
+				// Sync gate length parameter from Sitri
+				params[GATE_PARAM].setValue(msg->gateLength);
+
+				// Check for EOC pulse - this triggers end of capture mode
+				if (msg->eocPulse && captureMode) {
+					captureMode = false;  // Switch to playback mode after first complete cycle
+					INFO("Lilith: EOC received - switching to PLAYBACK mode");
+				}
+
+				// Reset to capture mode on reset edge or reseed (allows recapture)
+				if (msg->resetEdge || msg->reseedEdge) {
+					captureMode = true;
+					if (msg->resetEdge) {
+						INFO("Lilith: RESET received - switching to CAPTURE mode");
+					}
+					if (msg->reseedEdge) {
+						INFO("Lilith: RESEED received - switching to CAPTURE mode");
+					}
+				}
+
+				// Debug log connection status
+				static int connDebugCounter = 0;
+				connDebugCounter++;
+				if (connDebugCounter >= 48000) {
+					connDebugCounter = 0;
+					INFO("Lilith: Connected - captureMode=%d eoc=%d reset=%d clockEdge=%d",
+					     captureMode, msg->eocPulse, msg->resetEdge, msg->clockEdge);
+				}
 			}
 		}
 
@@ -173,15 +205,26 @@ struct Lilith : rack::engine::Module {
 		if (currentStep < 0)
 			currentStep = 0;
 
-		if (clockEdge)
+		if (clockEdge) {
 			runPulse.trigger(0.02f);
-		if (clockEdge)
 			enteringStep = true;
+
+			// Estimate clock period for gate timing
+			float currentTime = args.sampleTime * args.frame;
+			if (lastClockTime > 0.f) {
+				float measuredPeriod = currentTime - lastClockTime;
+				// Smooth the estimate
+				clockPeriod = 0.9f * clockPeriod + 0.1f * measuredPeriod;
+			}
+			lastClockTime = currentTime;
+		}
 
 		int stepIndex = clamp(currentStep, 0, activeSteps - 1);
 
-		// When synced to Sitri, update current step's parameters to match Sitri's output
-		if (usingSitriClock && busMessage && enteringStep) {
+		// SNAPSHOT MODE: Capture sequence during first cycle only
+		// When synced to Sitri and in capture mode, update step parameters on clock edges
+		// After EOC (end of cycle), stop capturing and loop the snapshot
+		if (usingSitriClock && busMessage && clockEdge && captureMode) {
 			// Set CV knob to match Sitri's pitch output
 			params[CV_PARAMS_BASE + stepIndex].setValue(busMessage->currentPitch);
 
@@ -198,20 +241,33 @@ struct Lilith : rack::engine::Module {
 				gateMode = SitriBus::GateMode::EXPAND;  // Holding note = expand
 			}
 			params[MODE_PARAMS_BASE + stepIndex].setValue((float)gateMode);
+
+			// Debug logging
+			static int debugCounter = 0;
+			debugCounter++;
+			if (debugCounter >= 48000) {
+				debugCounter = 0;
+				INFO("Lilith: CAPTURED step=%d pitch=%.3f gate=%d newNote=%d mode=%d captureMode=%d",
+				     stepIndex, busMessage->currentPitch, busMessage->currentGate,
+				     busMessage->newNote, (int)gateMode, captureMode);
+			}
 		}
 
 		int modeValue = clamp((int)std::round(params[MODE_PARAMS_BASE + stepIndex].getValue()), 0, 2);
 
+		// Gate timing: TRIGGER mode creates a pulse based on gate length parameter
 		if (modeValue == SitriBus::GateMode::TRIGGER) {
-			if (enteringStep)
-				triggerTimer = trigLenSec;
-			if (triggerTimer > 0.f) {
-				triggerTimer -= args.sampleTime;
-				if (triggerTimer < 0.f)
-					triggerTimer = 0.f;
+			if (enteringStep) {
+				// Gate duration = clock period * gate length percentage
+				gateTimer = clockPeriod * gateLength;
+			}
+			if (gateTimer > 0.f) {
+				gateTimer -= args.sampleTime;
+				if (gateTimer < 0.f)
+					gateTimer = 0.f;
 			}
 		} else {
-			triggerTimer = 0.f;
+			gateTimer = 0.f;
 		}
 
 		bool gateHigh = false;
@@ -223,7 +279,7 @@ struct Lilith : rack::engine::Module {
 			gateHigh = false;
 			break;
 		case SitriBus::GateMode::TRIGGER:
-			gateHigh = triggerTimer > 0.f;
+			gateHigh = gateTimer > 0.f;
 			break;
 		}
 
@@ -269,7 +325,7 @@ struct LilithWidget : rack::app::ModuleWidget {
 		// Compact 8HP layout (40.64mm width)
 		// Top controls
 		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(8.0f, 15.0f)), module, Lilith::STEPS_PARAM));
-		addParam(createParamCentered<Trimpot>(mm2px(Vec(22.0f, 15.0f)), module, Lilith::TRIGLEN_PARAM));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(22.0f, 15.0f)), module, Lilith::GATE_PARAM));
 		addChild(createLightCentered<TinyLight<GreenLight>>(mm2px(Vec(32.0f, 15.0f)), module, Lilith::RUN_LIGHT));
 
 		// 8 step rows - very compact vertical spacing

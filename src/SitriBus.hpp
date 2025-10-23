@@ -19,12 +19,17 @@ struct MasterToExpander {
         uint8_t numSteps = 1;
         uint8_t resetEdge = 0;
         uint8_t clockEdge = 0;
+        uint8_t eocPulse = 0;      // End of cycle pulse - triggers snapshot capture
+        uint8_t reseedEdge = 0;    // Reseed button pressed - triggers recapture
 
         // Current step's output values from Sitri
         float currentPitch = 0.f;  // Current step's pitch CV (V/Oct)
         uint8_t currentGate = 0;   // Current step's gate state (0 or 1)
         uint8_t newNote = 0;       // 1 if this is a new note trigger, 0 if extending previous note
-        uint8_t reserved[2] = {};  // Padding for alignment
+        uint8_t reserved = 0;      // Padding for alignment
+
+        // Global parameters from Sitri
+        float gateLength = 0.5f;   // Gate length parameter (0.05-1.0 = 5%-100%)
 };
 
 struct ExpanderToMaster {

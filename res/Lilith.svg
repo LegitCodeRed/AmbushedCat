@@ -23,7 +23,7 @@
   <!-- Top controls section -->
   <rect x="1.5" y="11.5" width="37.64" height="7" fill="#202228" stroke="#3a3d46" stroke-width="0.4" rx="1.5" />
   <text class="label" x="8" y="17.8">STEPS</text>
-  <text class="label" x="22" y="17.8">TRIG</text>
+  <text class="label" x="22" y="17.8">GATE</text>
 
   <!-- Step labels -->
   <text class="step" x="2" y="24.5">STEP</text>
