@@ -38,8 +38,8 @@ struct Lilith : rack::engine::Module {
 	int currentStep = 0;
 	float triggerTimer = 0.f;
 
-	// Expander message buffer for sending (VCV Rack manages consumer automatically)
-	SitriBus::ExpanderToMaster producerMessage{};  // Send back (for future chain support)
+        // Expander message for communication with Sitri
+        SitriBus::ExpanderToMaster outboundMessage{};       // Send back (for future chain support)
 
 
 	Lilith() {
@@ -64,26 +64,25 @@ struct Lilith : rack::engine::Module {
 		configOutput(CV_OUTPUT, "CV");
 		configOutput(GATE_OUTPUT, "Gate");
 
-		// Set up producer only - consumer is set by VCV Rack to point to Sitri's producer
-		getLeftExpander().producerMessage = &producerMessage;
-		// DON'T set consumerMessage - VCV Rack sets this automatically!
+                // Register buffer for Rack expander messaging.
+                getLeftExpander().producerMessage = &outboundMessage;
 
-		// Initialize producer message (for potential future use)
-		producerMessage.magic = SitriBus::MAGIC;
-		producerMessage.version = 1;
-		for (int i = 0; i < 8; ++i) {
-			producerMessage.gateMode[i] = SitriBus::GateMode::EXPAND;
-			producerMessage.stepCV[i] = 0.f;
-		}
+                // Initialise outbound messages with sensible defaults
+                outboundMessage.magic = SitriBus::MAGIC;
+                outboundMessage.version = 1;
+                for (int j = 0; j < 8; ++j) {
+                        outboundMessage.gateMode[j] = SitriBus::GateMode::EXPAND;
+                        outboundMessage.stepCV[j] = 0.f;
+                }
 	}
 
 	void process(const ProcessArgs& args) override {
 		int knobSteps = clamp((int)std::round(params[STEPS_PARAM].getValue()), 1, 8);
 		float trigLenSec = clamp(params[TRIGLEN_PARAM].getValue(), 0.001f, 0.1f);
 
-		// Debug: Always log status once per second to confirm Lilith is running
-		static int globalDebugCounter = 0;
-		globalDebugCounter++;
+                // Debug: Always log status once per second to confirm Lilith is running
+                static int globalDebugCounter = 0;
+                globalDebugCounter++;
 		if (globalDebugCounter >= 48000) {
 			globalDebugCounter = 0;
 			bool hasLeftModule = getLeftExpander().module != nullptr;
@@ -242,14 +241,18 @@ struct Lilith : rack::engine::Module {
 			lights[GATE_LIGHT_BASE + i].setBrightness(gateLit ? 1.f : 0.f);
 		}
 
-		// Update producer message (for future expander chain support)
-		producerMessage.magic = SitriBus::MAGIC;
-		producerMessage.version = 1;
-		for (int i = 0; i < 8; ++i) {
-			int mode = clamp((int)std::round(params[MODE_PARAMS_BASE + i].getValue()), 0, 2);
-			producerMessage.gateMode[i] = static_cast<SitriBus::GateMode>(mode);
-			producerMessage.stepCV[i] = params[CV_PARAMS_BASE + i].getValue();
-		}
+                // Update outbound message (for future expander chain support)
+                if (attachedToSitri) {
+                        outboundMessage.magic = SitriBus::MAGIC;
+                        outboundMessage.version = 1;
+                        for (int i = 0; i < 8; ++i) {
+                                int mode = clamp((int)std::round(params[MODE_PARAMS_BASE + i].getValue()), 0, 2);
+                                outboundMessage.gateMode[i] = static_cast<SitriBus::GateMode>(mode);
+                                outboundMessage.stepCV[i] = params[CV_PARAMS_BASE + i].getValue();
+                        }
+
+                        getLeftExpander().producerMessage = &outboundMessage;
+                }
 	}
 };
 
