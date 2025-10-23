@@ -99,14 +99,18 @@ struct Lilith : rack::engine::Module {
 
 		if (attachedToSitri) {
 			if (busMessage) {
-				// busMessage->stepIndex is 1-based, convert to 0-based
-				int targetStep = (int)busMessage->stepIndex - 1;
-				targetStep = clamp(targetStep, 0, activeSteps - 1);
-				if (targetStep != currentStep)
-					enteringStep = true;
-				clockEdge = busMessage->clockEdge != 0;
-				resetEdge = busMessage->resetEdge != 0;
-				currentStep = targetStep;
+				// Only follow Sitri if it's running
+				bool sitriRunning = busMessage->running != 0;
+				if (sitriRunning) {
+					// busMessage->stepIndex is 1-based, convert to 0-based
+					int targetStep = (int)busMessage->stepIndex - 1;
+					targetStep = clamp(targetStep, 0, activeSteps - 1);
+					if (targetStep != currentStep)
+						enteringStep = true;
+					clockEdge = busMessage->clockEdge != 0;
+					resetEdge = busMessage->resetEdge != 0;
+					currentStep = targetStep;
+				}
 			}
 		} else {
 			bool clkTrig = clockTrigger.process(inputs[CLK_INPUT].getVoltage());
@@ -170,7 +174,15 @@ struct Lilith : rack::engine::Module {
 		outputs[CV_OUTPUT].setVoltage(cvOut);
 		outputs[GATE_OUTPUT].setVoltage(gateHigh ? 10.f : 0.f);
 
-		float runBrightness = runPulse.process(args.sampleTime) ? 1.f : 0.f;
+		// RUN light: blinks on clock when attached to Sitri, solid when standalone and receiving clock
+		float runBrightness = 0.f;
+		if (attachedToSitri && busMessage) {
+			// Connected to Sitri: show if Sitri is running
+			runBrightness = (busMessage->running != 0) ? 1.f : 0.f;
+		} else {
+			// Standalone mode: blink on clock
+			runBrightness = runPulse.process(args.sampleTime) ? 1.f : 0.f;
+		}
 		lights[RUN_LIGHT].setBrightness(runBrightness);
 
 		for (int i = 0; i < 8; ++i) {
