@@ -1,5 +1,4 @@
 #include "plugin.hpp"
-
 #include <osdialog.h>
 
 #include <algorithm>
@@ -16,24 +15,47 @@ inline float dbToGain(float db) {
         return std::pow(10.0f, db / 20.0f);
 }
 
+// Soft clipping/saturation function
+inline float softClip(float x) {
+        // Smooth tanh-based saturation
+        if (x > 1.5f)
+                return 1.0f;
+        if (x < -1.5f)
+                return -1.0f;
+        return std::tanh(x);
+}
+
 struct ToneShaper {
         double lowState = 0.0;
+        double highState = 0.0;
 
         void reset() {
                 lowState = 0.0;
+                highState = 0.0;
         }
 
         float process(float input, float toneAmount, float sampleRate) {
-                const double cutoff = 1000.0;
-                double alpha = std::exp(-2.0 * M_PI * cutoff / std::max(sampleRate, 1.0f));
-                lowState = (1.0 - alpha) * input + alpha * lowState;
-                double high = input - lowState;
+                // Two-stage tone control: bass and treble shelving
+                // Tone knob: -1 = dark (cut highs, boost lows), 0 = neutral, +1 = bright (boost highs, cut lows)
 
-                double tilt = toneAmount * 10.0; // +/-10 dB tilt
-                double lowGain = std::pow(10.0, (-tilt) / 20.0);
-                double highGain = std::pow(10.0, (tilt) / 20.0);
+                // Low shelf around 200Hz
+                const double lowCutoff = 200.0;
+                double lowAlpha = std::exp(-2.0 * M_PI * lowCutoff / std::max(sampleRate, 1.0f));
+                lowState = (1.0 - lowAlpha) * input + lowAlpha * lowState;
 
-                return (float)(lowState * lowGain + high * highGain);
+                // High shelf around 2kHz
+                const double highCutoff = 2000.0;
+                double highAlpha = std::exp(-2.0 * M_PI * highCutoff / std::max(sampleRate, 1.0f));
+                highState = (1.0 - highAlpha) * input + highAlpha * highState;
+                double highs = input - highState;
+
+                // Apply tone-dependent gains
+                double bassGain = std::pow(10.0, (-toneAmount * 6.0) / 20.0); // -6 to +6 dB
+                double trebleGain = std::pow(10.0, (toneAmount * 8.0) / 20.0); // -8 to +8 dB
+
+                // Mix: lows + mids + highs
+                double mids = highState - lowState;
+                return (float)(lowState * bassGain + mids + highs * trebleGain);
         }
 };
 } // namespace
@@ -72,10 +94,10 @@ struct NergalAmp : Module {
         NergalAmp() {
                 config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
-                configParam(DRIVE_PARAM, 0.f, 24.f, 6.f, "Drive", " dB");
-                configParam(TONE_PARAM, -1.f, 1.f, 0.f, "Tone", "", 0.f, 1.f, 0.f);
+                configParam(DRIVE_PARAM, 0.f, 2.f, 1.f, "Drive/Gain", "x");
+                configParam(TONE_PARAM, -1.f, 1.f, 0.f, "Tone");
                 configParam(INPUT_PARAM, -24.f, 24.f, 0.f, "Input Trim", " dB");
-                configParam(OUTPUT_PARAM, -24.f, 24.f, 0.f, "Output Trim", " dB");
+                configParam(OUTPUT_PARAM, -24.f, 24.f, 0.f, "Output Level", " dB");
 
                 configInput(SIGNAL_INPUT, "Signal");
                 configOutput(SIGNAL_OUTPUT, "Amped signal");
@@ -95,17 +117,21 @@ struct NergalAmp : Module {
         }
 
         void process(const ProcessArgs& args) override {
+                // Get input signal and normalize from ±10V to ±1 range
                 const float inVolts = inputs[SIGNAL_INPUT].isConnected() ? inputs[SIGNAL_INPUT].getVoltage() : 0.f;
-                const float dry = inVolts * 0.1f; // Normalize +/-10V to +/-1 range
+                const float normalized = inVolts * 0.1f;
 
-                const float driveGain = dbToGain(params[DRIVE_PARAM].getValue());
+                // Get parameter values
                 const float inputGain = dbToGain(params[INPUT_PARAM].getValue());
+                const float driveAmount = params[DRIVE_PARAM].getValue(); // 0-2x multiplier
                 const float outputGain = dbToGain(params[OUTPUT_PARAM].getValue());
                 const float toneAmount = params[TONE_PARAM].getValue();
 
-                const float modelInput = dry * inputGain * driveGain;
+                // Stage 1: Apply input trim
+                const float trimmed = normalized * inputGain;
 
-                float processed = modelInput;
+                // Stage 2: Process through NAM model
+                float modelOutput = trimmed;
 
                 if (model) {
                         const double hostRate = args.sampleRate;
@@ -121,15 +147,15 @@ struct NergalAmp : Module {
                         resamplePhase = total - steps;
 
                         if (firstFrame) {
-                                previousModelInput = modelInput;
+                                previousModelInput = trimmed;
                                 firstFrame = false;
                         }
 
                         for (int s = 0; s < steps; ++s) {
                                 double t = (double)(s + 1) - phase;
                                 t /= ratio;
-                                t = math::clamp(t, 0.0, 1.0);
-                                float interp = math::crossfade(previousModelInput, modelInput, (float)t);
+                                float tClamped = math::clamp((float)t, 0.f, 1.f);
+                                float interp = math::crossfade(previousModelInput, trimmed, tClamped);
 
                                 NAM_SAMPLE inputFrame = (NAM_SAMPLE)interp;
                                 NAM_SAMPLE outputFrame = 0.0;
@@ -137,14 +163,24 @@ struct NergalAmp : Module {
                                 lastModelOutput = outputFrame;
                         }
 
-                        previousModelInput = modelInput;
-                        processed = (float)lastModelOutput;
+                        previousModelInput = trimmed;
+                        modelOutput = (float)lastModelOutput;
                 }
 
-                float shaped = tone.process(processed, toneAmount, args.sampleRate);
-                float out = shaped * outputGain;
+                // Stage 3: Apply drive/saturation after the amp model
+                float driven = modelOutput * driveAmount;
+                if (driveAmount > 1.0f) {
+                        // Apply soft clipping when drive is above unity
+                        driven = softClip(driven);
+                }
 
-                outputs[SIGNAL_OUTPUT].setVoltage(out * 10.f);
+                // Stage 4: Tone shaping
+                float shaped = tone.process(driven, toneAmount, args.sampleRate);
+
+                // Stage 5: Output level and convert back to ±10V
+                float out = shaped * outputGain * 10.f;
+
+                outputs[SIGNAL_OUTPUT].setVoltage(out);
 
                 lights[LOADED_LIGHT].setBrightness(model ? 1.f : 0.f);
         }
@@ -166,10 +202,10 @@ struct NergalAmp : Module {
                 }
 
                 try {
-                        auto loaded = nam::get_dsp(path);
+                        std::filesystem::path fsPath(path);
+                        auto loaded = nam::get_dsp(fsPath);
                         model = std::move(loaded);
                         modelPath = path;
-                        std::filesystem::path fsPath(path);
                         if (fsPath.has_parent_path()) {
                                 lastDirectory = fsPath.parent_path().string();
                         }
@@ -224,12 +260,12 @@ struct NergalAmpWidget : ModuleWidget {
                 addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
                 addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(15.0, 32.0)), module, NergalAmp::DRIVE_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(15.0, 62.0)), module, NergalAmp::TONE_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(15.0, 92.0)), module, NergalAmp::INPUT_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(15.0, 122.0)), module, NergalAmp::OUTPUT_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(15.0, 52.0)), module, NergalAmp::TONE_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(15.0, 82.0)), module, NergalAmp::INPUT_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(15.0, 112.0)), module, NergalAmp::OUTPUT_PARAM));
 
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(15.0, 152.0)), module, NergalAmp::SIGNAL_INPUT));
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(15.0, 172.0)), module, NergalAmp::SIGNAL_OUTPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(0, 122.0)), module, NergalAmp::SIGNAL_INPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(15.0, 122.0)), module, NergalAmp::SIGNAL_OUTPUT));
 
                 addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(15.0, 18.0)), module, NergalAmp::LOADED_LIGHT));
         }
@@ -246,7 +282,6 @@ struct NergalAmpWidget : ModuleWidget {
                         labelText = "Model: " + std::filesystem::path(module->modelPath).filename().string();
                 }
                 MenuLabel* label = createMenuLabel(labelText);
-                label->disabled = true;
                 menu->addChild(label);
 
                 struct LoadItem : MenuItem {

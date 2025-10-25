@@ -4,8 +4,10 @@ RACK_DIR ?= ../../rack-sdk
 # FLAGS will be passed to both the C and C++ compiler
 FLAGS +=
 CFLAGS +=
-CXXFLAGS += -INeuralAmpModelerCore -INeuralAmpModelerCore/NAM -INeuralAmpModelerCore/Dependencies -INeuralAmpModelerCore/Dependencies/nlohmann
-CXXFLAGS += -I$(RACK_DIR)/dep/include -I$(RACK_DIR)/dep/include/eigen3
+CXXFLAGS += -Idep -Idep/NeuralAmpModelerCore -Idep/NeuralAmpModelerCore/NAM -Idep/NeuralAmpModelerCore/Dependencies -Idep/NeuralAmpModelerCore/Dependencies/nlohmann
+CXXFLAGS += -Idep/eigen3 -I$(RACK_DIR)/dep/include -I$(RACK_DIR)/dep/include/eigen3
+# Override C++11 with C++17 (needed for std::filesystem in NAM) - must come after -std=c++11 in command line
+CXXFLAGS += -std=c++17
 
 # Careful about linking to shared libraries, since you can't assume much about the user's environment and library search path.
 # Static libraries are fine, but they should be added to this plugin's build system.
@@ -14,7 +16,7 @@ LDFLAGS +=
 # Add .cpp files to the build
 SOURCES += $(wildcard src/*.cpp)
 SOURCES += $(wildcard src/dsp/*.cpp)
-SOURCES += $(wildcard NeuralAmpModelerCore/NAM/*.cpp)
+SOURCES += $(wildcard dep/NeuralAmpModelerCore/NAM/*.cpp)
 
 # Add files to the ZIP package when running `make dist`
 # The compiled plugin and "plugin.json" are automatically added.
@@ -24,3 +26,5 @@ DISTRIBUTABLES += $(wildcard presets)
 
 # Include the Rack plugin Makefile framework
 include $(RACK_DIR)/plugin.mk
+CXXFLAGS := $(filter-out -std=c++11,$(CXXFLAGS))
+CXXFLAGS += -std=c++17
