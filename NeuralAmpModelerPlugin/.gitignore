@@ -1,0 +1,15 @@
+.DS_Store
+xcuserdata
+*.RPP-bak
+build-*
+.idea/
+
+*.ipch
+*.db
+*.suo
+*/.vs
+*.pem
+mkcert*
+
+NeuralAmpModeler/*.wav
+NeuralAmpModeler/peaks/
