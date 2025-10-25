@@ -16,6 +16,7 @@ void init(Plugin* p) {
         p->addModel(modelSitri);
         p->addModel(modelLilith);
         p->addModel(modelLilithAdvance);
+        p->addModel(modelNergalAmp);
         // Add modules here
         // p->addModel(modelMyModule);
 

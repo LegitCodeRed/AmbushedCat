@@ -110,6 +110,16 @@
         "Expander",
         "Clocked"
       ]
+    },
+    {
+      "slug": "NergalAmp",
+      "name": "Nergal Amp",
+      "description": "Neural amp modeler that loads .nam captures with drive, tone, input, and output controls.",
+      "tags": [
+        "Effect",
+        "Distortion",
+        "Dynamics"
+      ]
     }
   ]
 }
