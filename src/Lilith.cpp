@@ -91,11 +91,11 @@ struct LilithBase : rack::engine::Module {
                 this->configOutput(CV_OUTPUT, "CV");
                 this->configOutput(GATE_OUTPUT, "Gate");
 
-                this->leftExpander.producerMessage = &inboundMessages[0];
-                this->leftExpander.consumerMessage = &inboundMessages[1];
+                this->leftExpander.producerMessage = &outboundMessages[0];
+                this->leftExpander.consumerMessage = &inboundMessages[0];
 
                 this->rightExpander.producerMessage = &buerOutboundMessages[0];
-                this->rightExpander.consumerMessage = &buerInboundMessages[1];
+                this->rightExpander.consumerMessage = &buerInboundMessages[0];
 
                 for (int i = 0; i < 2; ++i) {
                         inboundMessages[i].magic = SitriBus::MAGIC;
@@ -103,9 +103,7 @@ struct LilithBase : rack::engine::Module {
                         inboundMessages[i].running = 0;
                         inboundMessages[i].stepIndex = 1;
                         inboundMessages[i].numSteps = 1;
-                }
 
-                for (int i = 0; i < 2; ++i) {
                         outboundMessages[i].magic = SitriBus::MAGIC;
                         outboundMessages[i].version = 1;
                         for (int j = 0; j < SITRI_MAX_STEPS; ++j) {
@@ -339,21 +337,30 @@ struct LilithBase : rack::engine::Module {
                         baseModeValues[i] = clamp(baseModeValues[i], 0.f, 2.f);
                 }
 
-                auto* buerOutbound = reinterpret_cast<BuerBus::FromLilith*>(
-                    this->rightExpander.producerMessage);
-                if (buerOutbound) {
-                        buerOutbound->magic = BuerBus::MAGIC;
-                        buerOutbound->version = 1;
-                        buerOutbound->numSteps = NumSteps;
-                        buerOutbound->activeSteps = clamp(activeSteps, 0, NumSteps);
-                        for (int i = 0; i < 16; ++i) {
-                                if (i < NumSteps) {
-                                        buerOutbound->baseCv[i] = baseCvValues[i];
-                                        buerOutbound->baseMode[i] = baseModeValues[i];
-                                } else {
-                                        buerOutbound->baseCv[i] = 0.f;
-                                        buerOutbound->baseMode[i] = 0.f;
+                // Write to Buer expander using VCV Rack's message flipping system
+                Module* rightModule = getRightExpander().module;
+                bool connectedToBuerForSend = rightModule && rightModule->model &&
+                                              rightModule->model->slug == "Buer";
+
+                if (connectedToBuerForSend) {
+                        // Write to Buer's producer buffer (VCV will flip it to consumer on Buer's side)
+                        auto* buerOutbound = static_cast<BuerBus::FromLilith*>(rightModule->leftExpander.producerMessage);
+                        if (buerOutbound) {
+                                buerOutbound->magic = BuerBus::MAGIC;
+                                buerOutbound->version = 1;
+                                buerOutbound->numSteps = NumSteps;
+                                buerOutbound->activeSteps = clamp(activeSteps, 0, NumSteps);
+                                for (int i = 0; i < 16; ++i) {
+                                        if (i < NumSteps) {
+                                                buerOutbound->baseCv[i] = baseCvValues[i];
+                                                buerOutbound->baseMode[i] = baseModeValues[i];
+                                        } else {
+                                                buerOutbound->baseCv[i] = 0.f;
+                                                buerOutbound->baseMode[i] = 0.f;
+                                        }
                                 }
+                                // Request VCV Rack to flip the buffers
+                                rightModule->leftExpander.requestMessageFlip();
                         }
                 }
 
