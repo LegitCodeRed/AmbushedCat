@@ -545,36 +545,78 @@ struct NergalAmp : Module {
         }
 };
 
+struct BackgroundImage : Widget {
+	std::string imagePath = asset::plugin(pluginInstance, "res/TextureDemonMain.png");
+
+	void draw(const DrawArgs& args) override {
+		std::shared_ptr<Image> image = APP->window->loadImage(imagePath);
+		if (image) {
+			int w = box.size.x;
+			int h = box.size.y;
+
+			NVGpaint paint = nvgImagePattern(args.vg, 0, 0, w, h, 0.0f, image->handle, 1.0f);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, w, h);
+			nvgFillPaint(args.vg, paint);
+			nvgFill(args.vg);
+		}
+	}
+};
+
 struct NergalAmpWidget : ModuleWidget {
         NergalAmpWidget(NergalAmp* module) {
                 setModule(module);
+               
+
+                auto bg = new BackgroundImage();
+		bg->box.pos = Vec(0, 0);
+		bg->box.size = box.size; // Match panel size (e.g., 128.5 x 380 or 115 x 485)
+		addChild(bg);
+
                 setPanel(createPanel(asset::plugin(pluginInstance, "res/NergalAmp.svg")));
 
+                // Helpers
+                constexpr float HP = 5.08f;                // 1 HP in mm
+                constexpr float PANEL_HP = 8.0f;           // 8 HP module
+                constexpr float W = PANEL_HP * HP;         // 40.64 mm
+
+                // A tidy grid
+                constexpr float SIDE_MARGIN = 8.0f;       // left/right margin in mm
+                constexpr float KNOB_X = SIDE_MARGIN;      // left column (knobs)
+                constexpr float CV_X   = W - SIDE_MARGIN - 8.0f;  // right column (CV)
+                constexpr float TOP_LED_Y = 15.0f;         // LED near top
+                constexpr float FIRST_ROW_Y = 30.0f;       // first control row
+                constexpr float ROW_STEP = 15.0f;          // vertical spacing
+
+                // Screws (unchanged, use Rack constants)
                 addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
                 addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
                 addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
                 addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-                // Model loaded indicator
-                addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(15.24, 15.0)), module, NergalAmp::LOADED_LIGHT));
+                // Model loaded indicator — centered at top
+                addChild(createLightCentered<MediumLight<GreenLight>>(
+                mm2px(Vec(HP*3, TOP_LED_Y)), module, NergalAmp::LOADED_LIGHT));
 
-                // Parameters - left column (knobs)
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(10.16, 30.0)), module, NergalAmp::INPUT_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(10.16, 50.0)), module, NergalAmp::DRIVE_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(10.16, 70.0)), module, NergalAmp::TONE_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(10.16, 90.0)), module, NergalAmp::MIX_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(10.16, 110.0)), module, NergalAmp::OUTPUT_PARAM));
+                // Parameters (left column — large knobs)
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(KNOB_X, FIRST_ROW_Y + 0 * ROW_STEP)), module, NergalAmp::INPUT_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(KNOB_X, FIRST_ROW_Y + 1 * ROW_STEP)), module, NergalAmp::DRIVE_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(KNOB_X, FIRST_ROW_Y + 2 * ROW_STEP)), module, NergalAmp::TONE_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(KNOB_X, FIRST_ROW_Y + 3 * ROW_STEP)), module, NergalAmp::MIX_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(KNOB_X, FIRST_ROW_Y + 4 * ROW_STEP)), module, NergalAmp::OUTPUT_PARAM));
 
-                // CV Inputs - right column
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(20.32, 30.0)), module, NergalAmp::INPUT_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(20.32, 50.0)), module, NergalAmp::DRIVE_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(20.32, 70.0)), module, NergalAmp::TONE_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(20.32, 90.0)), module, NergalAmp::MIX_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(20.32, 110.0)), module, NergalAmp::OUTPUT_CV_INPUT));
+                // CV Inputs (right column — aligned by row)
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(CV_X, FIRST_ROW_Y + 0 * ROW_STEP)), module, NergalAmp::INPUT_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(CV_X, FIRST_ROW_Y + 1 * ROW_STEP)), module, NergalAmp::DRIVE_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(CV_X, FIRST_ROW_Y + 2 * ROW_STEP)), module, NergalAmp::TONE_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(CV_X, FIRST_ROW_Y + 3 * ROW_STEP)), module, NergalAmp::MIX_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(CV_X, FIRST_ROW_Y + 4 * ROW_STEP)), module, NergalAmp::OUTPUT_CV_INPUT));
 
-                // Audio I/O at bottom
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.62, 120.0)), module, NergalAmp::SIGNAL_INPUT));
-                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(22.86, 120.0)), module, NergalAmp::SIGNAL_OUTPUT));
+                // Audio I/O — mirrored at bottom (2HP and 6HP positions)
+                constexpr float AUDIO_Y = 115.0f;          // comfortably above the bottom edge
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(2.0f * HP, AUDIO_Y)), module, NergalAmp::SIGNAL_INPUT));   // ~10.16 mm
+                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(4.0f * HP, AUDIO_Y)), module, NergalAmp::SIGNAL_OUTPUT)); // ~30.48 mm
+
         }
 
         void appendContextMenu(Menu* menu) override {
