@@ -407,9 +407,52 @@ struct LilithWidget : LilithWidgetBase<8, Lilith> {
             : LilithWidgetBase<8, Lilith>(module, "res/Lilith.svg") {}
 };
 
-struct LilithAdvanceWidget : LilithWidgetBase<16, LilithAdvance> {
-        LilithAdvanceWidget(LilithAdvance* module)
-            : LilithWidgetBase<16, LilithAdvance>(module, "res/LilithAdvance.svg") {}
+struct LilithAdvanceWidget : rack::app::ModuleWidget {
+        LilithAdvanceWidget(LilithAdvance* module) {
+                setModule(module);
+                setPanel(createPanel(asset::plugin(pluginInstance, "res/LilithAdvance.svg")));
+
+                addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+                addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+                addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+                addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH,
+                                                      RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
+                // Top controls
+                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(8.0f, 15.0f)), module,
+                                                                  LilithAdvance::STEPS_PARAM));
+                addParam(createParamCentered<Trimpot>(mm2px(Vec(22.0f, 15.0f)), module,
+                                                      LilithAdvance::GATE_PARAM));
+                addChild(createLightCentered<TinyLight<GreenLight>>(mm2px(Vec(32.0f, 15.0f)), module,
+                                                                    LilithAdvance::RUN_LIGHT));
+
+                // 16 steps with better spacing - use more vertical space
+                const float rowStart = 24.0f;
+                const float rowEnd = 110.0f;
+                const float rowSpacing = (rowEnd - rowStart) / 15.0f;  // 15 intervals for 16 steps
+
+                for (int i = 0; i < 16; ++i) {
+                        float y = rowStart + rowSpacing * i;
+                        addChild(createLightCentered<TinyLight<GreenLight>>(mm2px(Vec(4.0f, y)), module,
+                                                                          LilithAdvance::STEP_LIGHT_BASE + i));
+                        addParam(createParamCentered<CKSSThree>(mm2px(Vec(11.0f, y)), module,
+                                                                LilithAdvance::MODE_PARAMS_BASE + i));
+                        addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(20.0f, y)), module,
+                                                                          LilithAdvance::CV_PARAMS_BASE + i));
+                        addChild(createLightCentered<TinyLight<YellowLight>>(mm2px(Vec(30.0f, y)), module,
+                                                                            LilithAdvance::GATE_LIGHT_BASE + i));
+                }
+
+                // Bottom I/O
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(6.0f, 116.0f)), module,
+                                                         LilithAdvance::CLK_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(14.0f, 116.0f)), module,
+                                                         LilithAdvance::RESET_INPUT));
+                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(22.0f, 116.0f)), module,
+                                                           LilithAdvance::CV_OUTPUT));
+                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(30.0f, 116.0f)), module,
+                                                           LilithAdvance::GATE_OUTPUT));
+        }
 };
 
 Model* modelLilith = createModel<Lilith, LilithWidget>("Lilith");
