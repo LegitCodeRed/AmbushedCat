@@ -42,7 +42,6 @@ struct Lilith : rack::engine::Module {
 	bool captureMode = true;  // True = capturing sequence, False = playing back snapshot
 	float lastClockTime = 0.f;
 	float clockPeriod = 0.5f;  // Estimated clock period in seconds
-	bool eocReceived = false;  // Track EOC to force step 0 capture on next cycle
 
 	// LED persistence for visual feedback at high speeds
 	static constexpr float LED_FLASH_TIME = 0.05f;  // 50ms flash
@@ -102,6 +101,20 @@ struct Lilith : rack::engine::Module {
                 }
 	}
 
+	json_t* dataToJson() override {
+		json_t* rootJ = json_object();
+		// Save capture mode state
+		json_object_set_new(rootJ, "captureMode", json_boolean(captureMode));
+		return rootJ;
+	}
+
+	void dataFromJson(json_t* rootJ) override {
+		// Restore capture mode state
+		json_t* captureModeJ = json_object_get(rootJ, "captureMode");
+		if (captureModeJ)
+			captureMode = json_boolean_value(captureModeJ);
+	}
+
 	void process(const ProcessArgs& args) override {
 		int knobSteps = clamp((int)std::round(params[STEPS_PARAM].getValue()), 1, 8);
 		float gateLength = clamp(params[GATE_PARAM].getValue(), 0.05f, 1.f);
@@ -123,22 +136,44 @@ struct Lilith : rack::engine::Module {
 				params[GATE_PARAM].setValue(msg->gateLength);
 
 				// Check for EOC pulse - this triggers end of capture mode
-				if (msg->eocPulse) {
-					eocReceived = true;  // Mark that we need to force step 0 on next clock
-					if (captureMode) {
-						captureMode = false;  // Switch to playback mode after first complete cycle
-						INFO("Lilith: EOC received - switching to PLAYBACK mode");
-					}
+				if (msg->eocPulse && captureMode) {
+					captureMode = false;  // Switch to playback mode after first complete cycle
+					INFO("Lilith: EOC received - switching to PLAYBACK mode");
 				}
 
 				// Reset to capture mode on reset edge or reseed (allows recapture)
-				if (msg->resetEdge || msg->reseedEdge) {
+				if (msg->resetEdge) {
 					captureMode = true;
-					if (msg->resetEdge) {
-						INFO("Lilith: RESET received - switching to CAPTURE mode");
-					}
-					if (msg->reseedEdge) {
+					INFO("Lilith: RESET received - switching to CAPTURE mode");
+				}
+
+				// Reseed behavior depends on whether Sitri is running
+				if (msg->reseedEdge) {
+					bool sitriRunning = msg->running != 0;
+					if (sitriRunning) {
+						// Sitri is running - switch back to capture mode
+						captureMode = true;
 						INFO("Lilith: RESEED received - switching to CAPTURE mode");
+					} else {
+						// Sitri is stopped - randomize the current sequence!
+						INFO("Lilith: RESEED received (stopped) - RANDOMIZING sequence");
+						for (int i = 0; i < 8; ++i) {
+							// Random pitch: -3V to +3V (5 octave range)
+							float randomPitch = (random::uniform() * 6.f) - 3.f;
+							params[CV_PARAMS_BASE + i].setValue(randomPitch);
+
+							// Random gate mode: 60% trigger, 30% mute, 10% expand
+							float rnd = random::uniform();
+							SitriBus::GateMode randomMode;
+							if (rnd < 0.6f) {
+								randomMode = SitriBus::GateMode::TRIGGER;
+							} else if (rnd < 0.9f) {
+								randomMode = SitriBus::GateMode::MUTE;
+							} else {
+								randomMode = SitriBus::GateMode::EXPAND;
+							}
+							params[MODE_PARAMS_BASE + i].setValue((float)randomMode);
+						}
 					}
 				}
 
@@ -178,23 +213,9 @@ struct Lilith : rack::engine::Module {
 
 				// Only update step position on clock or reset edges for clean sync
 				if (clockEdge || resetEdge) {
-					// If EOC was received, force step to 0 on next clock edge
-					// This handles fast subdivision speeds where step 0 might be skipped
-					int targetStep;
-					if (eocReceived && clockEdge) {
-						targetStep = 0;
-						eocReceived = false;  // Clear the flag
-						lastReceivedStep = -1;  // Reset tracking after EOC
-					} else {
-						// busMessage->stepIndex is 1-based, convert to 0-based
-						targetStep = (int)busMessage->stepIndex - 1;
-						targetStep = clamp(targetStep, 0, activeSteps - 1);
-					}
-
-					// At high speeds, steps may be skipped in the message stream
-					// We track this but DON'T try to fill in the gaps with incorrect data
-					// The skipped steps will retain their previous values
-					lastReceivedStep = targetStep;
+					// busMessage->stepIndex is 1-based, convert to 0-based
+					int targetStep = (int)busMessage->stepIndex - 1;
+					targetStep = clamp(targetStep, 0, activeSteps - 1);
 
 					// Always mark as entering step on clock edge, even if step hasn't changed
 					// This ensures we capture step 0 on every loop iteration
@@ -252,14 +273,14 @@ struct Lilith : rack::engine::Module {
 		// When synced to Sitri and in capture mode, update step parameters on clock edges
 		// After EOC (end of cycle), stop capturing and loop the snapshot
 		if (usingSitriClock && busMessage && clockEdge && captureMode) {
-			// At high speeds, multiple steps may have advanced in a single frame
-			// Use the step history buffer to capture ALL steps, not just the current one
+			// At high speeds, multiple steps may advance in one frame
+			// Check if we should use history buffer (multiple steps) or current data (single step)
 			int stepsAdvanced = busMessage->stepsAdvanced;
-			if (stepsAdvanced > 1 && stepsAdvanced <= 8) {
-				// Capture from history buffer - entries are already mapped to correct step indices
+
+			if (stepsAdvanced > 1) {
+				// Multiple steps advanced - use history buffer to capture ALL of them
 				for (int i = 0; i < 8; ++i) {
 					const auto& histStep = busMessage->stepHistory[i];
-					// Only process steps that are marked as valid by Sitri
 					if (histStep.valid) {
 						params[CV_PARAMS_BASE + i].setValue(histStep.pitch);
 						SitriBus::GateMode gateMode;
@@ -274,28 +295,18 @@ struct Lilith : rack::engine::Module {
 					}
 				}
 			} else {
-				// Single step advance - use current data
+				// Single step - use current data
 				params[CV_PARAMS_BASE + stepIndex].setValue(busMessage->currentPitch);
 
 				SitriBus::GateMode gateMode;
 				if (!busMessage->currentGate) {
-					gateMode = SitriBus::GateMode::MUTE;  // Gate off = mute
+					gateMode = SitriBus::GateMode::MUTE;
 				} else if (busMessage->newNote) {
-					gateMode = SitriBus::GateMode::TRIGGER;  // New note = trigger
+					gateMode = SitriBus::GateMode::TRIGGER;
 				} else {
-					gateMode = SitriBus::GateMode::EXPAND;  // Holding note = expand
+					gateMode = SitriBus::GateMode::EXPAND;
 				}
 				params[MODE_PARAMS_BASE + stepIndex].setValue((float)gateMode);
-			}
-
-			// Debug logging
-			static int debugCounter = 0;
-			debugCounter++;
-			if (debugCounter >= 48000) {
-				debugCounter = 0;
-				INFO("Lilith: CAPTURED steps=%d currentStep=%d pitch=%.3f gate=%d captureMode=%d",
-				     stepsAdvanced, stepIndex, busMessage->currentPitch,
-				     busMessage->currentGate, captureMode);
 			}
 		}
 

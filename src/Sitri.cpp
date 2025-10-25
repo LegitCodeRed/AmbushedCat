@@ -1923,17 +1923,21 @@ struct Sitri : rack::engine::Module {
                                         msg->stepHistory[i].valid = 0;  // Mark as empty
                                 }
 
-                                // Send ALL valid history entries (entire ring buffer)
-                                // This is simpler and ensures we don't miss any steps
-                                for (int i = 0; i < 16; ++i) {
-                                        int stepIdx = core.stepHistory[i].stepIndex;
+                                // Iterate backwards from writeIndex - 1 (most recent) to find unique step data
+                                // Only send the FIRST (newest) occurrence of each step index
+                                bool stepSeen[8] = {false};  // Track which step indices we've already sent
+                                for (int offset = 0; offset < 16; ++offset) {
+                                        // Read backwards: most recent entry is at writeIndex - 1
+                                        int histIdx = (core.stepHistoryWriteIndex - 1 - offset + 16) % 16;
+                                        int stepIdx = core.stepHistory[histIdx].stepIndex;
                                         if (stepIdx >= 0) {  // Valid entry in history buffer
                                                 int actualStepIndex = stepIdx % busSteps;
-                                                if (actualStepIndex >= 0 && actualStepIndex < busSteps) {
-                                                        msg->stepHistory[actualStepIndex].pitch = core.stepHistory[i].pitch;
-                                                        msg->stepHistory[actualStepIndex].gate = core.stepHistory[i].gate ? 1 : 0;
-                                                        msg->stepHistory[actualStepIndex].newNote = core.stepHistory[i].newNote ? 1 : 0;
+                                                if (actualStepIndex >= 0 && actualStepIndex < busSteps && !stepSeen[actualStepIndex]) {
+                                                        msg->stepHistory[actualStepIndex].pitch = core.stepHistory[histIdx].pitch;
+                                                        msg->stepHistory[actualStepIndex].gate = core.stepHistory[histIdx].gate ? 1 : 0;
+                                                        msg->stepHistory[actualStepIndex].newNote = core.stepHistory[histIdx].newNote ? 1 : 0;
                                                         msg->stepHistory[actualStepIndex].valid = 1;  // Mark as valid
+                                                        stepSeen[actualStepIndex] = true;  // Mark this step as sent
                                                 }
                                         }
                                 }
