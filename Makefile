@@ -6,8 +6,7 @@ FLAGS +=
 CFLAGS +=
 CXXFLAGS += -Idep -Idep/NeuralAmpModelerCore -Idep/NeuralAmpModelerCore/NAM -Idep/NeuralAmpModelerCore/Dependencies -Idep/NeuralAmpModelerCore/Dependencies/nlohmann
 CXXFLAGS += -Idep/eigen3 -I$(RACK_DIR)/dep/include -I$(RACK_DIR)/dep/include/eigen3
-# Override C++11 with C++17 (needed for std::filesystem in NAM) - must come after -std=c++11 in command line
-CXXFLAGS += -std=c++17
+
 
 # Careful about linking to shared libraries, since you can't assume much about the user's environment and library search path.
 # Static libraries are fine, but they should be added to this plugin's build system.
@@ -28,3 +27,11 @@ DISTRIBUTABLES += $(wildcard presets)
 include $(RACK_DIR)/plugin.mk
 CXXFLAGS := $(filter-out -std=c++11,$(CXXFLAGS))
 CXXFLAGS += -std=c++17
+
+# Link filesystem library (needed for C++17 std::filesystem on MinGW)
+LDFLAGS += -lstdc++fs
+# Statically link pthread to avoid DLL dependencies on Windows
+# Must come AFTER plugin.mk to override any settings
+# Force static linking of pthread before dynamic linking resumes
+LDFLAGS := $(filter-out -lpthread,$(LDFLAGS))
+LDFLAGS += -Wl,-Bstatic -lpthread -Wl,-Bdynamic

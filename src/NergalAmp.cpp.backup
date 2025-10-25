@@ -4,18 +4,12 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <condition_variable>
 #include <filesystem>
 #include <memory>
-#include <string>
-
-// Use Windows native threading to avoid pthread dependency
-#ifdef ARCH_WIN
-#include <windows.h>
-#else
-#include <condition_variable>
 #include <mutex>
+#include <string>
 #include <thread>
-#endif
 
 #include "NeuralAmpModelerCore/NAM/dsp.h"
 #include "NeuralAmpModelerCore/NAM/get_dsp.h"
@@ -156,22 +150,16 @@ struct NergalAmp : Module {
         };
 
         // Worker thread for NAM processing
-#ifdef ARCH_WIN
-        HANDLE workerThread = NULL;
-        HANDLE workerEvent = NULL;  // Event for waking worker
-        CRITICAL_SECTION modelMutex;  // Lightweight mutex for model access
-#else
         std::thread workerThread;
+        std::atomic<bool> workerRunning{false};
         std::mutex workerMutex;
         std::condition_variable workerCV;
-#endif
-        std::atomic<bool> workerRunning{false};
 
         // Lock-free ring buffers (8192 samples = ~170ms @ 48kHz)
         RingBuffer<float, 8192> inputBuffer;
         RingBuffer<float, 8192> outputBuffer;
 
-        // Model state (protected by mutex on non-Windows)
+        // Model state (protected by workerMutex)
         std::unique_ptr<nam::DSP> model;
         std::string modelPath;
         double modelSampleRate = 48000.0;
@@ -212,13 +200,7 @@ struct NergalAmp : Module {
 
                 // Start worker thread
                 workerRunning = true;
-#ifdef ARCH_WIN
-                InitializeCriticalSection(&modelMutex);
-                workerEvent = CreateEvent(NULL, FALSE, FALSE, NULL);  // Auto-reset event
-                workerThread = CreateThread(NULL, 0, workerThreadFuncWin, this, 0, NULL);
-#else
                 workerThread = std::thread(&NergalAmp::workerThreadFunc, this);
-#endif
 
                 onSampleRateChange();
         }
@@ -226,34 +208,11 @@ struct NergalAmp : Module {
         ~NergalAmp() {
                 // Stop worker thread
                 workerRunning = false;
-#ifdef ARCH_WIN
-                if (workerEvent) {
-                        SetEvent(workerEvent);  // Wake worker
-                }
-                if (workerThread) {
-                        WaitForSingleObject(workerThread, INFINITE);
-                        CloseHandle(workerThread);
-                }
-                if (workerEvent) {
-                        CloseHandle(workerEvent);
-                }
-                DeleteCriticalSection(&modelMutex);
-#else
                 workerCV.notify_one();
                 if (workerThread.joinable()) {
                         workerThread.join();
                 }
-#endif
         }
-
-#ifdef ARCH_WIN
-        // Windows thread entry point (must be static)
-        static DWORD WINAPI workerThreadFuncWin(LPVOID param) {
-                NergalAmp* module = static_cast<NergalAmp*>(param);
-                module->workerThreadFunc();
-                return 0;
-        }
-#endif
 
         // Worker thread function - processes NAM model in background
         void workerThreadFunc() {
@@ -267,50 +226,30 @@ struct NergalAmp : Module {
                                 NAM_SAMPLE outputFrame = 0.0;
 
                                 // Lock only for actual model processing
-#ifdef ARCH_WIN
-                                EnterCriticalSection(&modelMutex);
-                                if (model) {
-                                        model->process(&inputFrame, &outputFrame, 1);
-                                }
-                                LeaveCriticalSection(&modelMutex);
-#else
                                 {
                                         std::lock_guard<std::mutex> lock(workerMutex);
                                         if (model) {
                                                 model->process(&inputFrame, &outputFrame, 1);
                                         }
                                 }
-#endif
 
                                 // Push result to output buffer (lock-free)
                                 while (!outputBuffer.push((float)outputFrame)) {
-                                        // Output buffer full, yield CPU
-#ifdef ARCH_WIN
-                                        Sleep(0);
-#else
+                                        // Output buffer full, wait a bit
                                         std::this_thread::yield();
-#endif
                                 }
                         }
                         else {
                                 // No work, wait for notification or timeout
-#ifdef ARCH_WIN
-                                WaitForSingleObject(workerEvent, 1);  // 1ms timeout
-#else
                                 std::unique_lock<std::mutex> lock(workerMutex);
                                 workerCV.wait_for(lock, std::chrono::microseconds(100));
-#endif
                         }
                 }
         }
 
         void onSampleRateChange() override {
                 Module::onSampleRateChange();
-#ifdef ARCH_WIN
-                EnterCriticalSection(&modelMutex);
-#else
                 std::lock_guard<std::mutex> lock(workerMutex);
-#endif
                 firstFrame = true;
                 tone.reset();
                 inputBuffer.clear();
@@ -319,9 +258,6 @@ struct NergalAmp : Module {
                         const double effectiveRate = modelSampleRate > 0.0 ? modelSampleRate : APP->engine->getSampleRate();
                         model->Reset(effectiveRate, 64);
                 }
-#ifdef ARCH_WIN
-                LeaveCriticalSection(&modelMutex);
-#endif
         }
 
         void process(const ProcessArgs& args) override {
@@ -364,18 +300,14 @@ struct NergalAmp : Module {
                 // Stage 1: Apply input trim
                 const float trimmed = drySignal * inputGain;
 
-                // Stage 2: Worker thread NAM processing (lock-free)
+                // Stage 2: Worker thread NAM processing (zero-copy, lock-free)
                 float modelOutput = trimmed;
                 bool hasModel = modelReady.load(std::memory_order_acquire);
 
                 if (hasModel) {
                         // Push input to worker thread (non-blocking)
                         if (inputBuffer.push(trimmed)) {
-#ifdef ARCH_WIN
-                                SetEvent(workerEvent);  // Wake worker
-#else
-                                workerCV.notify_one();
-#endif
+                                workerCV.notify_one(); // Wake worker if sleeping
                         }
 
                         // Try to get processed output (non-blocking)
@@ -409,19 +341,12 @@ struct NergalAmp : Module {
                 inputBuffer.clear();
                 outputBuffer.clear();
 
-#ifdef ARCH_WIN
-                EnterCriticalSection(&modelMutex);
-#else
                 std::lock_guard<std::mutex> lock(workerMutex);
-#endif
                 model.reset();
                 modelPath.clear();
                 modelSampleRate = 48000.0;
                 firstFrame = true;
                 tone.reset();
-#ifdef ARCH_WIN
-                LeaveCriticalSection(&modelMutex);
-#endif
         }
 
         // Internal loading - called from audio thread with path already validated
@@ -457,30 +382,18 @@ struct NergalAmp : Module {
                         outputBuffer.clear();
 
                         // Quick atomic swap with worker mutex
-#ifdef ARCH_WIN
-                        EnterCriticalSection(&modelMutex);
-#else
                         {
                                 std::lock_guard<std::mutex> lock(workerMutex);
-#endif
                                 model = std::move(loaded);
                                 modelPath = path;
                                 modelSampleRate = sampleRate;
                                 firstFrame = true;
                                 tone.reset();
-#ifdef ARCH_WIN
-                        LeaveCriticalSection(&modelMutex);
-#else
                         }
-#endif
 
                         // Activate model atomically
                         modelReady.store(true, std::memory_order_release);
-#ifdef ARCH_WIN
-                        SetEvent(workerEvent);  // Wake worker thread
-#else
-                        workerCV.notify_one();
-#endif
+                        workerCV.notify_one(); // Wake worker thread
 
                         // Update UI state (outside mutex)
                         if (fsPath.has_parent_path()) {
@@ -504,18 +417,12 @@ struct NergalAmp : Module {
         json_t* dataToJson() override {
                 json_t* root = json_object();
 
-                // Copy strings with mutex protection
+                // Copy strings with worker mutex protection
                 std::string path, dir;
-#ifdef ARCH_WIN
-                EnterCriticalSection(&modelMutex);
-                path = modelPath;
-                LeaveCriticalSection(&modelMutex);
-#else
                 {
                         std::lock_guard<std::mutex> lock(workerMutex);
                         path = modelPath;
                 }
-#endif
                 dir = lastDirectory; // lastDirectory doesn't need mutex (UI only)
 
                 if (!path.empty()) {
@@ -588,16 +495,10 @@ struct NergalAmpWidget : ModuleWidget {
                 if (module) {
                         // Thread-safe copy of model path
                         std::string path;
-#ifdef ARCH_WIN
-                        EnterCriticalSection(&module->modelMutex);
-                        path = module->modelPath;
-                        LeaveCriticalSection(&module->modelMutex);
-#else
                         {
                                 std::lock_guard<std::mutex> lock(module->workerMutex);
                                 path = module->modelPath;
                         }
-#endif
                         if (!path.empty()) {
                                 labelText = "Model: " + std::filesystem::path(path).filename().string();
                         }
