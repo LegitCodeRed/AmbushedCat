@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "SitriBus.hpp"
+#include "BuerBus.hpp"
 
 #include <algorithm>
 #include <array>
@@ -57,6 +58,15 @@ struct LilithBase : rack::engine::Module {
 
         SitriBus::MasterToExpander inboundMessages[2]{};
         SitriBus::ExpanderToMaster outboundMessages[2]{};
+        BuerBus::ToLilith buerInboundMessages[2]{};
+        BuerBus::FromLilith buerOutboundMessages[2]{};
+
+        std::array<float, NumSteps> remoteCvMod{};
+        std::array<float, NumSteps> remoteModeMod{};
+        std::array<float, NumSteps> baseCvValues{};
+        std::array<float, NumSteps> baseModeValues{};
+        std::array<float, NumSteps> appliedCvMod{};
+        std::array<float, NumSteps> appliedModeMod{};
 
         LilithBase() {
                 this->config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -84,6 +94,9 @@ struct LilithBase : rack::engine::Module {
                 this->leftExpander.producerMessage = &inboundMessages[0];
                 this->leftExpander.consumerMessage = &inboundMessages[1];
 
+                this->rightExpander.producerMessage = &buerOutboundMessages[0];
+                this->rightExpander.consumerMessage = &buerInboundMessages[1];
+
                 for (int i = 0; i < 2; ++i) {
                         inboundMessages[i].magic = SitriBus::MAGIC;
                         inboundMessages[i].version = 1;
@@ -99,6 +112,15 @@ struct LilithBase : rack::engine::Module {
                                 outboundMessages[i].gateMode[j] = SitriBus::GateMode::EXPAND;
                                 outboundMessages[i].stepCV[j] = 0.f;
                         }
+
+                        buerInboundMessages[i].magic = BuerBus::MAGIC;
+                        buerInboundMessages[i].version = 1;
+                        buerInboundMessages[i].connected = 0;
+
+                        buerOutboundMessages[i].magic = BuerBus::MAGIC;
+                        buerOutboundMessages[i].version = 1;
+                        buerOutboundMessages[i].numSteps = NumSteps;
+                        buerOutboundMessages[i].activeSteps = NumSteps;
                 }
         }
 
@@ -122,6 +144,32 @@ struct LilithBase : rack::engine::Module {
                                        this->getLeftExpander().module->model &&
                                        this->getLeftExpander().module->model->slug == "Sitri";
                 const SitriBus::MasterToExpander* busMessage = nullptr;
+
+                bool attachedToBuer = this->getRightExpander().module &&
+                                      this->getRightExpander().module->model &&
+                                      this->getRightExpander().module->model->slug == "Buer";
+                const BuerBus::ToLilith* buerMessage = nullptr;
+                if (attachedToBuer) {
+                        auto* msg = reinterpret_cast<const BuerBus::ToLilith*>(
+                            this->getRightExpander().consumerMessage);
+                        if (msg && msg->magic == BuerBus::MAGIC && msg->version == 1 && msg->connected) {
+                                buerMessage = msg;
+                        } else {
+                                attachedToBuer = false;
+                        }
+                }
+
+                if (!attachedToBuer) {
+                        remoteCvMod.fill(0.f);
+                        remoteModeMod.fill(0.f);
+                }
+
+                if (buerMessage) {
+                        for (int i = 0; i < NumSteps; ++i) {
+                                remoteCvMod[i] = buerMessage->cvMod[i];
+                                remoteModeMod[i] = buerMessage->modeMod[i];
+                        }
+                }
 
                 if (attachedToSitri) {
                         auto* msg = reinterpret_cast<const SitriBus::MasterToExpander*>(
@@ -277,6 +325,60 @@ struct LilithBase : rack::engine::Module {
                                         gateMode = SitriBus::GateMode::EXPAND;
                                 }
                                 this->params[MODE_PARAMS_BASE + stepIndex].setValue((float)gateMode);
+                        }
+                }
+
+                for (int i = 0; i < NumSteps; ++i) {
+                        float currentCv = this->params[CV_PARAMS_BASE + i].getValue();
+                        float currentMode = this->params[MODE_PARAMS_BASE + i].getValue();
+
+                        baseCvValues[i] = currentCv - appliedCvMod[i];
+                        baseCvValues[i] = clamp(baseCvValues[i], -10.f, 10.f);
+
+                        baseModeValues[i] = currentMode - appliedModeMod[i];
+                        baseModeValues[i] = clamp(baseModeValues[i], 0.f, 2.f);
+                }
+
+                auto* buerOutbound = reinterpret_cast<BuerBus::FromLilith*>(
+                    this->rightExpander.producerMessage);
+                if (buerOutbound) {
+                        buerOutbound->magic = BuerBus::MAGIC;
+                        buerOutbound->version = 1;
+                        buerOutbound->numSteps = NumSteps;
+                        buerOutbound->activeSteps = clamp(activeSteps, 0, NumSteps);
+                        for (int i = 0; i < 16; ++i) {
+                                if (i < NumSteps) {
+                                        buerOutbound->baseCv[i] = baseCvValues[i];
+                                        buerOutbound->baseMode[i] = baseModeValues[i];
+                                } else {
+                                        buerOutbound->baseCv[i] = 0.f;
+                                        buerOutbound->baseMode[i] = 0.f;
+                                }
+                        }
+                }
+
+                if (attachedToBuer) {
+                        for (int i = 0; i < NumSteps; ++i) {
+                                float modCv = (i < activeSteps) ? clamp(remoteCvMod[i], -20.f, 20.f) : 0.f;
+                                float newCv = clamp(baseCvValues[i] + modCv, -10.f, 10.f);
+                                this->params[CV_PARAMS_BASE + i].setValue(newCv);
+                                appliedCvMod[i] = newCv - baseCvValues[i];
+
+                                float modMode = (i < activeSteps) ? clamp(remoteModeMod[i], -2.f, 2.f) : 0.f;
+                                float newMode = clamp(baseModeValues[i] + modMode, 0.f, 2.f);
+                                this->params[MODE_PARAMS_BASE + i].setValue(newMode);
+                                appliedModeMod[i] = newMode - baseModeValues[i];
+                        }
+                } else {
+                        for (int i = 0; i < NumSteps; ++i) {
+                                if (appliedCvMod[i] != 0.f) {
+                                        this->params[CV_PARAMS_BASE + i].setValue(baseCvValues[i]);
+                                }
+                                if (appliedModeMod[i] != 0.f) {
+                                        this->params[MODE_PARAMS_BASE + i].setValue(baseModeValues[i]);
+                                }
+                                appliedCvMod[i] = 0.f;
+                                appliedModeMod[i] = 0.f;
                         }
                 }
 

@@ -112,6 +112,16 @@
       ]
     },
     {
+      "slug": "Buer",
+      "name": "Buer",
+      "description": "16HP modulation expander for Lilith with per-step CV and gate-mode attenuverters plus remote parameter updating.",
+      "tags": [
+        "Expander",
+        "Utility",
+        "Sequencer"
+      ]
+    },
+    {
       "slug": "NergalAmp",
       "name": "Nergal Amp",
       "description": "Neural amp modeler with NAM model loading, drive saturation, tone shaping, dry/wet mix, and full CV control over all parameters.",
