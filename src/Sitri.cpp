@@ -1889,7 +1889,9 @@ struct Sitri : rack::engine::Module {
 
                 // Write to Lilith expander using VCV Rack's message flipping system
                 Module* rightModule = getRightExpander().module;
-                bool connectedToLilith = rightModule && rightModule->model && rightModule->model->slug == "Lilith";
+                bool connectedToLilith = rightModule && rightModule->model &&
+                                        (rightModule->model->slug == "Lilith" ||
+                                         rightModule->model->slug == "LilithAdvance");
 
                 if (connectedToLilith) {
                         // Write to Lilith's producer buffer (VCV will flip it to consumer on Lilith's side)
