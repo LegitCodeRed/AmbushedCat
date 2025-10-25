@@ -1876,7 +1876,7 @@ struct Sitri : rack::engine::Module {
 
                 bool stepEdge = core.takeStepEdge();
                 int coreSteps = core.getStepCount();
-                int busSteps = clamp(coreSteps, 1, 8);
+                int busSteps = clamp(coreSteps, 1, 16);  // Support up to 16 steps for LilithAdvance
                 int stepIndex = core.getCurrentStepIndex();
                 if (busSteps > 0) {
                         stepIndex %= busSteps;
@@ -1918,7 +1918,7 @@ struct Sitri : rack::engine::Module {
 
                                 // Send step history for high-speed capture
                                 // Clear the step history buffer first to avoid stale data
-                                for (int i = 0; i < 8; ++i) {
+                                for (int i = 0; i < 16; ++i) {
                                         msg->stepHistory[i].pitch = 0.f;
                                         msg->stepHistory[i].gate = 0;
                                         msg->stepHistory[i].newNote = 0;
@@ -1927,14 +1927,14 @@ struct Sitri : rack::engine::Module {
 
                                 // Iterate backwards from writeIndex - 1 (most recent) to find unique step data
                                 // Only send the FIRST (newest) occurrence of each step index
-                                bool stepSeen[8] = {false};  // Track which step indices we've already sent
+                                bool stepSeen[16] = {false};  // Track which step indices we've already sent (supports up to 16 steps)
                                 for (int offset = 0; offset < 16; ++offset) {
                                         // Read backwards: most recent entry is at writeIndex - 1
                                         int histIdx = (core.stepHistoryWriteIndex - 1 - offset + 16) % 16;
                                         int stepIdx = core.stepHistory[histIdx].stepIndex;
                                         if (stepIdx >= 0) {  // Valid entry in history buffer
                                                 int actualStepIndex = stepIdx % busSteps;
-                                                if (actualStepIndex >= 0 && actualStepIndex < busSteps && !stepSeen[actualStepIndex]) {
+                                                if (actualStepIndex >= 0 && actualStepIndex < 16 && !stepSeen[actualStepIndex]) {
                                                         msg->stepHistory[actualStepIndex].pitch = core.stepHistory[histIdx].pitch;
                                                         msg->stepHistory[actualStepIndex].gate = core.stepHistory[histIdx].gate ? 1 : 0;
                                                         msg->stepHistory[actualStepIndex].newNote = core.stepHistory[histIdx].newNote ? 1 : 0;

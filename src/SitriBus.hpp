@@ -41,8 +41,8 @@ struct MasterToExpander {
         // Global parameters from Sitri
         float gateLength = 0.5f;   // Gate length parameter (0.05-1.0 = 5%-100%)
 
-        // Step history buffer - last 8 steps that advanced (for high speed capture)
-        StepData stepHistory[8] = {};
+        // Step history buffer - last 16 steps that advanced (for high speed capture - supports LilithAdvance)
+        StepData stepHistory[16] = {};
 };
 
 struct ExpanderToMaster {
