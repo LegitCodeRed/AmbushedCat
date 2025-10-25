@@ -27,36 +27,54 @@ inline float softClip(float x) {
 }
 
 struct ToneShaper {
-        double lowState = 0.0;
-        double highState = 0.0;
+        float lowState = 0.f;
+        float highState = 0.f;
+        float cachedBassGain = 1.f;
+        float cachedTrebleGain = 1.f;
+        float lastToneAmount = 0.f;
+        float lowAlpha = 0.f;
+        float highAlpha = 0.f;
+        float lastSampleRate = 0.f;
 
         void reset() {
-                lowState = 0.0;
-                highState = 0.0;
+                lowState = 0.f;
+                highState = 0.f;
         }
 
-        float process(float input, float toneAmount, float sampleRate) {
-                // Two-stage tone control: bass and treble shelving
-                // Tone knob: -1 = dark (cut highs, boost lows), 0 = neutral, +1 = bright (boost highs, cut lows)
+        void updateCoefficients(float sampleRate) {
+                // Pre-calculate filter coefficients (only when sample rate changes)
+                const float lowCutoff = 200.f;
+                const float highCutoff = 2000.f;
+                lowAlpha = std::exp(-2.f * M_PI * lowCutoff / sampleRate);
+                highAlpha = std::exp(-2.f * M_PI * highCutoff / sampleRate);
+                lastSampleRate = sampleRate;
+        }
 
-                // Low shelf around 200Hz
-                const double lowCutoff = 200.0;
-                double lowAlpha = std::exp(-2.0 * M_PI * lowCutoff / std::max(sampleRate, 1.0f));
-                lowState = (1.0 - lowAlpha) * input + lowAlpha * lowState;
+        inline float process(float input, float toneAmount, float sampleRate) {
+                // Update coefficients only if sample rate changed
+                if (std::abs(sampleRate - lastSampleRate) > 0.1f) {
+                        updateCoefficients(sampleRate);
+                }
 
-                // High shelf around 2kHz
-                const double highCutoff = 2000.0;
-                double highAlpha = std::exp(-2.0 * M_PI * highCutoff / std::max(sampleRate, 1.0f));
-                highState = (1.0 - highAlpha) * input + highAlpha * highState;
-                double highs = input - highState;
+                // Update gains only if tone changed significantly (> 1%)
+                if (std::abs(toneAmount - lastToneAmount) > 0.01f) {
+                        // Fast approximation: x^(k) ≈ 1 + k*ln(x) for small k
+                        cachedBassGain = dbToGain(-toneAmount * 6.f);
+                        cachedTrebleGain = dbToGain(toneAmount * 8.f);
+                        lastToneAmount = toneAmount;
+                }
 
-                // Apply tone-dependent gains
-                double bassGain = std::pow(10.0, (-toneAmount * 6.0) / 20.0); // -6 to +6 dB
-                double trebleGain = std::pow(10.0, (toneAmount * 8.0) / 20.0); // -8 to +8 dB
+                // Single-pole filters (very efficient)
+                float oneMinusLowAlpha = 1.f - lowAlpha;
+                lowState = oneMinusLowAlpha * input + lowAlpha * lowState;
 
-                // Mix: lows + mids + highs
-                double mids = highState - lowState;
-                return (float)(lowState * bassGain + mids + highs * trebleGain);
+                float oneMinusHighAlpha = 1.f - highAlpha;
+                highState = oneMinusHighAlpha * input + highAlpha * highState;
+
+                float highs = input - highState;
+                float mids = highState - lowState;
+
+                return lowState * cachedBassGain + mids + highs * cachedTrebleGain;
         }
 };
 } // namespace
@@ -152,47 +170,55 @@ struct NergalAmp : Module {
                 }
 
                 // Get input signal and normalize from ±10V to ±1 range
-                const float inVolts = inputs[SIGNAL_INPUT].isConnected() ? inputs[SIGNAL_INPUT].getVoltage() : 0.f;
+                const float inVolts = inputs[SIGNAL_INPUT].getVoltage();
                 const float drySignal = inVolts * 0.1f;
 
-                // Get parameter values with CV modulation
-                float inputCV = inputs[INPUT_CV_INPUT].isConnected() ? inputs[INPUT_CV_INPUT].getVoltage() * 2.4f : 0.f; // ±12dB
-                float inputGain = dbToGain(math::clamp(params[INPUT_PARAM].getValue() + inputCV, -24.f, 24.f));
+                // Get parameter values with CV modulation (optimized checks)
+                float inputGain = dbToGain(math::clamp(
+                        params[INPUT_PARAM].getValue() +
+                        (inputs[INPUT_CV_INPUT].isConnected() ? inputs[INPUT_CV_INPUT].getVoltage() * 2.4f : 0.f),
+                        -24.f, 24.f));
 
-                float driveCV = inputs[DRIVE_CV_INPUT].isConnected() ? inputs[DRIVE_CV_INPUT].getVoltage() * 0.2f : 0.f; // ±1x
-                float driveAmount = math::clamp(params[DRIVE_PARAM].getValue() + driveCV, 0.f, 2.f);
+                float driveAmount = math::clamp(
+                        params[DRIVE_PARAM].getValue() +
+                        (inputs[DRIVE_CV_INPUT].isConnected() ? inputs[DRIVE_CV_INPUT].getVoltage() * 0.2f : 0.f),
+                        0.f, 2.f);
 
-                float toneCV = inputs[TONE_CV_INPUT].isConnected() ? inputs[TONE_CV_INPUT].getVoltage() * 0.1f : 0.f; // ±0.5
-                float toneAmount = math::clamp(params[TONE_PARAM].getValue() + toneCV, -1.f, 1.f);
+                float toneAmount = math::clamp(
+                        params[TONE_PARAM].getValue() +
+                        (inputs[TONE_CV_INPUT].isConnected() ? inputs[TONE_CV_INPUT].getVoltage() * 0.1f : 0.f),
+                        -1.f, 1.f);
 
-                float mixCV = inputs[MIX_CV_INPUT].isConnected() ? inputs[MIX_CV_INPUT].getVoltage() * 0.1f : 0.f; // ±0.5
-                float mixAmount = math::clamp(params[MIX_PARAM].getValue() + mixCV, 0.f, 1.f);
+                float mixAmount = math::clamp(
+                        params[MIX_PARAM].getValue() +
+                        (inputs[MIX_CV_INPUT].isConnected() ? inputs[MIX_CV_INPUT].getVoltage() * 0.1f : 0.f),
+                        0.f, 1.f);
 
-                float outputCV = inputs[OUTPUT_CV_INPUT].isConnected() ? inputs[OUTPUT_CV_INPUT].getVoltage() * 2.4f : 0.f; // ±12dB
-                float outputGain = dbToGain(math::clamp(params[OUTPUT_PARAM].getValue() + outputCV, -24.f, 24.f));
+                float outputGain = dbToGain(math::clamp(
+                        params[OUTPUT_PARAM].getValue() +
+                        (inputs[OUTPUT_CV_INPUT].isConnected() ? inputs[OUTPUT_CV_INPUT].getVoltage() * 2.4f : 0.f),
+                        -24.f, 24.f));
 
                 // Stage 1: Apply input trim
                 const float trimmed = drySignal * inputGain;
 
-                // Stage 2: Process through NAM model (with mutex protection)
+                // Stage 2: Process through NAM model (with minimal mutex time)
                 float modelOutput = trimmed;
                 bool hasModel = false;
 
-                {
-                        std::lock_guard<std::mutex> lock(modelMutex);
+                // Try lock first - if we can't get it, skip model processing this frame (reduces blocking)
+                if (modelMutex.try_lock()) {
                         hasModel = (model != nullptr);
 
                         if (model) {
-                                const double hostRate = args.sampleRate;
-                                double targetRate = modelSampleRate > 0.0 ? modelSampleRate : hostRate;
-                                if (targetRate <= 0.0) {
-                                        targetRate = hostRate;
-                                }
+                                // Cache frequently used values
+                                const float hostRate = args.sampleRate;
+                                const float targetRate = modelSampleRate > 0.0 ? modelSampleRate : hostRate;
+                                const float ratio = targetRate / hostRate;
 
-                                const double ratio = targetRate / std::max(hostRate, 1.0);
-                                double phase = resamplePhase;
-                                const double total = phase + ratio;
-                                int steps = (int)std::floor(total);
+                                float phase = resamplePhase;
+                                float total = phase + ratio;
+                                int steps = (int)total;
                                 resamplePhase = total - steps;
 
                                 if (firstFrame) {
@@ -200,40 +226,44 @@ struct NergalAmp : Module {
                                         firstFrame = false;
                                 }
 
-                                for (int s = 0; s < steps; ++s) {
-                                        double t = (double)(s + 1) - phase;
-                                        t /= ratio;
-                                        float tClamped = math::clamp((float)t, 0.f, 1.f);
-                                        float interp = math::crossfade(previousModelInput, trimmed, tClamped);
+                                // Linear interpolation resampling (faster than crossfade)
+                                if (steps > 0) {
+                                        const float invRatio = 1.f / ratio;
+                                        const float delta = trimmed - previousModelInput;
 
-                                        NAM_SAMPLE inputFrame = (NAM_SAMPLE)interp;
-                                        NAM_SAMPLE outputFrame = 0.0;
-                                        model->process(&inputFrame, &outputFrame, 1);
-                                        lastModelOutput = outputFrame;
+                                        for (int s = 0; s < steps; ++s) {
+                                                float t = ((float)(s + 1) - phase) * invRatio;
+                                                t = simd::clamp(t, 0.f, 1.f);
+                                                float interp = previousModelInput + delta * t;
+
+                                                NAM_SAMPLE inputFrame = (NAM_SAMPLE)interp;
+                                                NAM_SAMPLE outputFrame = 0.0;
+                                                model->process(&inputFrame, &outputFrame, 1);
+                                                lastModelOutput = outputFrame;
+                                        }
                                 }
 
                                 previousModelInput = trimmed;
                                 modelOutput = (float)lastModelOutput;
                         }
+
+                        modelMutex.unlock();
                 }
 
-                // Stage 3: Apply drive/saturation after the amp model
+                // Stage 3: Apply drive/saturation (conditional execution)
                 float driven = modelOutput * driveAmount;
                 if (enableClipper && driveAmount > 1.0f) {
-                        // Apply soft clipping when drive is above unity (if enabled)
                         driven = softClip(driven);
                 }
 
-                // Stage 4: Tone shaping
+                // Stage 4: Tone shaping (optimized with caching)
                 float shaped = tone.process(driven, toneAmount, args.sampleRate);
 
-                // Stage 5: Dry/Wet mix
-                float mixed = math::crossfade(drySignal, shaped, mixAmount);
+                // Stage 5: Dry/Wet mix (optimized)
+                float mixed = drySignal + mixAmount * (shaped - drySignal);
 
                 // Stage 6: Output level and convert back to ±10V
-                float out = mixed * outputGain * 10.f;
-
-                outputs[SIGNAL_OUTPUT].setVoltage(out);
+                outputs[SIGNAL_OUTPUT].setVoltage(mixed * outputGain * 10.f);
 
                 lights[LOADED_LIGHT].setBrightness(hasModel ? 1.f : 0.f);
         }
