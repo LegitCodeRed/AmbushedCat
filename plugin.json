@@ -114,7 +114,7 @@
     {
       "slug": "NergalAmp",
       "name": "Nergal Amp",
-      "description": "Neural amp modeler that loads .nam captures with drive, tone, input, and output controls.",
+      "description": "Neural amp modeler with NAM model loading, drive saturation, tone shaping, dry/wet mix, and full CV control over all parameters.",
       "tags": [
         "Effect",
         "Distortion",
