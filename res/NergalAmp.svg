@@ -24,7 +24,7 @@
      showgrid="false"
      inkscape:zoom="2.1146077"
      inkscape:cx="57.693918"
-     inkscape:cy="54.383611"
+     inkscape:cy="167.87984"
      inkscape:window-width="1920"
      inkscape:window-height="1009"
      inkscape:window-x="5112"
@@ -58,16 +58,6 @@
       .indicator { fill: #3c2a64; stroke: #8d7bd1; stroke-width: 0.2; }
     ]]></style>
   </defs>
-  <rect
-     width="30.48"
-     height="128.5"
-     rx="2"
-     ry="2"
-     fill="url(#panelGradient)"
-     id="rect3270"
-     x="0"
-     y="0"
-     style="display:none" />
   <g
      transform="translate(15.24,10.645834)"
      id="g3276">
@@ -112,10 +102,9 @@
     </g>
     <circle
        class="indicator"
-       cx="15.24"
-       cy="23.175003"
+       cx="9.6857548e-08"
+       cy="10.229164"
        r="2.4000001"
-       id="circle3302"
-       transform="translate(-15.24,-10.645834)" />
+       id="circle3302" />
   </g>
 </svg>

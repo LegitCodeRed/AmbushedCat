@@ -547,8 +547,17 @@ struct NergalAmp : Module {
 
 struct BackgroundImage : Widget {
 	std::string imagePath = asset::plugin(pluginInstance, "res/TextureDemonMain.png");
+	widget::SvgWidget* svgWidget;
+
+	BackgroundImage() {
+		// Create SVG widget as a child
+		svgWidget = new widget::SvgWidget();
+		svgWidget->setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/NergalAmp.svg")));
+		addChild(svgWidget);
+	}
 
 	void draw(const DrawArgs& args) override {
+		// Draw background image first
 		std::shared_ptr<Image> image = APP->window->loadImage(imagePath);
 		if (image) {
 			int w = box.size.x;
@@ -560,20 +569,23 @@ struct BackgroundImage : Widget {
 			nvgFillPaint(args.vg, paint);
 			nvgFill(args.vg);
 		}
+
+		// SVG will be drawn automatically by the child SvgWidget
+		Widget::draw(args);
 	}
 };
 
 struct NergalAmpWidget : ModuleWidget {
         NergalAmpWidget(NergalAmp* module) {
                 setModule(module);
-               
+
+                // Set panel size (6HP module: 30.48mm width, 128.5mm height)
+                box.size = mm2px(Vec(30.48, 128.5));
 
                 auto bg = new BackgroundImage();
 		bg->box.pos = Vec(0, 0);
-		bg->box.size = box.size; // Match panel size (e.g., 128.5 x 380 or 115 x 485)
+		bg->box.size = box.size;
 		addChild(bg);
-
-                setPanel(createPanel(asset::plugin(pluginInstance, "res/NergalAmp.svg")));
 
                 // Helpers
                 constexpr float HP = 5.08f;                // 1 HP in mm
@@ -584,7 +596,7 @@ struct NergalAmpWidget : ModuleWidget {
                 constexpr float SIDE_MARGIN = 8.0f;       // left/right margin in mm
                 constexpr float KNOB_X = SIDE_MARGIN;      // left column (knobs)
                 constexpr float CV_X   = W - SIDE_MARGIN - 8.0f;  // right column (CV)
-                constexpr float TOP_LED_Y = 15.0f;         // LED near top
+                constexpr float TOP_LED_Y = 18.375f;         // LED near top
                 constexpr float FIRST_ROW_Y = 30.0f;       // first control row
                 constexpr float ROW_STEP = 15.0f;          // vertical spacing
 
