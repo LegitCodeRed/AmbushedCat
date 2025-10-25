@@ -423,15 +423,15 @@ struct LilithAdvanceWidget : rack::app::ModuleWidget {
                                                                   LilithAdvance::STEPS_PARAM));
                 addParam(createParamCentered<Trimpot>(mm2px(Vec(22.0f, 15.0f)), module,
                                                       LilithAdvance::GATE_PARAM));
-                addChild(createLightCentered<TinyLight<GreenLight>>(mm2px(Vec(32.0f, 15.0f)), module,
+                addChild(createLightCentered<TinyLight<GreenLight>>(mm2px(Vec(73.0f, 15.0f)), module,
                                                                     LilithAdvance::RUN_LIGHT));
 
-                // 16 steps with better spacing - use more vertical space
-                const float rowStart = 24.0f;
-                const float rowEnd = 110.0f;
-                const float rowSpacing = (rowEnd - rowStart) / 15.0f;  // 15 intervals for 16 steps
+                // 16 steps arranged in 2 columns of 8 steps each
+                const float rowStart = 32.0f;
+                const float rowSpacing = 10.0f;  // 10mm between rows
 
-                for (int i = 0; i < 16; ++i) {
+                // Left column: Steps 1-8
+                for (int i = 0; i < 8; ++i) {
                         float y = rowStart + rowSpacing * i;
                         addChild(createLightCentered<TinyLight<GreenLight>>(mm2px(Vec(4.0f, y)), module,
                                                                           LilithAdvance::STEP_LIGHT_BASE + i));
@@ -443,14 +443,27 @@ struct LilithAdvanceWidget : rack::app::ModuleWidget {
                                                                             LilithAdvance::GATE_LIGHT_BASE + i));
                 }
 
+                // Right column: Steps 9-16
+                for (int i = 8; i < 16; ++i) {
+                        float y = rowStart + rowSpacing * (i - 8);
+                        addChild(createLightCentered<TinyLight<GreenLight>>(mm2px(Vec(44.0f, y)), module,
+                                                                          LilithAdvance::STEP_LIGHT_BASE + i));
+                        addParam(createParamCentered<CKSSThree>(mm2px(Vec(51.0f, y)), module,
+                                                                LilithAdvance::MODE_PARAMS_BASE + i));
+                        addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(60.0f, y)), module,
+                                                                          LilithAdvance::CV_PARAMS_BASE + i));
+                        addChild(createLightCentered<TinyLight<YellowLight>>(mm2px(Vec(70.0f, y)), module,
+                                                                            LilithAdvance::GATE_LIGHT_BASE + i));
+                }
+
                 // Bottom I/O
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(6.0f, 116.0f)), module,
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(12.0f, 116.0f)), module,
                                                          LilithAdvance::CLK_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(14.0f, 116.0f)), module,
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(26.0f, 116.0f)), module,
                                                          LilithAdvance::RESET_INPUT));
-                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(22.0f, 116.0f)), module,
+                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(55.0f, 116.0f)), module,
                                                            LilithAdvance::CV_OUTPUT));
-                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(30.0f, 116.0f)), module,
+                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(69.0f, 116.0f)), module,
                                                            LilithAdvance::GATE_OUTPUT));
         }
 };
