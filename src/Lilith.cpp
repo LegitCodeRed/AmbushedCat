@@ -81,7 +81,7 @@ struct LilithBase : rack::engine::Module {
                         this->configParam(CV_PARAMS_BASE + i, -10.f, 10.f, 0.f,
                                           "Step " + std::to_string(i + 1) + " CV", " V");
                         auto* modeQuantity = this->configSwitch(
-                            MODE_PARAMS_BASE + i, 0.f, 2.f, 0.f, "Gate mode",
+                            MODE_PARAMS_BASE + i, 0.f, 2.f, 2.f, "Gate mode",
                             {"Expand", "Mute", "Trigger"});
                         modeQuantity->snapEnabled = true;
                 }
