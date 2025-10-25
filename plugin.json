@@ -42,7 +42,7 @@
       "name": "Tape Machine",
       "description": "A detailed tape emulation module offering saturation, wow & flutter, bias shaping, and vintage tape coloration. Perfect for adding analog warmth and character to your sound.",
       "tags": [
-        "Tape"
+       "Effect", "Dynamics", "Physical modeling", "Distortion"
       ]
     },
     {
@@ -78,14 +78,13 @@
       "description": "Stereo techno-focused distortion inspired by Ruina Versio with wavefolding, DOOM suboctaves, multiband saturation, octavizing, phase warping, and the infamous Smoosh drive.",
       "tags": [
         "Distortion",
-        "Effect",
-        "Stereo"
+        "Effect"
       ]
     },
      {
       "slug": "Sitri",
       "name": "Sitri",
-      "description": "sitri",
+      "description": "Generative algorithmic sequencer module for VCV Rack with an integrated quantizer, multiple algorithm “engines”, rich clocking/swing logic, velocity and gate shaping, and an expander bus to a right-hand module (Lilith/LilithAdvance). It outputs Pitch (V/Oct), Gate, Velocity, plus an End-Of-Cycle trigger.",
      "tags": [
         "Sequencer"
       ]
@@ -97,8 +96,7 @@
       "description": "8-step expander and standalone lane for Sitri with per-step CV and gate modes.",
       "tags": [
         "Sequencer",
-        "Expander",
-        "Clocked"
+        "Expander"
       ]
     },
     {
@@ -107,8 +105,7 @@
       "description": "16-step expander and standalone lane for Sitri with per-step CV and gate modes.",
       "tags": [
         "Sequencer",
-        "Expander",
-        "Clocked"
+        "Expander"
       ]
     },
     {
@@ -126,9 +123,10 @@
       "name": "Nergal Amp",
       "description": "Neural amp modeler with NAM model loading, drive saturation, tone shaping, dry/wet mix, and full CV control over all parameters.",
       "tags": [
-        "Effect",
-        "Distortion",
-        "Dynamics"
+        "Effect", 
+        "Dynamics",
+        "Physical modeling", 
+        "Distortion"
       ]
     }
   ]
