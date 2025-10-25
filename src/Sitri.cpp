@@ -1094,6 +1094,7 @@ public:
 
         int getCurrentStepIndex() const { return currentStepIndex; }
         int getStepCount() const { return steps; }
+        int getStepsAdvancedThisFrame() const { return stepsAdvancedThisFrame; }
         bool takeStepEdge() {
                 bool edge = stepEdge;
                 stepEdge = false;
@@ -1128,6 +1129,14 @@ public:
                 externalClockMultCounter = 0;
                 currentStepIndex = 0;
                 stepEdge = false;
+                stepsAdvancedThisFrame = 0;
+                stepHistoryWriteIndex = 0;
+                for (int i = 0; i < 16; ++i) {
+                        stepHistory[i].pitch = 0.f;
+                        stepHistory[i].gate = false;
+                        stepHistory[i].newNote = false;
+                        stepHistory[i].stepIndex = -1;  // Mark as invalid initially
+                }
                 if (algo)
                         algo->reset(actualSeed);
         }
@@ -1199,6 +1208,7 @@ public:
         void process(float sampleTime, bool clockEdge, bool externalClockConnected) {
                 eocPulse = false;
                 stepEdge = false;
+                stepsAdvancedThisFrame = 0;
 
                 if (quantizer && quantizer->getRevision() != quantizerRevision)
                         onQuantizerChanged();
@@ -1276,6 +1286,16 @@ public:
 
         uint64_t prngState = 0x12345678abcdefULL;
 
+        // Step history for high-speed capture support
+        struct StepHistoryEntry {
+                float pitch = 0.f;
+                bool gate = false;
+                bool newNote = false;
+                int stepIndex = 0;
+        };
+        std::array<StepHistoryEntry, 16> stepHistory;  // 16 slots for safety margin
+        int stepHistoryWriteIndex = 0;
+
 private:
         double phase = 0.0;
         int steps = 16;
@@ -1302,6 +1322,7 @@ private:
 
         int currentStepIndex = 0;
         bool stepEdge = false;
+        int stepsAdvancedThisFrame = 0;  // Track multiple steps per process() call
 
         float gateTimer = 0.f;
         float currentDuration = 0.5f;
@@ -1356,6 +1377,7 @@ private:
 
                 currentStepIndex = rotatedIndex;
                 stepEdge = true;
+                stepsAdvancedThisFrame++;
 
                 // Build context for current step
                 AlgoContext ctx;
@@ -1415,6 +1437,13 @@ private:
                         quantizerRevision = quantizer->getRevision();
                         lastPitch = finalPitch;
                         lastVel = shapedVel;
+
+                        // Store in history buffer for Lilith capture at high speeds
+                        stepHistory[stepHistoryWriteIndex].pitch = finalPitch;
+                        stepHistory[stepHistoryWriteIndex].gate = true;
+                        stepHistory[stepHistoryWriteIndex].newNote = newNoteTrigger;
+                        stepHistory[stepHistoryWriteIndex].stepIndex = currentStepIndex;
+                        stepHistoryWriteIndex = (stepHistoryWriteIndex + 1) % 16;
                 } else {
                         // Inactive step - turn off gate immediately
                         gateOut = false;
@@ -1422,6 +1451,13 @@ private:
                         lastStepActive = false;
                         lastDetune = 0.f;
                         newNoteTrigger = false;
+
+                        // Store in history buffer for Lilith capture at high speeds
+                        stepHistory[stepHistoryWriteIndex].pitch = lastPitch;
+                        stepHistory[stepHistoryWriteIndex].gate = false;
+                        stepHistory[stepHistoryWriteIndex].newNote = false;
+                        stepHistory[stepHistoryWriteIndex].stepIndex = currentStepIndex;
+                        stepHistoryWriteIndex = (stepHistoryWriteIndex + 1) % 16;
                 }
 
                 advanceCounters();
@@ -1431,18 +1467,20 @@ private:
         void advanceCounters() {
                 switch (direction) {
                 case 0: // forward
-                        playCounter = (playCounter + 1) % steps;
-                        if (playCounter == 0) {
+                        // Check if we're about to wrap before incrementing
+                        if ((playCounter + 1) >= steps) {
                                 eocPulse = true;
                                 cycleResetPending = true;
                         }
+                        playCounter = (playCounter + 1) % steps;
                         break;
                 case 1: // reverse
-                        playCounter = (playCounter + 1) % steps;
-                        if (playCounter == 0) {
+                        // Check if we're about to wrap before incrementing
+                        if ((playCounter + 1) >= steps) {
                                 eocPulse = true;
                                 cycleResetPending = true;
                         }
+                        playCounter = (playCounter + 1) % steps;
                         break;
                 case 2: // pingpong
                         if (steps <= 1) {
@@ -1470,18 +1508,20 @@ private:
                         playCounter = (playCounter + 1) % steps;
                         break;
                 case 3: // random
-                        playCounter = (playCounter + 1) % steps;
-                        if (playCounter == 0) {
+                        // Check if we're about to wrap before incrementing
+                        if ((playCounter + 1) >= steps) {
                                 eocPulse = true;
                                 cycleResetPending = true;
                         }
+                        playCounter = (playCounter + 1) % steps;
                         break;
                 default:
-                        playCounter = (playCounter + 1) % steps;
-                        if (playCounter == 0) {
+                        // Check if we're about to wrap before incrementing
+                        if ((playCounter + 1) >= steps) {
                                 eocPulse = true;
                                 cycleResetPending = true;
                         }
+                        playCounter = (playCounter + 1) % steps;
                         break;
                 }
         }
@@ -1864,6 +1904,7 @@ struct Sitri : rack::engine::Module {
                                 msg->clockEdge = stepEdge ? 1 : 0;
                                 msg->eocPulse = core.eocPulse ? 1 : 0;
                                 msg->reseedEdge = reseedTriggered ? 1 : 0;
+                                msg->stepsAdvanced = (uint8_t)core.getStepsAdvancedThisFrame();
 
                                 // Send current step's pitch, gate, and note trigger status to Lilith
                                 msg->currentPitch = core.pitchOut;
@@ -1872,6 +1913,30 @@ struct Sitri : rack::engine::Module {
 
                                 // Send global parameters
                                 msg->gateLength = params[GATE_PARAM].getValue();
+
+                                // Send step history for high-speed capture
+                                // Clear the step history buffer first to avoid stale data
+                                for (int i = 0; i < 8; ++i) {
+                                        msg->stepHistory[i].pitch = 0.f;
+                                        msg->stepHistory[i].gate = 0;
+                                        msg->stepHistory[i].newNote = 0;
+                                        msg->stepHistory[i].valid = 0;  // Mark as empty
+                                }
+
+                                // Send ALL valid history entries (entire ring buffer)
+                                // This is simpler and ensures we don't miss any steps
+                                for (int i = 0; i < 16; ++i) {
+                                        int stepIdx = core.stepHistory[i].stepIndex;
+                                        if (stepIdx >= 0) {  // Valid entry in history buffer
+                                                int actualStepIndex = stepIdx % busSteps;
+                                                if (actualStepIndex >= 0 && actualStepIndex < busSteps) {
+                                                        msg->stepHistory[actualStepIndex].pitch = core.stepHistory[i].pitch;
+                                                        msg->stepHistory[actualStepIndex].gate = core.stepHistory[i].gate ? 1 : 0;
+                                                        msg->stepHistory[actualStepIndex].newNote = core.stepHistory[i].newNote ? 1 : 0;
+                                                        msg->stepHistory[actualStepIndex].valid = 1;  // Mark as valid
+                                                }
+                                        }
+                                }
 
                                 // Request VCV Rack to flip the buffers
                                 rightModule->leftExpander.requestMessageFlip();
