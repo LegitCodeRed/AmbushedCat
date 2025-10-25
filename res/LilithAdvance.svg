@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40.64mm" height="128.5mm" viewBox="0 0 40.64 128.5">
+  <defs>
+    <linearGradient id="panelGradient" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#2b2d33" />
+      <stop offset="1" stop-color="#1b1d22" />
+    </linearGradient>
+    <style>
+      .title { font-family: 'Roboto', 'Liberation Sans', sans-serif; font-size: 3.8px; fill: #f5f6fa; font-weight: 600; letter-spacing: 0.6px; }
+      .label { font-family: 'Roboto', 'Liberation Sans', sans-serif; font-size: 2.8px; fill: #cfd3dc; text-anchor: middle; }
+      .sub { font-family: 'Roboto', 'Liberation Sans', sans-serif; font-size: 2.2px; fill: #a7acb7; text-anchor: middle; }
+      .jack { font-family: 'Roboto', 'Liberation Sans', sans-serif; font-size: 2.5px; fill: #d9dde5; text-anchor: middle; }
+      .divider { stroke: #434750; stroke-width: 0.25; stroke-linecap: round; }
+      .step { font-family: 'Roboto Mono', 'Liberation Mono', monospace; font-size: 2.2px; fill: #cfd3dc; font-weight: 500; }
+    </style>
+  </defs>
+  <rect width="40.64" height="128.5" fill="url(#panelGradient)" rx="2" ry="2" />
+
+  <text class="title" x="20.32" y="7">LILITH ADV</text>
+  <text class="sub" x="20.32" y="10.5">16-STEP EXPANDER</text>
+
+  <rect x="1.5" y="11.5" width="37.64" height="7" fill="#202228" stroke="#3a3d46" stroke-width="0.4" rx="1.5" />
+  <text class="label" x="8" y="17.8">STEPS</text>
+  <text class="label" x="22" y="17.8">GATE</text>
+  <text class="label" x="32" y="17.8">RUN</text>
+
+  <text class="step" x="2" y="24.5">STEP</text>
+  <text class="step" x="11" y="24.5">MODE</text>
+  <text class="step" x="20" y="24.5">CV</text>
+  <text class="step" x="28" y="24.5">GT</text>
+  <line class="divider" x1="2" y1="25.5" x2="38.64" y2="25.5" />
+
+  <g>
+    <text class="step" x="2" y="28.8">1</text>
+    <text class="step" x="2" y="33.6">2</text>
+    <text class="step" x="2" y="38.4">3</text>
+    <text class="step" x="2" y="43.2">4</text>
+    <text class="step" x="2" y="48.0">5</text>
+    <text class="step" x="2" y="52.8">6</text>
+    <text class="step" x="2" y="57.6">7</text>
+    <text class="step" x="2" y="62.4">8</text>
+    <text class="step" x="2" y="67.2">9</text>
+    <text class="step" x="2" y="72.0">10</text>
+    <text class="step" x="2" y="76.8">11</text>
+    <text class="step" x="2" y="81.6">12</text>
+    <text class="step" x="2" y="86.4">13</text>
+    <text class="step" x="2" y="91.2">14</text>
+    <text class="step" x="2" y="96.0">15</text>
+    <text class="step" x="2" y="100.8">16</text>
+  </g>
+
+  <line class="divider" x1="2" y1="107" x2="38.64" y2="107" />
+
+  <text class="jack" x="6" y="112">CLK</text>
+  <text class="jack" x="14" y="112">RST</text>
+  <text class="jack" x="22" y="112">CV</text>
+  <text class="jack" x="30" y="112">GATE</text>
+
+  <text class="sub" x="20.32" y="126">SITRI EXPANDER</text>
+</svg>

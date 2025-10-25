@@ -18,6 +18,7 @@ extern Model* modelAhriman;
 extern Model* modelLeviathan;
 extern Model* modelSitri;
 extern Model* modelLilith;
+extern Model* modelLilithAdvance;
 
 struct TuringVoltsExpanderMessage {
 	uint8_t bits = 0;

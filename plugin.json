@@ -100,6 +100,16 @@
         "Expander",
         "Clocked"
       ]
+    },
+    {
+      "slug": "LilithAdvance",
+      "name": "Lilith Advance",
+      "description": "16-step expander and standalone lane for Sitri with per-step CV and gate modes.",
+      "tags": [
+        "Sequencer",
+        "Expander",
+        "Clocked"
+      ]
     }
   ]
 }
