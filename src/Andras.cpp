@@ -219,7 +219,7 @@ struct AsymmetricSoftFold {
 
 } // namespace
 
-struct AtaraxicIteritasAlia : Module {
+struct Andras : Module {
         enum ParamIds {
                 PITCH_PARAM,
                 NOISE_PARAM,
@@ -267,7 +267,7 @@ struct AtaraxicIteritasAlia : Module {
         float heldWaveCv = 0.f;
         float heldTimeCv = 0.f;
 
-        AtaraxicIteritasAlia() {
+        Andras() {
                 config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
                 configParam(PITCH_PARAM, -3.f, 3.f, 0.f, "Pitch", " oct");
@@ -362,44 +362,44 @@ struct AtaraxicIteritasAlia : Module {
         }
 };
 
-struct AtaraxicIteritasAliaWidget : ModuleWidget {
-        AtaraxicIteritasAliaWidget(AtaraxicIteritasAlia* module) {
+struct AndrasWidget : ModuleWidget {
+        AndrasWidget(Andras* module) {
                 setModule(module);
-                setPanel(createPanel(asset::plugin(pluginInstance, "res/AtaraxicIteritasAlia.svg")));
+                setPanel(createPanel(asset::plugin(pluginInstance, "res/Andras.svg")));
 
                 addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
                 addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
                 addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
                 addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(14.f, 26.f)), module, AtaraxicIteritasAlia::PITCH_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(47.f, 26.f)), module, AtaraxicIteritasAlia::WAVE_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(14.f, 26.f)), module, Andras::PITCH_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(47.f, 26.f)), module, Andras::WAVE_PARAM));
 
-                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(14.f, 58.f)), module, AtaraxicIteritasAlia::NOISE_PARAM));
-                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(30.5f, 58.f)), module, AtaraxicIteritasAlia::SHAPE_PARAM));
-                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(47.f, 58.f)), module, AtaraxicIteritasAlia::TIME_PARAM));
+                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(14.f, 58.f)), module, Andras::NOISE_PARAM));
+                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(30.5f, 58.f)), module, Andras::SHAPE_PARAM));
+                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(47.f, 58.f)), module, Andras::TIME_PARAM));
 
-                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(14.f, 86.f)), module, AtaraxicIteritasAlia::COMB_PARAM));
-                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(30.5f, 86.f)), module, AtaraxicIteritasAlia::SOFTFOLD_PARAM));
+                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(14.f, 86.f)), module, Andras::COMB_PARAM));
+                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(30.5f, 86.f)), module, Andras::SOFTFOLD_PARAM));
 
-                addParam(createParamCentered<CKSSThree>(mm2px(Vec(47.f, 82.f)), module, AtaraxicIteritasAlia::MODE_PARAM));
-                addParam(createParamCentered<CKSSThreeHorizontal>(mm2px(Vec(30.5f, 108.f)), module, AtaraxicIteritasAlia::RANGE_PARAM));
-                addParam(createParamCentered<TL1105>(mm2px(Vec(47.f, 108.f)), module, AtaraxicIteritasAlia::HOLD_PARAM));
+                addParam(createParamCentered<CKSSThree>(mm2px(Vec(47.f, 82.f)), module, Andras::MODE_PARAM));
+                addParam(createParamCentered<CKSSThreeHorizontal>(mm2px(Vec(30.5f, 108.f)), module, Andras::RANGE_PARAM));
+                addParam(createParamCentered<TL1105>(mm2px(Vec(47.f, 108.f)), module, Andras::HOLD_PARAM));
 
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(12.f, 108.f)), module, AtaraxicIteritasAlia::PITCH_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.f, 108.f)), module, AtaraxicIteritasAlia::NOISE_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(36.f, 108.f)), module, AtaraxicIteritasAlia::COMB_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(48.f, 108.f)), module, AtaraxicIteritasAlia::SHAPE_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(12.f, 108.f)), module, Andras::PITCH_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.f, 108.f)), module, Andras::NOISE_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(36.f, 108.f)), module, Andras::COMB_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(48.f, 108.f)), module, Andras::SHAPE_INPUT));
 
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(12.f, 120.f)), module, AtaraxicIteritasAlia::FOLD_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.f, 120.f)), module, AtaraxicIteritasAlia::WAVE_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(36.f, 120.f)), module, AtaraxicIteritasAlia::TIME_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(48.f, 120.f)), module, AtaraxicIteritasAlia::SYNC_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(12.f, 120.f)), module, Andras::FOLD_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.f, 120.f)), module, Andras::WAVE_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(36.f, 120.f)), module, Andras::TIME_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(48.f, 120.f)), module, Andras::SYNC_INPUT));
 
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(36.f, 126.f)), module, AtaraxicIteritasAlia::SUB_OUTPUT));
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(48.f, 126.f)), module, AtaraxicIteritasAlia::MAIN_OUTPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(36.f, 126.f)), module, Andras::SUB_OUTPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(48.f, 126.f)), module, Andras::MAIN_OUTPUT));
         }
 };
 
-Model* modelAtaraxicIteritasAlia = createModel<AtaraxicIteritasAlia, AtaraxicIteritasAliaWidget>("AtaraxicIteritasAlia");
+Model* modelAndras = createModel<Andras, AndrasWidget>("Andras");
 

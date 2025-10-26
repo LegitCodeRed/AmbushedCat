@@ -139,7 +139,7 @@ struct ToneShaper {
 
 } // namespace
 
-struct BasimilusIteritasAlia : Module {
+struct Kabaddon : Module {
         enum ParamIds {
                 PITCH_PARAM,
                 SPREAD_PARAM,
@@ -201,7 +201,7 @@ struct BasimilusIteritasAlia : Module {
         float kickBodyEnv = 0.f;
         float kickTransientPhase = 0.f;
 
-        BasimilusIteritasAlia() {
+        Kabaddon() {
                 config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
                 configParam(PITCH_PARAM, -3.f, 3.f, 0.f, "Pitch", " oct");
@@ -534,57 +534,57 @@ struct BasimilusIteritasAlia : Module {
         }
 };
 
-struct BasimilusIteritasAliaWidget : ModuleWidget {
-        BasimilusIteritasAliaWidget(BasimilusIteritasAlia* module) {
+struct KabaddonWidget : ModuleWidget {
+        KabaddonWidget(Kabaddon* module) {
                 setModule(module);
-                setPanel(createPanel(asset::plugin(pluginInstance, "res/BasimilusIteritasAlia.svg")));
+                setPanel(createPanel(asset::plugin(pluginInstance, "res/Kabaddon.svg")));
 
                 addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0.f)));
                 addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0.f)));
                 addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
                 addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(14.5f, 26.f)), module, BasimilusIteritasAlia::PITCH_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(30.5f, 21.f)), module, BasimilusIteritasAlia::MORPH_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(46.5f, 26.f)), module, BasimilusIteritasAlia::ATTACK_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(14.5f, 26.f)), module, Kabaddon::PITCH_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(30.5f, 21.f)), module, Kabaddon::MORPH_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(46.5f, 26.f)), module, Kabaddon::ATTACK_PARAM));
 
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(14.5f, 52.f)), module, BasimilusIteritasAlia::SPREAD_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(30.5f, 52.f)), module, BasimilusIteritasAlia::FOLD_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(46.5f, 52.f)), module, BasimilusIteritasAlia::DECAY_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(14.5f, 52.f)), module, Kabaddon::SPREAD_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(30.5f, 52.f)), module, Kabaddon::FOLD_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(46.5f, 52.f)), module, Kabaddon::DECAY_PARAM));
 
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(14.5f, 78.f)), module, BasimilusIteritasAlia::HARMONIC_PARAM));
-                addParam(createParamCentered<TL1105>(mm2px(Vec(30.5f, 78.f)), module, BasimilusIteritasAlia::HIT_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(14.5f, 78.f)), module, Kabaddon::HARMONIC_PARAM));
+                addParam(createParamCentered<TL1105>(mm2px(Vec(30.5f, 78.f)), module, Kabaddon::HIT_PARAM));
 
-                addParam(createParamCentered<CKSSThree>(mm2px(Vec(53.8f, 66.f)), module, BasimilusIteritasAlia::MODE_PARAM));
-                addParam(createParamCentered<CKSSThree>(mm2px(Vec(53.8f, 88.f)), module, BasimilusIteritasAlia::TONE_PARAM));
+                addParam(createParamCentered<CKSSThree>(mm2px(Vec(53.8f, 66.f)), module, Kabaddon::MODE_PARAM));
+                addParam(createParamCentered<CKSSThree>(mm2px(Vec(53.8f, 88.f)), module, Kabaddon::TONE_PARAM));
 
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(11.f, 103.f)), module, BasimilusIteritasAlia::PITCH_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5f, 103.f)), module, BasimilusIteritasAlia::ATTACK_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(38.f, 103.f)), module, BasimilusIteritasAlia::MODE_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(51.5f, 103.f)), module, BasimilusIteritasAlia::TONE_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(11.f, 103.f)), module, Kabaddon::PITCH_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5f, 103.f)), module, Kabaddon::ATTACK_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(38.f, 103.f)), module, Kabaddon::MODE_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(51.5f, 103.f)), module, Kabaddon::TONE_INPUT));
 
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(11.f, 115.f)), module, BasimilusIteritasAlia::SPREAD_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5f, 115.f)), module, BasimilusIteritasAlia::MORPH_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(38.f, 115.f)), module, BasimilusIteritasAlia::DECAY_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(51.5f, 115.f)), module, BasimilusIteritasAlia::HARMONIC_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(11.f, 115.f)), module, Kabaddon::SPREAD_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5f, 115.f)), module, Kabaddon::MORPH_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(38.f, 115.f)), module, Kabaddon::DECAY_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(51.5f, 115.f)), module, Kabaddon::HARMONIC_INPUT));
 
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(11.f, 127.f)), module, BasimilusIteritasAlia::FOLD_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5f, 127.f)), module, BasimilusIteritasAlia::TRIG_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(11.f, 127.f)), module, Kabaddon::FOLD_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5f, 127.f)), module, Kabaddon::TRIG_INPUT));
 
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(38.f, 127.f)), module, BasimilusIteritasAlia::ENV_OUTPUT));
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(51.5f, 127.f)), module, BasimilusIteritasAlia::OUT_OUTPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(38.f, 127.f)), module, Kabaddon::ENV_OUTPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(51.5f, 127.f)), module, Kabaddon::OUT_OUTPUT));
 
-                addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(53.5f, 57.5f)), module, BasimilusIteritasAlia::MODE1_LIGHT));
-                addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(58.f, 66.f)), module, BasimilusIteritasAlia::MODE2_LIGHT));
-                addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(53.5f, 74.5f)), module, BasimilusIteritasAlia::MODE3_LIGHT));
+                addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(53.5f, 57.5f)), module, Kabaddon::MODE1_LIGHT));
+                addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(58.f, 66.f)), module, Kabaddon::MODE2_LIGHT));
+                addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(53.5f, 74.5f)), module, Kabaddon::MODE3_LIGHT));
 
-                addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(53.5f, 83.5f)), module, BasimilusIteritasAlia::TONE1_LIGHT));
-                addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(58.f, 92.f)), module, BasimilusIteritasAlia::TONE2_LIGHT));
-                addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(53.5f, 100.5f)), module, BasimilusIteritasAlia::TONE3_LIGHT));
+                addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(53.5f, 83.5f)), module, Kabaddon::TONE1_LIGHT));
+                addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(58.f, 92.f)), module, Kabaddon::TONE2_LIGHT));
+                addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(53.5f, 100.5f)), module, Kabaddon::TONE3_LIGHT));
         }
 
         void appendContextMenu(Menu* menu) override {
-                BasimilusIteritasAlia* module = getModule<BasimilusIteritasAlia>();
+                Kabaddon* module = getModule<Kabaddon>();
                 if (!module)
                         return;
 
@@ -596,4 +596,4 @@ struct BasimilusIteritasAliaWidget : ModuleWidget {
         }
 };
 
-Model* modelBasimilusIteritasAlia = createModel<BasimilusIteritasAlia, BasimilusIteritasAliaWidget>("BasimilusIteritasAlia");
+Model* modelKabaddon = createModel<Kabaddon, KabaddonWidget>("Kabaddon");

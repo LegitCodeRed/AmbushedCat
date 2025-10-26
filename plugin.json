@@ -46,17 +46,17 @@
       ]
     },
     {
-      "slug": "BasimilusIteritasAlia",
+      "slug": "Kabaddon",
       "name": "Kabaddon",
-      "description": "",
+      "description": "Percussive synthesizer inspired by Basimilus Iteritas Alia with multi-mode spectral synthesis, waveshaping, and kick drum articulation.",
       "tags": [
         "Oscillator"
       ]
     },
     {
-      "slug": "AtaraxicIteritasAlia",
-      "name": "Ataraxic Iteritas Alia",
-      "description": "Massive hybrid tone generator that fuses polyBLEP oscillators, voltage-controlled combing, and evolving LF SR textures for brutal yet controllable timbres.",
+      "slug": "Andras",
+      "name": "Andras",
+      "description": "Massive hybrid tone generator inspired by Ataraxic Iteritas Alia that fuses polyBLEP oscillators, voltage-controlled combing, and evolving LFSR textures for brutal yet controllable timbres.",
       "tags": [
         "Oscillator",
         "Noise"

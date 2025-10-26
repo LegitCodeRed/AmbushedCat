@@ -9,8 +9,8 @@ void init(Plugin* p) {
         p->addModel(modelTuringGateExpander);
         p->addModel(modelTuringVoltsExpander);
         p->addModel(modelTape);
-        p->addModel(modelBasimilusIteritasAlia);
-        p->addModel(modelAtaraxicIteritasAlia);
+        p->addModel(modelKabaddon);
+        p->addModel(modelAndras);
         p->addModel(modelAhriman);
         p->addModel(modelLeviathan);
         p->addModel(modelSitri);
