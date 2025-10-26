@@ -596,7 +596,7 @@ struct NergalAmpWidget : ModuleWidget {
                 constexpr float SIDE_MARGIN = 8.0f;       // left/right margin in mm
                 constexpr float KNOB_X = SIDE_MARGIN;      // left column (knobs)
                 constexpr float CV_X   = W - SIDE_MARGIN - 8.0f;  // right column (CV)
-                constexpr float TOP_LED_Y = 18.375f;         // LED near top
+                constexpr float TOP_LED_Y = 18.375f+2.5f;         // LED near top
                 constexpr float FIRST_ROW_Y = 30.0f;       // first control row
                 constexpr float ROW_STEP = 15.0f;          // vertical spacing
 
