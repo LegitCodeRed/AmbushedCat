@@ -456,11 +456,94 @@ struct LilithBase : rack::engine::Module {
         }
 };
 
+struct BackgroundImage : Widget {
+	std::string imagePath = asset::plugin(pluginInstance, "res/TextureDemonMain.png");
+	widget::SvgWidget* svgWidget;
+
+	BackgroundImage() {
+		// Create & load SVG child safely
+		svgWidget = new widget::SvgWidget();
+		addChild(svgWidget);
+		try {
+			auto svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/Lilith.svg"));
+			if (svg) {
+				svgWidget->setSvg(svg);
+			} else {
+				WARN("SVG returned null: res/Lilith.svg");
+			}
+		} catch (const std::exception& e) {
+			WARN("Exception loading SVG res/Lilith.svg: %s", e.what());
+			// Leave svgWidget with no SVG; still safe to run.
+		}
+        }
+
+	void draw(const DrawArgs& args) override {
+		// Draw background image first
+                std::shared_ptr<Image> image = APP->window->loadImage(imagePath);
+                if (image && box.size.x > 0.f && box.size.y > 0.f) {
+			int w = box.size.x;
+			int h = box.size.y;
+
+			NVGpaint paint = nvgImagePattern(args.vg, 500, 0, w, h, 0.0f, image->handle, 1.0f);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, w, h);
+			nvgFillPaint(args.vg, paint);
+			nvgFill(args.vg);
+		}
+		// SVG will be drawn automatically by the child SvgWidget
+		Widget::draw(args);
+	}
+};
+
+struct BackgroundImageAdvance : Widget {
+	std::string imagePath = asset::plugin(pluginInstance, "res/TextureDemonMain.png");
+	widget::SvgWidget* svgWidget;
+
+	BackgroundImageAdvance() {
+		// Create & load SVG child safely
+		svgWidget = new widget::SvgWidget();
+		addChild(svgWidget);
+		try {
+			auto svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/LilithAdvance.svg"));
+			if (svg) {
+				svgWidget->setSvg(svg);
+			} else {
+				WARN("SVG returned null: res/LilithAdvance.svg");
+			}
+		} catch (const std::exception& e) {
+			WARN("Exception loading SVG res/LilithAdvance.svg: %s", e.what());
+			// Leave svgWidget with no SVG; still safe to run.
+		}
+        }
+
+	void draw(const DrawArgs& args) override {
+		// Draw background image first
+                std::shared_ptr<Image> image = APP->window->loadImage(imagePath);
+                if (image && box.size.x > 0.f && box.size.y > 0.f) {
+			int w = box.size.x;
+			int h = box.size.y;
+
+			NVGpaint paint = nvgImagePattern(args.vg, 700, 0, w, h, 0.0f, image->handle, 1.0f);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, w, h);
+			nvgFillPaint(args.vg, paint);
+			nvgFill(args.vg);
+		}
+		// SVG will be drawn automatically by the child SvgWidget
+		Widget::draw(args);
+	}
+};
+
 template <int NumSteps, typename ModuleType>
 struct LilithWidgetBase : rack::app::ModuleWidget {
         LilithWidgetBase(ModuleType* module, const std::string& panelAsset) {
                 setModule(module);
                 setPanel(createPanel(asset::plugin(pluginInstance, panelAsset)));
+
+                auto bg = new BackgroundImage();
+		bg->box.pos = Vec(0, 0);
+		bg->box.size = box.size;
+		addChild(bg);
 
                 addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
                 addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
@@ -468,11 +551,11 @@ struct LilithWidgetBase : rack::app::ModuleWidget {
                 addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH,
                                                       RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(8.0f, 15.0f)), module,
+                addParam(createParamCentered<Trimpot>(mm2px(Vec(8.0f, 15.0f)), module,
                                                                   ModuleType::STEPS_PARAM));
                 addParam(createParamCentered<Trimpot>(mm2px(Vec(22.0f, 15.0f)), module,
                                                       ModuleType::GATE_PARAM));
-                addChild(createLightCentered<TinyLight<GreenLight>>(mm2px(Vec(32.0f, 15.0f)), module,
+                addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(32.0f, 15.0f)), module,
                                                                     ModuleType::RUN_LIGHT));
 
                 const float rowStart = 26.0f;
@@ -480,13 +563,13 @@ struct LilithWidgetBase : rack::app::ModuleWidget {
                 float rowSpacing = (NumSteps > 1) ? (rowEnd - rowStart) / (NumSteps - 1) : 0.f;
                 for (int i = 0; i < NumSteps; ++i) {
                         float y = rowStart + rowSpacing * i;
-                        addChild(createLightCentered<TinyLight<GreenLight>>(mm2px(Vec(4.0f, y)), module,
+                        addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(4.0f, y)), module,
                                                                           ModuleType::STEP_LIGHT_BASE + i));
                         addParam(createParamCentered<CKSSThree>(mm2px(Vec(11.0f, y)), module,
                                                                 ModuleType::MODE_PARAMS_BASE + i));
                         addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(20.0f, y)), module,
                                                                           ModuleType::CV_PARAMS_BASE + i));
-                        addChild(createLightCentered<TinyLight<YellowLight>>(mm2px(Vec(30.0f, y)), module,
+                        addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(30.0f, y)), module,
                                                                             ModuleType::GATE_LIGHT_BASE + i));
                 }
 
@@ -494,9 +577,9 @@ struct LilithWidgetBase : rack::app::ModuleWidget {
                                                          ModuleType::CLK_INPUT));
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(14.0f, 116.0f)), module,
                                                          ModuleType::RESET_INPUT));
-                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(22.0f, 116.0f)), module,
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(22.0f, 116.0f)), module,
                                                            ModuleType::CV_OUTPUT));
-                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(30.0f, 116.0f)), module,
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(30.0f, 116.0f)), module,
                                                            ModuleType::GATE_OUTPUT));
         }
 };
@@ -521,6 +604,11 @@ struct LilithAdvanceWidget : rack::app::ModuleWidget {
                 setModule(module);
                 setPanel(createPanel(asset::plugin(pluginInstance, "res/LilithAdvance.svg")));
 
+                auto bg = new BackgroundImageAdvance();
+		bg->box.pos = Vec(0, 0);
+		bg->box.size = box.size;
+		addChild(bg);
+
                 addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
                 addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
                 addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
@@ -528,11 +616,11 @@ struct LilithAdvanceWidget : rack::app::ModuleWidget {
                                                       RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
                 // Top controls
-                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(8.0f, 15.0f)), module,
+                addParam(createParamCentered<Trimpot>(mm2px(Vec(8.0f, 15.0f)), module,
                                                                   LilithAdvance::STEPS_PARAM));
                 addParam(createParamCentered<Trimpot>(mm2px(Vec(22.0f, 15.0f)), module,
                                                       LilithAdvance::GATE_PARAM));
-                addChild(createLightCentered<TinyLight<GreenLight>>(mm2px(Vec(73.0f, 15.0f)), module,
+                addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(73.0f, 15.0f)), module,
                                                                     LilithAdvance::RUN_LIGHT));
 
                 // 16 steps arranged in 2 columns of 8 steps each
@@ -542,26 +630,26 @@ struct LilithAdvanceWidget : rack::app::ModuleWidget {
                 // Left column: Steps 1-8
                 for (int i = 0; i < 8; ++i) {
                         float y = rowStart + rowSpacing * i;
-                        addChild(createLightCentered<TinyLight<GreenLight>>(mm2px(Vec(4.0f, y)), module,
+                        addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(4.0f, y)), module,
                                                                           LilithAdvance::STEP_LIGHT_BASE + i));
                         addParam(createParamCentered<CKSSThree>(mm2px(Vec(11.0f, y)), module,
                                                                 LilithAdvance::MODE_PARAMS_BASE + i));
                         addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(20.0f, y)), module,
                                                                           LilithAdvance::CV_PARAMS_BASE + i));
-                        addChild(createLightCentered<TinyLight<YellowLight>>(mm2px(Vec(30.0f, y)), module,
+                        addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(30.0f, y)), module,
                                                                             LilithAdvance::GATE_LIGHT_BASE + i));
                 }
 
                 // Right column: Steps 9-16
                 for (int i = 8; i < 16; ++i) {
                         float y = rowStart + rowSpacing * (i - 8);
-                        addChild(createLightCentered<TinyLight<GreenLight>>(mm2px(Vec(44.0f, y)), module,
+                        addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(44.0f, y)), module,
                                                                           LilithAdvance::STEP_LIGHT_BASE + i));
                         addParam(createParamCentered<CKSSThree>(mm2px(Vec(51.0f, y)), module,
                                                                 LilithAdvance::MODE_PARAMS_BASE + i));
                         addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(60.0f, y)), module,
                                                                           LilithAdvance::CV_PARAMS_BASE + i));
-                        addChild(createLightCentered<TinyLight<YellowLight>>(mm2px(Vec(70.0f, y)), module,
+                        addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(70.0f, y)), module,
                                                                             LilithAdvance::GATE_LIGHT_BASE + i));
                 }
 
@@ -570,9 +658,9 @@ struct LilithAdvanceWidget : rack::app::ModuleWidget {
                                                          LilithAdvance::CLK_INPUT));
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(26.0f, 116.0f)), module,
                                                          LilithAdvance::RESET_INPUT));
-                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(55.0f, 116.0f)), module,
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(55.0f, 116.0f)), module,
                                                            LilithAdvance::CV_OUTPUT));
-                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(69.0f, 116.0f)), module,
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(69.0f, 116.0f)), module,
                                                            LilithAdvance::GATE_OUTPUT));
         }
 };
