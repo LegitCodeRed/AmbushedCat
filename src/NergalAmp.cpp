@@ -576,7 +576,6 @@ struct BackgroundImage : Widget {
 };
 
 struct NergalAmpWidget : ModuleWidget {
-        Vec size;
         NergalAmpWidget(NergalAmp* module) {
                 setModule(module);
                 setPanel(createPanel(asset::plugin(pluginInstance, "res/NergalAmp.svg")));
