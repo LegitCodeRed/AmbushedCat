@@ -1978,6 +1978,36 @@ struct Sitri : rack::engine::Module {
         }
 };
 
+struct BackgroundImage : Widget {
+	std::string imagePath = asset::plugin(pluginInstance, "res/TextureDemonMain.png");
+	widget::SvgWidget* svgWidget;
+
+	BackgroundImage() {
+		// Create SVG widget as a child
+		svgWidget = new widget::SvgWidget();
+		svgWidget->setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Sitri.svg")));
+		addChild(svgWidget);
+	}
+
+	void draw(const DrawArgs& args) override {
+		// Draw background image first
+		std::shared_ptr<Image> image = APP->window->loadImage(imagePath);
+		if (image) {
+			int w = box.size.x;
+			int h = box.size.y;
+
+			NVGpaint paint = nvgImagePattern(args.vg, 50, 0, w, h, 0.0f, image->handle, 1.0f);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, w, h);
+			nvgFillPaint(args.vg, paint);
+			nvgFill(args.vg);
+		}
+
+		// SVG will be drawn automatically by the child SvgWidget
+		Widget::draw(args);
+	}
+};
+
 // -----------------------------------------------------------------------------
 // Widget
 // -----------------------------------------------------------------------------
@@ -1985,60 +2015,87 @@ struct Sitri : rack::engine::Module {
 struct SitriWidget : rack::app::ModuleWidget {
         SitriWidget(Sitri* module) {
                 setModule(module);
-                setPanel(createPanel(asset::plugin(pluginInstance, "res/Sitri.svg")));
+                 // Set panel size (6HP module: 30.48mm width, 128.5mm height)
+                box.size = mm2px(Vec(30.48, 128.5));
 
-                addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
-                addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-                addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-                addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+                auto bg = new BackgroundImage();
+		bg->box.pos = Vec(0, 0);
+		bg->box.size = box.size;
+		addChild(bg);
+
+                // addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+                // addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+                // addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+                // addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
                 // Algorithm sequencer - clean, professional layout
                 // 32HP module = 120.952mm width
 
-                // === ALGORITHM SELECTION ===
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(15.0, 20.0)), module, Sitri::TYPE_PARAM));
+               // --- Layout helpers ----------------------------------------------------------
+                constexpr float COL1 = 6.5f;   // left column (mm)
+                constexpr float COL2 = 16.0f;  // center column (mm) -> panel center on a 6HP (≈30.48mm) panel
+                constexpr float COL3 = 25.5f;  // right column (mm)
 
-                // === CONTROL BUTTONS ===
-                addParam(createParamCentered<VCVButton>(mm2px(Vec(12.0, 30.0)), module, Sitri::RUN_PARAM));
-                addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(12.0, 30.0)), module, Sitri::RUN_LIGHT));
-                addParam(createParamCentered<VCVButton>(mm2px(Vec(20.0, 30.0)), module, Sitri::RESEED_PARAM));
+                auto P = [](float x, float y) { return mm2px(Vec(x, y)); };
 
-                // === SEQUENCE CONTROL ===
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10.0, 38.0)), module, Sitri::STEPS_PARAM));
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(22.0, 38.0)), module, Sitri::OFFSET_PARAM));
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10.0, 50.0)), module, Sitri::DIV_PARAM));
-                addParam(createParamCentered<CKSSThree>(mm2px(Vec(22.0, 50.0)), module, Sitri::DIR_PARAM));
+                // Vertical rhythm (mm). Adjust these together if you tweak overall density.
+                constexpr float Y_TOP      = 18.0f;
+                constexpr float Y_TRANSPORT= 30.0f;
+                constexpr float Y_SEQ_1    = 44.0f;
+                constexpr float Y_SEQ_2    = 56.0f;
+                constexpr float Y_EXPR_1   = 70.0f;
+                constexpr float Y_EXPR_2   = 82.0f;
+                constexpr float Y_QTZ_1    = 96.0f;
+                constexpr float Y_IO_1     = 106.0f;
+                constexpr float Y_IO_2     = 115.0f;
 
-                // === MUSICAL EXPRESSION ===
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10.0, 62.0)), module, Sitri::DENSITY_PARAM));
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(22.0, 62.0)), module, Sitri::ACCENT_PARAM));
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10.0, 74.0)), module, Sitri::GATE_PARAM));
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(22.0, 74.0)), module, Sitri::SWING_PARAM));
+                // === ALGORITHM / MODE (Hero control) ========================================
+                addParam(createParamCentered<RoundBlackKnob>(P(COL1, Y_TOP), module, Sitri::TYPE_PARAM));
 
-                // === QUANTIZER ===
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(10.0, 86.0)), module, Sitri::ROOT_PARAM));
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(22.0, 86.0)), module, Sitri::SCALE_PARAM));
-                addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(16.0, 97.0)), module, Sitri::TRANSPOSE_PARAM));
+                // === TRANSPORT & STATUS ======================================================
+                addParam(createParamCentered<VCVButton>(P(COL1, Y_TRANSPORT), module, Sitri::RUN_PARAM));
+                addChild(createLightCentered<SmallLight<GreenLight>>(P(COL1, Y_TRANSPORT - 5.5f), module, Sitri::RUN_LIGHT)); // tiny LED above RUN
+                addParam(createParamCentered<CKSSThree>(      P(COL2, Y_TRANSPORT), module, Sitri::DIR_PARAM));
 
-                // === CV INPUTS (White ports) ===
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.0, 106.0)), module, Sitri::CLOCK_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(16.0, 106.0)), module, Sitri::RESET_INPUT));
+                addChild(createLightCentered<MediumLight<GreenLight>>(P(COL3, Y_TRANSPORT - 5.5f), module, Sitri::ACTIVE_LIGHT));        // heartbeat/status in the center column
 
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.0, 113.5)), module, Sitri::DENSITY_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(16.0, 113.5)), module, Sitri::ACCENT_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(22.0, 113.5)), module, Sitri::GATE_INPUT));
+                addParam(createParamCentered<LEDButton>(P(COL3, Y_TRANSPORT), module, Sitri::RESEED_PARAM));
 
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.0, 121.0)), module, Sitri::ROOT_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(16.0, 121.0)), module, Sitri::TRANSPOSE_INPUT));
+                // === SEQUENCE CONTROL (2×2 block) ===========================================
+                addParam(createParamCentered<RoundBlackKnob>(P(COL1, Y_SEQ_1), module, Sitri::STEPS_PARAM));
+                addParam(createParamCentered<RoundBlackKnob>(P(COL3, Y_SEQ_1), module, Sitri::OFFSET_PARAM));
+                addParam(createParamCentered<RoundBlackKnob>(P(COL1, Y_SEQ_2), module, Sitri::DIV_PARAM));
+                addParam(createParamCentered<RoundBlackKnob>(P(COL3, Y_SEQ_2), module, Sitri::TRANSPOSE_PARAM));
 
-                // === OUTPUTS (Black ports) ===
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(28.0, 106.0)), module, Sitri::PITCH_OUTPUT));
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(28.0, 113.5)), module, Sitri::GATE_OUTPUT));
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(28.0, 121.0)), module, Sitri::VEL_OUTPUT));
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(22.0, 121.0)), module, Sitri::EOC_OUTPUT));
+                // === MUSICAL EXPRESSION (2×2 block) =========================================
+                addParam(createParamCentered<RoundBlackKnob>(P(COL1, Y_EXPR_1), module, Sitri::DENSITY_PARAM));
+                addParam(createParamCentered<RoundBlackKnob>(P(COL3, Y_EXPR_1), module, Sitri::ACCENT_PARAM));
+                addParam(createParamCentered<RoundBlackKnob>(P(COL1, Y_EXPR_2), module, Sitri::GATE_PARAM));
+                addParam(createParamCentered<RoundBlackKnob>(P(COL3, Y_EXPR_2), module, Sitri::SWING_PARAM));
 
-                // === ACTIVITY INDICATOR ===
-                addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(16.0, 127.0)), module, Sitri::ACTIVE_LIGHT));
+                // === QUANTIZER (paired + center transpose) ==================================
+                addParam(createParamCentered<RoundBlackKnob>(P(COL1, Y_QTZ_1), module, Sitri::ROOT_PARAM));
+                addParam(createParamCentered<RoundBlackKnob>(P(COL3, Y_QTZ_1), module, Sitri::SCALE_PARAM));
+
+
+                // === CV INPUTS (white) – left side ==========================================
+                addInput(createInputCentered<PJ301MPort>(P(COL1, Y_IO_1), module, Sitri::CLOCK_INPUT));
+                addInput(createInputCentered<PJ301MPort>(P(COL2, Y_IO_1), module, Sitri::RESET_INPUT));
+
+                addInput(createInputCentered<PJ301MPort>(P(COL1, Y_IO_2), module, Sitri::DENSITY_INPUT));
+                addInput(createInputCentered<PJ301MPort>(P(COL2, Y_IO_2), module, Sitri::ACCENT_INPUT));
+                addInput(createInputCentered<PJ301MPort>(P(COL3, Y_IO_2), module, Sitri::GATE_INPUT));
+
+                // Extra pitch controls just above the bottom, still on the left half
+                addInput(createInputCentered<PJ301MPort>(P(COL1, Y_IO_2 + 9.0f), module, Sitri::ROOT_INPUT));
+                addInput(createInputCentered<PJ301MPort>(P(COL2, Y_IO_2 + 9.0f), module, Sitri::TRANSPOSE_INPUT));
+
+                // === OUTPUTS (black) – right column =========================================
+                addOutput(createOutputCentered<DarkPJ301MPort>(P(COL3, Y_IO_1), module, Sitri::PITCH_OUTPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(P(COL3, Y_IO_1 + 9.0f), module, Sitri::GATE_OUTPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(P(COL3, Y_IO_2 + 9.0f), module, Sitri::VEL_OUTPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(P(COL3 - 3.5f, Y_IO_2 + 18.0f), module, Sitri::EOC_OUTPUT)); // tucked bottom-right
+
         }
 
         void appendContextMenu(Menu* menu) override {
