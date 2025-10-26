@@ -576,11 +576,10 @@ struct BackgroundImage : Widget {
 };
 
 struct NergalAmpWidget : ModuleWidget {
+        Vec size;
         NergalAmpWidget(NergalAmp* module) {
                 setModule(module);
-
-                // Set panel size (6HP module: 30.48mm width, 128.5mm height)
-                box.size = mm2px(Vec(30.48, 128.5));
+                setPanel(createPanel(asset::plugin(pluginInstance, "res/NergalAmp.svg")));
 
                 auto bg = new BackgroundImage();
 		bg->box.pos = Vec(0, 0);

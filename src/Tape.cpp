@@ -673,19 +673,35 @@ struct Tape : Module {
 
 struct BackgroundImage : Widget {
 	std::string imagePath = asset::plugin(pluginInstance, "res/Rack_Tape.png");
+        std::shared_ptr<Image> bg;
+	widget::SvgWidget* svgWidget;
+
+	BackgroundImage() {
+		// Preload PNG once
+		try {
+			bg = APP->window->loadImage(imagePath);
+			if (!bg) {
+				WARN("Failed to load background image: %s", imagePath.c_str());
+			}
+		} catch (const std::exception& e) {
+			WARN("Exception loading PNG %s: %s", imagePath.c_str(), e.what());
+		}
+        }
 
 	void draw(const DrawArgs& args) override {
-		std::shared_ptr<Image> image = APP->window->loadImage(imagePath);
-		if (image) {
+		// Draw background image first
+                if (bg && box.size.x > 0.f && box.size.y > 0.f) {
 			int w = box.size.x;
 			int h = box.size.y;
 
-			NVGpaint paint = nvgImagePattern(args.vg, 0, 0, w, h, 0.0f, image->handle, 1.0f);
+			NVGpaint paint = nvgImagePattern(args.vg, 0, 0, w, h, 0.0f, bg->handle, 1.0f);
 			nvgBeginPath(args.vg);
 			nvgRect(args.vg, 0, 0, w, h);
 			nvgFillPaint(args.vg, paint);
 			nvgFill(args.vg);
 		}
+		// SVG will be drawn automatically by the child SvgWidget
+		Widget::draw(args);
 	}
 };
 

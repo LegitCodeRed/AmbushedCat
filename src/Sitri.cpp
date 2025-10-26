@@ -1978,31 +1978,51 @@ struct Sitri : rack::engine::Module {
         }
 };
 
+
 struct BackgroundImage : Widget {
 	std::string imagePath = asset::plugin(pluginInstance, "res/TextureDemonMain.png");
+        std::shared_ptr<Image> bg;
 	widget::SvgWidget* svgWidget;
 
 	BackgroundImage() {
-		// Create SVG widget as a child
+		// Preload PNG once
+		try {
+			bg = APP->window->loadImage(imagePath);
+			if (!bg) {
+				WARN("Failed to load background image: %s", imagePath.c_str());
+			}
+		} catch (const std::exception& e) {
+			WARN("Exception loading PNG %s: %s", imagePath.c_str(), e.what());
+		}
+
+		// Create & load SVG child safely
 		svgWidget = new widget::SvgWidget();
-		svgWidget->setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Sitri.svg")));
 		addChild(svgWidget);
-	}
+		try {
+			auto svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/Sitri.svg"));
+			if (svg) {
+				svgWidget->setSvg(svg);
+			} else {
+				WARN("SVG returned null: res/Sitri.svg");
+			}
+		} catch (const std::exception& e) {
+			WARN("Exception loading SVG res/Sitri.svg: %s", e.what());
+			// Leave svgWidget with no SVG; still safe to run.
+		}
+        }
 
 	void draw(const DrawArgs& args) override {
 		// Draw background image first
-		std::shared_ptr<Image> image = APP->window->loadImage(imagePath);
-		if (image) {
+                if (bg && box.size.x > 0.f && box.size.y > 0.f) {
 			int w = box.size.x;
 			int h = box.size.y;
 
-			NVGpaint paint = nvgImagePattern(args.vg, 50, 0, w, h, 0.0f, image->handle, 1.0f);
+			NVGpaint paint = nvgImagePattern(args.vg, 0, 0, w, h, 0.0f, bg->handle, 1.0f);
 			nvgBeginPath(args.vg);
 			nvgRect(args.vg, 0, 0, w, h);
 			nvgFillPaint(args.vg, paint);
 			nvgFill(args.vg);
 		}
-
 		// SVG will be drawn automatically by the child SvgWidget
 		Widget::draw(args);
 	}
@@ -2016,7 +2036,7 @@ struct SitriWidget : rack::app::ModuleWidget {
         SitriWidget(Sitri* module) {
                 setModule(module);
                  // Set panel size (6HP module: 30.48mm width, 128.5mm height)
-                box.size = mm2px(Vec(30.48, 128.5));
+                setPanel(createPanel(asset::plugin(pluginInstance, "res/Sitri.svg")));
 
                 auto bg = new BackgroundImage();
 		bg->box.pos = Vec(0, 0);
@@ -2029,7 +2049,6 @@ struct SitriWidget : rack::app::ModuleWidget {
                 // addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
                 // Algorithm sequencer - clean, professional layout
-                // 32HP module = 120.952mm width
 
                // --- Layout helpers ----------------------------------------------------------
                 constexpr float COL1 = 6.5f;   // left column (mm)
@@ -2055,7 +2074,7 @@ struct SitriWidget : rack::app::ModuleWidget {
                 // === TRANSPORT & STATUS ======================================================
                 addParam(createParamCentered<VCVButton>(P(COL1, Y_TRANSPORT), module, Sitri::RUN_PARAM));
                 addChild(createLightCentered<SmallLight<GreenLight>>(P(COL1, Y_TRANSPORT - 5.5f), module, Sitri::RUN_LIGHT)); // tiny LED above RUN
-                addParam(createParamCentered<CKSSThree>(      P(COL2, Y_TRANSPORT), module, Sitri::DIR_PARAM));
+                addParam(createParamCentered<CKSSThree>(P(COL2, Y_TRANSPORT), module, Sitri::DIR_PARAM));
 
                 addChild(createLightCentered<MediumLight<GreenLight>>(P(COL3, Y_TRANSPORT - 5.5f), module, Sitri::ACTIVE_LIGHT));        // heartbeat/status in the center column
 
@@ -2095,7 +2114,6 @@ struct SitriWidget : rack::app::ModuleWidget {
                 addOutput(createOutputCentered<DarkPJ301MPort>(P(COL3, Y_IO_1 + 9.0f), module, Sitri::GATE_OUTPUT));
                 addOutput(createOutputCentered<DarkPJ301MPort>(P(COL3, Y_IO_2 + 9.0f), module, Sitri::VEL_OUTPUT));
                 addOutput(createOutputCentered<DarkPJ301MPort>(P(COL3 - 3.5f, Y_IO_2 + 18.0f), module, Sitri::EOC_OUTPUT)); // tucked bottom-right
-
         }
 
         void appendContextMenu(Menu* menu) override {

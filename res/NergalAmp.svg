@@ -9,6 +9,7 @@
    inkscape:version="1.2.2 (732a01da63, 2022-12-09)"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
    xmlns="http://www.w3.org/2000/svg"
    xmlns:svg="http://www.w3.org/2000/svg">
   <sodipodi:namedview
@@ -22,9 +23,9 @@
      inkscape:deskcolor="#505050"
      inkscape:document-units="mm"
      showgrid="false"
-     inkscape:zoom="2.1146077"
-     inkscape:cx="57.693918"
-     inkscape:cy="167.87984"
+     inkscape:zoom="4.2292154"
+     inkscape:cx="121.53555"
+     inkscape:cy="205.47546"
      inkscape:window-width="1920"
      inkscape:window-height="1009"
      inkscape:window-x="5112"
@@ -57,6 +58,24 @@
       .divider { stroke: #5c4d8a; stroke-width: 0.35; opacity: 0.6; }
       .indicator { fill: #3c2a64; stroke: #8d7bd1; stroke-width: 0.2; }
     ]]></style>
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient3302"
+       id="linearGradient3304"
+       x1="0.086062297"
+       y1="190.02573"
+       x2="115.26184"
+       y2="190.02573"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="matrix(0.26458333,0,0,0.33681606,-15.172157,-10.211888)" />
+    <linearGradient
+       id="linearGradient3302"
+       inkscape:swatch="solid">
+      <stop
+         style="stop-color:#000000;stop-opacity:1;"
+         offset="0"
+         id="stop3300" />
+    </linearGradient>
   </defs>
   <g
      transform="translate(15.24,10.645834)"
@@ -106,5 +125,16 @@
        cy="10.229164"
        r="2.4000001"
        id="circle3302" />
+    <rect
+       width="30.473591"
+       height="128.09999"
+       fill="none"
+       rx="0.74984229"
+       ry="1.9937742"
+       id="rect2506"
+       x="-15.149386"
+       y="-10.258151"
+       style="display:inline;fill:none;fill-opacity:1;stroke:url(#linearGradient3304);stroke-width:1"
+       sodipodi:insensitive="true" />
   </g>
 </svg>
