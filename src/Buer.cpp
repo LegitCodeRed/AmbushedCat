@@ -139,7 +139,7 @@ struct BackgroundImage : Widget {
 			int w = box.size.x;
 			int h = box.size.y;
 
-			NVGpaint paint = nvgImagePattern(args.vg, 250, 0, w, h, 0.0f, image->handle, 1.0f);
+			NVGpaint paint = nvgImagePattern(args.vg, 0, 0, w, h, 0.0f, image->handle, 1.0f);
 			nvgBeginPath(args.vg);
 			nvgRect(args.vg, 0, 0, w, h);
 			nvgFillPaint(args.vg, paint);
@@ -169,8 +169,8 @@ struct BuerWidget : rack::app::ModuleWidget {
                 const float columnXs[4] = {14.0f, 33.0f, 52.0f, 71.0f};
 
                 for (int row = 0; row < 4; ++row) {
-                        float knobY = 24.0f + 16.0f * row;
-                        float jackY = 33.5f + 16.0f * row;
+                        float knobY = 6.0f + 14.0f * (row * 1.1);
+                        float jackY = 14.0f + 14.0f * (row * 1.1);
                         for (int col = 0; col < 4; ++col) {
                                 int index = row * 4 + col;
                                 addParam(createParamCentered<Trimpot>(mm2px(Vec(columnXs[col], knobY)), module,
@@ -181,8 +181,8 @@ struct BuerWidget : rack::app::ModuleWidget {
                 }
 
                 for (int row = 0; row < 4; ++row) {
-                        float knobY = 90.0f + 16.0f * row;
-                        float jackY = 99.5f + 16.0f * row;
+                        float knobY = 68.0f + 14.0f * (row * 1.1);
+                        float jackY = 76.0f + 14.0f * (row * 1.1);
                         for (int col = 0; col < 4; ++col) {
                                 int index = row * 4 + col;
                                 addParam(createParamCentered<Trimpot>(mm2px(Vec(columnXs[col], knobY)), module,
