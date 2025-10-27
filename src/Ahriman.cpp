@@ -453,10 +453,55 @@ struct Ahriman : Module {
         }
 };
 
+struct BackgroundImage : Widget {
+	std::string imagePath = asset::plugin(pluginInstance, "res/TextureDemonMain.png");
+	widget::SvgWidget* svgWidget;
+
+	BackgroundImage() {
+		// Create & load SVG child safely
+		svgWidget = new widget::SvgWidget();
+		addChild(svgWidget);
+		try {
+			auto svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/Ahriman.svg"));
+			if (svg) {
+				svgWidget->setSvg(svg);
+			} else {
+				WARN("SVG returned null: res/Ahriman.svg");
+			}
+		} catch (const std::exception& e) {
+			WARN("Exception loading SVG res/Ahriman.svg: %s", e.what());
+			// Leave svgWidget with no SVG; still safe to run.
+		}
+        }
+
+	void draw(const DrawArgs& args) override {
+		// Draw background image first
+                std::shared_ptr<Image> image = APP->window->loadImage(imagePath);
+                if (image && box.size.x > 0.f && box.size.y > 0.f) {
+			int w = box.size.x;
+			int h = box.size.y;
+
+			NVGpaint paint = nvgImagePattern(args.vg, 250, 0, w, h, 0.0f, image->handle, 1.0f);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, w, h);
+			nvgFillPaint(args.vg, paint);
+			nvgFill(args.vg);
+		}
+		// SVG will be drawn automatically by the child SvgWidget
+		Widget::draw(args);
+	}
+};
+
 struct AhrimanWidget : ModuleWidget {
         AhrimanWidget(Ahriman *module) {
                 setModule(module);
                 setPanel(createPanel(asset::plugin(pluginInstance, "res/Ahriman.svg")));
+
+                auto bg = new BackgroundImage();
+		bg->box.pos = Vec(0, 0);
+		bg->box.size = box.size;
+		addChild(bg);
+
 
                 addChild(createWidget<ScrewSilver>(mm2px(Vec(1.5f, 1.5f))));
                 addChild(createWidget<ScrewSilver>(mm2px(Vec(1.5f, 125.5f))));

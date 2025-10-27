@@ -534,53 +534,105 @@ struct Kabaddon : Module {
         }
 };
 
+struct BackgroundImage : Widget {
+	std::string imagePath = asset::plugin(pluginInstance, "res/TextureDemonMain.png");
+	widget::SvgWidget* svgWidget;
+
+	BackgroundImage() {
+		// Create & load SVG child safely
+		svgWidget = new widget::SvgWidget();
+		addChild(svgWidget);
+		try {
+			auto svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/Kabaddon.svg"));
+			if (svg) {
+				svgWidget->setSvg(svg);
+			} else {
+				WARN("SVG returned null: res/Kabaddon.svg");
+			}
+		} catch (const std::exception& e) {
+			WARN("Exception loading SVG res/Kabaddon.svg: %s", e.what());
+			// Leave svgWidget with no SVG; still safe to run.
+		}
+        }
+
+	void draw(const DrawArgs& args) override {
+		// Draw background image first
+                std::shared_ptr<Image> image = APP->window->loadImage(imagePath);
+                if (image && box.size.x > 0.f && box.size.y > 0.f) {
+			int w = box.size.x;
+			int h = box.size.y;
+
+			NVGpaint paint = nvgImagePattern(args.vg, 250, 0, w, h, 0.0f, image->handle, 1.0f);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, w, h);
+			nvgFillPaint(args.vg, paint);
+			nvgFill(args.vg);
+		}
+		// SVG will be drawn automatically by the child SvgWidget
+		Widget::draw(args);
+	}
+};
+
 struct KabaddonWidget : ModuleWidget {
         KabaddonWidget(Kabaddon* module) {
                 setModule(module);
                 setPanel(createPanel(asset::plugin(pluginInstance, "res/Kabaddon.svg")));
+
+                auto bg = new BackgroundImage();
+		bg->box.pos = Vec(0, 0);
+		bg->box.size = box.size;
+		addChild(bg);
 
                 addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0.f)));
                 addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0.f)));
                 addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
                 addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(14.5f, 26.f)), module, Kabaddon::PITCH_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(30.5f, 21.f)), module, Kabaddon::MORPH_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(46.5f, 26.f)), module, Kabaddon::ATTACK_PARAM));
+                // Top row - large knobs
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(14.5f, 25.f)), module, Kabaddon::PITCH_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(30.5f, 25.f)), module, Kabaddon::MORPH_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(46.5f, 25.f)), module, Kabaddon::ATTACK_PARAM));
 
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(14.5f, 52.f)), module, Kabaddon::SPREAD_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(30.5f, 52.f)), module, Kabaddon::FOLD_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(46.5f, 52.f)), module, Kabaddon::DECAY_PARAM));
+                // Mid row - large knobs
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(14.5f, 50.f)), module, Kabaddon::SPREAD_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(30.5f, 50.f)), module, Kabaddon::FOLD_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(46.5f, 50.f)), module, Kabaddon::DECAY_PARAM));
 
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(14.5f, 78.f)), module, Kabaddon::HARMONIC_PARAM));
-                addParam(createParamCentered<TL1105>(mm2px(Vec(30.5f, 78.f)), module, Kabaddon::HIT_PARAM));
+                // Bottom row - knob and button
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(14.5f, 76.f)), module, Kabaddon::HARMONIC_PARAM));
+                addParam(createParamCentered<TL1105>(mm2px(Vec(30.5f, 76.f)), module, Kabaddon::HIT_PARAM));
 
-                addParam(createParamCentered<CKSSThree>(mm2px(Vec(53.8f, 66.f)), module, Kabaddon::MODE_PARAM));
-                addParam(createParamCentered<CKSSThree>(mm2px(Vec(53.8f, 88.f)), module, Kabaddon::TONE_PARAM));
+                // Mode and Tone switches (in side panel)
+                addParam(createParamCentered<CKSSThree>(mm2px(Vec(53.f, 72.5f)), module, Kabaddon::MODE_PARAM));
+                addParam(createParamCentered<CKSSThree>(mm2px(Vec(53.f, 85.5f)), module, Kabaddon::TONE_PARAM));
 
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(11.f, 103.f)), module, Kabaddon::PITCH_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5f, 103.f)), module, Kabaddon::ATTACK_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(38.f, 103.f)), module, Kabaddon::MODE_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(51.5f, 103.f)), module, Kabaddon::TONE_INPUT));
+                // CV Input Row 1
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(11.f, 95.f)), module, Kabaddon::PITCH_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5f, 95.f)), module, Kabaddon::ATTACK_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(38.f, 95.f)), module, Kabaddon::MODE_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(51.5f, 95.f)), module, Kabaddon::TONE_INPUT));
 
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(11.f, 115.f)), module, Kabaddon::SPREAD_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5f, 115.f)), module, Kabaddon::MORPH_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(38.f, 115.f)), module, Kabaddon::DECAY_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(51.5f, 115.f)), module, Kabaddon::HARMONIC_INPUT));
+                // CV Input Row 2
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(11.f, 107.f)), module, Kabaddon::SPREAD_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5f, 107.f)), module, Kabaddon::MORPH_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(38.f, 107.f)), module, Kabaddon::DECAY_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(51.5f, 107.f)), module, Kabaddon::HARMONIC_INPUT));
 
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(11.f, 127.f)), module, Kabaddon::FOLD_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5f, 127.f)), module, Kabaddon::TRIG_INPUT));
+                // Output Row
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(11.f, 119.f)), module, Kabaddon::FOLD_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5f, 119.f)), module, Kabaddon::TRIG_INPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(38.f, 119.f)), module, Kabaddon::ENV_OUTPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(51.5f, 119.f)), module, Kabaddon::OUT_OUTPUT));
 
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(38.f, 127.f)), module, Kabaddon::ENV_OUTPUT));
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(51.5f, 127.f)), module, Kabaddon::OUT_OUTPUT));
+                // Mode indicator lights
+                addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(46.f, 70.f)), module, Kabaddon::MODE3_LIGHT));
+                addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(46.f, 73.f)), module, Kabaddon::MODE2_LIGHT));
+                addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(46.f, 76.f)), module, Kabaddon::MODE1_LIGHT));
 
-                addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(53.5f, 57.5f)), module, Kabaddon::MODE1_LIGHT));
-                addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(58.f, 66.f)), module, Kabaddon::MODE2_LIGHT));
-                addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(53.5f, 74.5f)), module, Kabaddon::MODE3_LIGHT));
-
-                addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(53.5f, 83.5f)), module, Kabaddon::TONE1_LIGHT));
-                addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(58.f, 92.f)), module, Kabaddon::TONE2_LIGHT));
-                addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(53.5f, 100.5f)), module, Kabaddon::TONE3_LIGHT));
+                // Tone indicator lights
+                addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(Vec(46.f, 83.f)), module, Kabaddon::TONE3_LIGHT));
+                addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(46.f, 86.f)), module, Kabaddon::TONE2_LIGHT));
+                addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(46.f, 89.f)), module, Kabaddon::TONE1_LIGHT));
         }
 
         void appendContextMenu(Menu* menu) override {

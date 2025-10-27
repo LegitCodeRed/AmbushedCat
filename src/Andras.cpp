@@ -362,42 +362,95 @@ struct Andras : Module {
         }
 };
 
+struct BackgroundImage : Widget {
+	std::string imagePath = asset::plugin(pluginInstance, "res/TextureDemonMain.png");
+	widget::SvgWidget* svgWidget;
+
+	BackgroundImage() {
+		// Create & load SVG child safely
+		svgWidget = new widget::SvgWidget();
+		addChild(svgWidget);
+		try {
+			auto svg = APP->window->loadSvg(asset::plugin(pluginInstance, "res/Andras.svg"));
+			if (svg) {
+				svgWidget->setSvg(svg);
+			} else {
+				WARN("SVG returned null: res/Andras.svg");
+			}
+		} catch (const std::exception& e) {
+			WARN("Exception loading SVG res/Andras.svg: %s", e.what());
+			// Leave svgWidget with no SVG; still safe to run.
+		}
+        }
+
+	void draw(const DrawArgs& args) override {
+		// Draw background image first
+                std::shared_ptr<Image> image = APP->window->loadImage(imagePath);
+                if (image && box.size.x > 0.f && box.size.y > 0.f) {
+			int w = box.size.x;
+			int h = box.size.y;
+
+			NVGpaint paint = nvgImagePattern(args.vg, 250, 0, w, h, 0.0f, image->handle, 1.0f);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, w, h);
+			nvgFillPaint(args.vg, paint);
+			nvgFill(args.vg);
+		}
+		// SVG will be drawn automatically by the child SvgWidget
+		Widget::draw(args);
+	}
+};
+
 struct AndrasWidget : ModuleWidget {
         AndrasWidget(Andras* module) {
                 setModule(module);
                 setPanel(createPanel(asset::plugin(pluginInstance, "res/Andras.svg")));
+
+                auto bg = new BackgroundImage();
+		bg->box.pos = Vec(0, 0);
+		bg->box.size = box.size;
+		addChild(bg);
 
                 addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
                 addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
                 addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
                 addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
+                // Top row - large knobs
                 addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(14.f, 26.f)), module, Andras::PITCH_PARAM));
                 addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(47.f, 26.f)), module, Andras::WAVE_PARAM));
 
-                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(14.f, 58.f)), module, Andras::NOISE_PARAM));
-                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(30.5f, 58.f)), module, Andras::SHAPE_PARAM));
-                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(47.f, 58.f)), module, Andras::TIME_PARAM));
+                // Mid row 1 - small knobs
+                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(14.f, 51.f)), module, Andras::NOISE_PARAM));
+                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(30.5f, 51.f)), module, Andras::SHAPE_PARAM));
+                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(47.f, 51.f)), module, Andras::TIME_PARAM));
 
-                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(14.f, 86.f)), module, Andras::COMB_PARAM));
-                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(30.5f, 86.f)), module, Andras::SOFTFOLD_PARAM));
+                // Mid row 2 - small knobs
+                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(14.f, 79.f)), module, Andras::COMB_PARAM));
+                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(30.5f, 79.f)), module, Andras::SOFTFOLD_PARAM));
 
-                addParam(createParamCentered<CKSSThree>(mm2px(Vec(47.f, 82.f)), module, Andras::MODE_PARAM));
-                addParam(createParamCentered<CKSSThreeHorizontal>(mm2px(Vec(30.5f, 108.f)), module, Andras::RANGE_PARAM));
-                addParam(createParamCentered<TL1105>(mm2px(Vec(47.f, 108.f)), module, Andras::HOLD_PARAM));
+                // Mode switch (vertical 3-position)
+                addParam(createParamCentered<CKSSThree>(mm2px(Vec(49.f, 82.f)), module, Andras::MODE_PARAM));
 
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(12.f, 108.f)), module, Andras::PITCH_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.f, 108.f)), module, Andras::NOISE_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(36.f, 108.f)), module, Andras::COMB_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(48.f, 108.f)), module, Andras::SHAPE_INPUT));
+                // Bottom controls
+                addParam(createParamCentered<CKSSThreeHorizontal>(mm2px(Vec(18.f, 101.f)), module, Andras::RANGE_PARAM));
+                addParam(createParamCentered<TL1105>(mm2px(Vec(49.f, 101.f)), module, Andras::HOLD_PARAM));
 
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(12.f, 120.f)), module, Andras::FOLD_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.f, 120.f)), module, Andras::WAVE_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(36.f, 120.f)), module, Andras::TIME_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(48.f, 120.f)), module, Andras::SYNC_INPUT));
+                // CV Input Row 1
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(6.f, 112.f)), module, Andras::PITCH_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(18.f, 112.f)), module, Andras::NOISE_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(30.f, 112.f)), module, Andras::COMB_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(42.f, 112.f)), module, Andras::SHAPE_INPUT));
 
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(36.f, 126.f)), module, Andras::SUB_OUTPUT));
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(48.f, 126.f)), module, Andras::MAIN_OUTPUT));
+                // CV Input Row 2
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(6.f, 120.f)), module, Andras::FOLD_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(18.f, 120.f)), module, Andras::WAVE_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(30.f, 120.f)), module, Andras::TIME_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(42.f, 120.f)), module, Andras::SYNC_INPUT));
+
+                // Output Row
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(52.f, 112.f)), module, Andras::SUB_OUTPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(52.f, 120.f)), module, Andras::MAIN_OUTPUT));
         }
 };
 
