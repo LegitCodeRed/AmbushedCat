@@ -12,64 +12,63 @@
       .divider { stroke: #434750; stroke-width: 0.25; stroke-linecap: round; }
     </style>
   </defs>
+
   <!-- Background -->
   <rect width="50.8" height="128.5" fill="url(#panelGradient)" rx="2" ry="2" />
 
   <!-- Header -->
-  <text class="title" x="25.4" y="8.5" text-anchor="middle">AHRIMAN</text>
-  <text class="subtitle" x="25.4" y="12">MULTI-FX REVERB</text>
+  <text class="title" x="25.4" y="6.4" text-anchor="middle">AHRIMAN</text>
+  <text class="subtitle" x="25.4" y="9.9">MULTI-FX REVERB</text>
+  <line class="divider" x1="3" y1="14" x2="47.8" y2="14" />
 
-  <!-- Top blend section -->
-  <rect x="2" y="13" width="46.8" height="6" fill="#202228" stroke="#3a3d46" stroke-width="0.4" rx="1.2" />
-  <text class="label" x="25.4" y="18.2">BLEND</text>
+  <!-- Blend Section -->
+  <text class="label" x="25.4" y="19">BLEND</text>
+  <text class="jack" x="8.5" y="25" style="font-size: 2px;">CV</text>
+  <line class="divider" x1="3" y1="27" x2="47.8" y2="27" />
 
-  <line class="divider" x1="3" y1="32" x2="47.8" y2="32" />
+  <!-- Controls Row 1: TONE / REGEN -->
+  <text class="label" x="16.5" y="32">TONE</text>
+  <text class="label" x="34.3" y="32">REGEN</text>
+  <text class="jack" x="8.5" y="41" style="font-size: 2px;">CV</text>
+  <text class="jack" x="42.3" y="41" style="font-size: 2px;">CV</text>
+  <line class="divider" x1="3" y1="43" x2="47.8" y2="43" />
 
-  <!-- Controls Row 1 -->
-  <text class="label" x="16.5" y="38">TONE</text>
-  <text class="label" x="34.3" y="38">REGEN</text>
+  <!-- Controls Row 2: SPEED / INDEX -->
+  <text class="label" x="16.5" y="48">SPEED</text>
+  <text class="label" x="34.3" y="48">INDEX</text>
+  <text class="jack" x="8.5" y="57" style="font-size: 2px;">CV</text>
+  <text class="jack" x="42.3" y="57" style="font-size: 2px;">CV</text>
+  <line class="divider" x1="3" y1="59" x2="47.8" y2="59" />
 
-  <line class="divider" x1="3" y1="55" x2="47.8" y2="55" />
-
-  <!-- Controls Row 2 -->
-  <text class="label" x="16.5" y="61">SPEED</text>
-  <text class="label" x="34.3" y="61">INDEX</text>
-
-  <line class="divider" x1="3" y1="73" x2="47.8" y2="73" />
-
-  <!-- Controls Row 3 -->
-  <text class="label" x="16.5" y="79">SIZE</text>
-  <text class="label" x="34.3" y="79">DENSE</text>
-
-  <line class="divider" x1="3" y1="91" x2="47.8" y2="91" />
+  <!-- Controls Row 3: SIZE / DENSE -->
+  <text class="label" x="16.5" y="64">SIZE</text>
+  <text class="label" x="34.3" y="64">DENSE</text>
+  <text class="jack" x="8.5" y="73" style="font-size: 2px;">CV</text>
+  <text class="jack" x="42.3" y="73" style="font-size: 2px;">CV</text>
+  <line class="divider" x1="3" y1="75" x2="47.8" y2="75" />
 
   <!-- FSU Section -->
-  <rect x="18" y="91.5" width="14.8" height="5" fill="#202228" stroke="#3a3d46" stroke-width="0.3" rx="1" />
-  <text class="label" x="25.4" y="95.8">FSU</text>
-
-  <line class="divider" x1="3" y1="97" x2="47.8" y2="97" />
+  <rect x="18" y="75.5" width="14.8" height="7" fill="#202228" stroke="#3a3d46" stroke-width="0.3" rx="1" />
+  <text class="label" x="25.4" y="79.8">FSU</text>
+  <text class="jack" x="42.3" y="80" style="font-size: 2px;">GATE</text>
+  <line class="divider" x1="3" y1="83" x2="47.8" y2="83" />
 
   <!-- Mode/Response Section -->
-  <rect x="18" y="97.5" width="14.8" height="17" fill="#202228" stroke="#3a3d46" stroke-width="0.3" rx="1" />
-  <text class="subtitle" x="25.4" y="101.5">MODE</text>
-  <text class="jack" x="25.4" y="104.5" style="font-size: 1.9px;">HALL</text>
-  <text class="jack" x="25.4" y="107.5" style="font-size: 1.9px;">PLATE</text>
-  <text class="jack" x="25.4" y="110.5" style="font-size: 1.9px;">SHIMMER</text>
-
-  <line class="divider" x1="19" y1="111.5" x2="31.8" y2="111.5" />
-
-  <text class="subtitle" x="25.4" y="114.2">RESPONSE</text>
-
-  <line class="divider" x1="3" y1="115" x2="47.8" y2="115" />
+  <rect x="6" y="83.5" width="38.8" height="26" fill="#202228" stroke="#3a3d46" stroke-width="0.3" rx="1" />
+  <text class="subtitle" x="25.4" y="88">MODE</text>
+  <text class="jack" x="25.4" y="92" style="font-size: 1.9px;">HALL</text>
+  <text class="jack" x="25.4" y="96.5" style="font-size: 1.9px;">PLATE</text>
+  <text class="jack" x="25.4" y="101" style="font-size: 1.9px;">SHIMMER</text>
+  <line class="divider" x1="7" y1="102.5" x2="43.8" y2="102.5" />
+  <text class="subtitle" x="25.4" y="106.5">RESPONSE</text>
+  <line class="divider" x1="3" y1="110" x2="47.8" y2="110" />
 
   <!-- I/O Section -->
-  <text class="jack" x="12.5" y="120">In L</text>
-  <text class="jack" x="38.3" y="120">In R</text>
-
-  <line class="divider" x1="3" y1="121.5" x2="47.8" y2="121.5" />
-
-  <text class="jack" x="12.5" y="126">Out L</text>
-  <text class="jack" x="38.3" y="126">Out R</text>
+  <text class="jack" x="12.5" y="115">In L</text>
+  <text class="jack" x="38.3" y="115">In R</text>
+  <line class="divider" x1="3" y1="118" x2="47.8" y2="118" />
+  <text class="jack" x="12.5" y="123">Out L</text>
+  <text class="jack" x="38.3" y="123">Out R</text>
 
   <!-- Footer -->
   <text class="subtitle" x="25.4" y="127">AMBUSHED CAT DSP</text>
