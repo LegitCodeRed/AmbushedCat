@@ -648,44 +648,56 @@ struct LeviathanWidget : ModuleWidget {
                 addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(30.0, 13.0)), module, Leviathan::BOOT_RIGHT_CENTER_LIGHT));
                 addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(37.0, 13.0)), module, Leviathan::BOOT_RIGHT_LIGHT));
 
-                // Row 1: BLEND / FOLD
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(12.0, 23.0)), module, Leviathan::BLEND_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(38.8, 23.0)), module, Leviathan::FOLD_PARAM));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5, 23.5)), module, Leviathan::BLEND_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(47.0, 23.5)), module, Leviathan::FOLD_CV_INPUT));
+                // === MAIN KNOB SECTION ===
+                // Row 1: BLEND / FOLD (y=23mm)
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(13.0, 23.0)), module, Leviathan::BLEND_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(37.8, 23.0)), module, Leviathan::FOLD_PARAM));
 
-                // Row 2: CENTER / DOOM
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(12.0, 37.0)), module, Leviathan::CENTER_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(38.8, 37.0)), module, Leviathan::DOOM_PARAM));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5, 39.5)), module, Leviathan::CENTER_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(47.0, 39.5)), module, Leviathan::DOOM_CV_INPUT));
+                // Row 2: CENTER / DOOM (y=36mm)
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(13.0, 36.0)), module, Leviathan::CENTER_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(37.8, 36.0)), module, Leviathan::DOOM_PARAM));
 
-                // Row 3: PHASE / DRIVE
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(12.0, 52.0)), module, Leviathan::PHASE_PARAM));
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(38.8, 52.0)), module, Leviathan::DRIVE_PARAM));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5, 55.5)), module, Leviathan::PHASE_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(47.0, 55.5)), module, Leviathan::DRIVE_CV_INPUT));
+                // Row 3: PHASE / DRIVE (y=49mm)
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(13.0, 49.0)), module, Leviathan::PHASE_PARAM));
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(37.8, 49.0)), module, Leviathan::DRIVE_PARAM));
 
-                // Row 4: 8VIZE
-                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(12.0, 68.0)), module, Leviathan::RECTIFY_PARAM));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(24.5, 71.5)), module, Leviathan::RECTIFY_CV_INPUT));
+                // Row 4: 8VIZE (y=62mm)
+                addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(13.0, 62.0)), module, Leviathan::RECTIFY_PARAM));
 
-                // Audio I/O Left
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.0, 78.5)), module, Leviathan::IN_L_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(16.0, 78.5)), module, Leviathan::IN_R_INPUT));
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(8.0, 85.5)), module, Leviathan::OUT_L_OUTPUT));
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(16.0, 85.5)), module, Leviathan::OUT_R_OUTPUT));
+                // === SWITCHES & BUTTON SECTION ===
+                // FLOW / NOTCH switches (y=67mm and 75mm)
+                addParam(createParamCentered<CKSSThree>(mm2px(Vec(37.8, 63.0)), module, Leviathan::FLOW_PARAM));
+                addParam(createParamCentered<CKSSThree>(mm2px(Vec(37.8, 77.0)), module, Leviathan::NOTCH_PARAM));
 
-                // Switch section
-                addParam(createParamCentered<CKSSThree>(mm2px(Vec(35.9, 87.0)), module, Leviathan::FLOW_PARAM));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(44.5, 78.5)), module, Leviathan::FLOW_CV_INPUT));
+                // SMOOSH button (y=83mm)
+                addParam(createParamCentered<TL1105>(mm2px(Vec(25.4, 76.0)), module, Leviathan::SMOOSH_PARAM));
+                addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(25.4, 82.0)), module, Leviathan::SMOOSH_LIGHT));
 
-                addParam(createParamCentered<CKSSThree>(mm2px(Vec(35.9, 101.5)), module, Leviathan::NOTCH_PARAM));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(44.5, 98.5)), module, Leviathan::NOTCH_CV_INPUT));
+                // === CV INPUT SECTION (Bottom area, grouped) ===
+                // Row 1 CVs (y=96mm)
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.5, 92.0)), module, Leviathan::BLEND_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(17.5, 92.0)), module, Leviathan::FOLD_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(33.3, 92.0)), module, Leviathan::CENTER_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(42.3, 92.0)), module, Leviathan::DOOM_CV_INPUT));
 
-                addParam(createParamCentered<TL1105>(mm2px(Vec(35.9, 111.5)), module, Leviathan::SMOOSH_PARAM));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(44.5, 111.5)), module, Leviathan::SMOOSH_GATE_INPUT));
-                addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(27.0, 111.5)), module, Leviathan::SMOOSH_LIGHT));
+                // Row 2 CVs (y=105mm)
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.5, 101.0)), module, Leviathan::PHASE_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(17.5, 101.0)), module, Leviathan::DRIVE_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(33.3, 101.0)), module, Leviathan::RECTIFY_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(42.3, 101.0)), module, Leviathan::FLOW_CV_INPUT));
+
+                // Row 3 CVs (y=114mm)
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(33.3, 110.0)), module, Leviathan::NOTCH_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(42.3, 110.0)), module, Leviathan::SMOOSH_GATE_INPUT));
+
+                // === AUDIO I/O SECTION ===
+                // Audio inputs (y=114mm, right side)
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.5, 119.0)), module, Leviathan::IN_L_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(17.5, 119.0)), module, Leviathan::IN_R_INPUT));
+
+                // Audio outputs (y=122mm, right side)
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(33.3, 119.0)), module, Leviathan::OUT_L_OUTPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(42.3, 119.0)), module, Leviathan::OUT_R_OUTPUT));
         }
 };
 

@@ -502,10 +502,10 @@ struct AhrimanWidget : ModuleWidget {
 		bg->box.size = box.size;
 		addChild(bg);
 
-                addChild(createWidget<ScrewSilver>(mm2px(Vec(1.5f, 1.5f))));
-                addChild(createWidget<ScrewSilver>(mm2px(Vec(1.5f, 125.5f))));
-                addChild(createWidget<ScrewSilver>(mm2px(Vec(49.3f, 1.5f))));
-                addChild(createWidget<ScrewSilver>(mm2px(Vec(49.3f, 125.5f))));
+                addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+                addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+                addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+                addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
                 // Boot lights at header (y=13mm)
                 addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(14.f, 13.f)), module, Ahriman::BOOT_LEFT_LIGHT));
@@ -513,42 +513,52 @@ struct AhrimanWidget : ModuleWidget {
                 addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(29.3f, 13.f)), module, Ahriman::BOOT_RIGHT_CENTER_LIGHT));
                 addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(36.8f, 13.f)), module, Ahriman::BOOT_RIGHT_LIGHT));
 
-                // Blend (large knob centered, y=20mm)
-                addParam(createParamCentered<RoundBigBlackKnob>(mm2px(Vec(25.4f, 20.f)), module, Ahriman::BLEND_PARAM));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.5f, 20.f)), module, Ahriman::BLEND_CV_INPUT));
+                // === MAIN KNOB SECTION ===
+                // Row 1: BLEND (large knob, centered at y=22mm)
+                addParam(createParamCentered<RoundBigBlackKnob>(mm2px(Vec(25.4f, 24.f)), module, Ahriman::BLEND_PARAM));
 
-                // Row 1: TONE / REGEN (y=34mm, spacing 14mm)
-                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(16.5f, 34.f)), module, Ahriman::TONE_PARAM));
-                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(34.3f, 34.f)), module, Ahriman::REGEN_PARAM));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.5f, 43.f)), module, Ahriman::TONE_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(42.3f, 43.f)), module, Ahriman::REGEN_CV_INPUT));
+                // Row 2: TONE / REGEN (y=35mm)
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(15.f, 35.f)), module, Ahriman::TONE_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(35.8f, 35.f)), module, Ahriman::REGEN_PARAM));
 
-                // Row 2: SPEED / INDEX (y=52mm, spacing 12mm)
-                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(16.5f, 52.f)), module, Ahriman::SPEED_PARAM));
-                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(34.3f, 52.f)), module, Ahriman::INDEX_PARAM));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.5f, 61.f)), module, Ahriman::SPEED_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(42.3f, 61.f)), module, Ahriman::INDEX_CV_INPUT));
+                // Row 3: SPEED / INDEX (y=47mm)
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(15.f, 47.f)), module, Ahriman::SPEED_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(35.8f, 47.f)), module, Ahriman::INDEX_PARAM));
 
-                // Row 3: SIZE / DENSE (y=70mm, spacing 12mm)
-                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(16.5f, 70.f)), module, Ahriman::SIZE_PARAM));
-                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(34.3f, 70.f)), module, Ahriman::DENSE_PARAM));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.5f, 79.f)), module, Ahriman::SIZE_CV_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(42.3f, 79.f)), module, Ahriman::DENSE_CV_INPUT));
+                // Row 4: SIZE / DENSE (y=59mm)
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(15.f, 59.f)), module, Ahriman::SIZE_PARAM));
+                addParam(createParamCentered<BefacoTinyKnob>(mm2px(Vec(35.8f, 59.f)), module, Ahriman::DENSE_PARAM));
 
-                // FSU button (y=88mm)
-                addParam(createParamCentered<VCVButton>(mm2px(Vec(25.4f, 88.f)), module, Ahriman::FSU_PARAM));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(42.3f, 88.f)), module, Ahriman::FSU_GATE_INPUT));
-                addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(10.f, 88.f)), module, Ahriman::FSU_LIGHT));
+                // === SWITCHES & BUTTON SECTION ===
+                // MODE and RESPONSE switches (y=72mm and 80mm)
+                addParam(createParamCentered<CKSSThree>(mm2px(Vec(15.f, 78.f)), module, Ahriman::MODE_PARAM));
+                addParam(createParamCentered<CKSSThree>(mm2px(Vec(35.8f, 78.f)), module, Ahriman::RESPONSE_PARAM));
 
-                // MODE and RESPONSE switches (y=98mm and 106mm)
-                addParam(createParamCentered<CKSSThree>(mm2px(Vec(25.4f, 98.f)), module, Ahriman::MODE_PARAM));
-                addParam(createParamCentered<CKSSThree>(mm2px(Vec(25.4f, 106.f)), module, Ahriman::RESPONSE_PARAM));
+                // FSU button (y=80mm)
+                addParam(createParamCentered<VCVButton>(mm2px(Vec(25.4f, 76.f)), module, Ahriman::FSU_PARAM));
+                addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(25.4f, 82.f)), module, Ahriman::FSU_LIGHT));
 
-                // Audio I/O (y=116mm and 124mm)
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(12.5f, 116.f)), module, Ahriman::IN_L_INPUT));
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(38.3f, 116.f)), module, Ahriman::IN_R_INPUT));
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(12.5f, 124.f)), module, Ahriman::OUT_L_OUTPUT));
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(38.3f, 124.f)), module, Ahriman::OUT_R_OUTPUT));
+                // === CV INPUT SECTION (Bottom area, grouped) ===
+                // Row 1 CVs (y=94mm)
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.5f, 94.f)), module, Ahriman::BLEND_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(17.5f, 94.f)), module, Ahriman::TONE_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(33.3f, 94.f)), module, Ahriman::REGEN_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(42.3f, 94.f)), module, Ahriman::SPEED_CV_INPUT));
+
+                // Row 2 CVs (y=103mm)
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.5f, 103.f)), module, Ahriman::INDEX_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(17.5f, 103.f)), module, Ahriman::SIZE_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(33.3f, 103.f)), module, Ahriman::DENSE_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(42.3f, 103.f)), module, Ahriman::FSU_GATE_INPUT));
+
+                // === AUDIO I/O SECTION ===
+                // Audio inputs (y=114mm, right side)
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.5, 119.0)), module, Ahriman::IN_L_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(17.5, 119.0)), module, Ahriman::IN_R_INPUT));
+
+                // Audio outputs (y=122mm, right side)
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(33.3, 119.0)), module, Ahriman::OUT_L_OUTPUT));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(42.3, 119.0)), module, Ahriman::OUT_R_OUTPUT));
         }
 };
 
