@@ -123,10 +123,20 @@
       "name": "Nergal Amp",
       "description": "Neural amp modeler with NAM model loading, drive saturation, tone shaping, dry/wet mix, and full CV control over all parameters.",
       "tags": [
-        "Effect", 
+        "Effect",
         "Dynamics",
-        "Physical modeling", 
+        "Physical modeling",
         "Distortion"
+      ]
+    },
+    {
+      "slug": "Xezbeth4X",
+      "name": "Xezbeth:4X",
+      "description": "High-end stereo summing mixer with flexible pan laws, switchable clean/Neve summing, harmonic drive, and comprehensive metering for hybrid workflows.",
+      "tags": [
+        "Mixer",
+        "Utility",
+        "Dynamics"
       ]
     }
   ]

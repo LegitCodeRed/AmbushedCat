@@ -21,6 +21,7 @@ extern Model* modelLilith;
 extern Model* modelLilithAdvance;
 extern Model* modelNergalAmp;
 extern Model* modelBuer;
+extern Model* modelXezbeth4X;
 
 struct TuringVoltsExpanderMessage {
 	uint8_t bits = 0;
