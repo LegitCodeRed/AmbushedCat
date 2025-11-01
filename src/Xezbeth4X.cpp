@@ -694,87 +694,106 @@ struct Xezbeth4XWidget : rack::app::ModuleWidget {
                 addChild(createWidget<ScrewBlack>(rack::Vec(rack::RACK_GRID_WIDTH, rack::RACK_GRID_HEIGHT - rack::RACK_GRID_WIDTH)));
                 addChild(createWidget<ScrewBlack>(rack::Vec(box.size.x - 2 * rack::RACK_GRID_WIDTH, rack::RACK_GRID_HEIGHT - rack::RACK_GRID_WIDTH)));
 
-                const float columnSpacing = 32.f;
-                const float columnStart = 18.f;
-                const float trimY = 25.f;
-                const float panY = 55.f;
-                const float buttonStartY = 82.f;
-                const float buttonStep = 12.f;
-                const float inputTopY = 110.f;
-                const float inputBottomY = 122.f;
-                const float meterHeight = 78.f;
+                // === REVOLUTIONARY ULTRA-COMPACT TAPE MODULE DESIGN ===
+                // Target: ~15HP tape size with innovative layout
+                const float chSpacing = 11.5f;    // Ultra-tight channel spacing
+                const float chStart = 9.f;
 
+                // INNOVATIVE INPUT SECTION - Side-mounted stereo pairs
+                const float inputRowY = 18.f;
+                const float inputStagger = 4.5f;  // L/R staggered for density
+
+                // CONTROL SECTION - Minimalist knobs
+                const float knobY = 33.f;
+                const float knobSize = 7.f;  // Tiny knobs
+
+                // BUTTON MATRIX - Ultra-compact 3×4 grid
+                const float btnY = 48.f;
+                const float btnSpacing = 5.5f;
+
+                // METER SECTION - Integrated thin bars
+                const float meterY = 70.f;
+                const float meterH = 38.f;  // Smaller, cleaner
+                const float meterW = 3.5f;  // Very thin
+
+                // Channel strips - Revolutionary vertical integration
                 for (int i = 0; i < 4; ++i) {
-                        float columnX = columnStart + columnSpacing * i;
-                        rack::Vec trimPos = rack::mm2px(rack::Vec(columnX, trimY));
-                        rack::Vec panPos = rack::mm2px(rack::Vec(columnX, panY));
-                        rack::Vec mutePos = rack::mm2px(rack::Vec(columnX - 6.f, buttonStartY));
-                        rack::Vec soloPos = rack::mm2px(rack::Vec(columnX, buttonStartY + buttonStep));
-                        rack::Vec pflPos = rack::mm2px(rack::Vec(columnX + 6.f, buttonStartY + 2 * buttonStep));
-                        rack::Vec inLPos = rack::mm2px(rack::Vec(columnX - 4.f, inputTopY));
-                        rack::Vec inRPos = rack::mm2px(rack::Vec(columnX + 4.f, inputBottomY));
-                        rack::Vec meterPos = rack::mm2px(rack::Vec(columnX + 11.f, trimY - 4.f));
+                        float x = chStart + chSpacing * i;
 
-                        addParam(createParamCentered<RoundLargeBlackKnob>(trimPos, module, Xezbeth4X::CHANNEL_TRIM_PARAM + i));
-                        addParam(createParamCentered<RoundLargeBlackKnob>(panPos, module, Xezbeth4X::CHANNEL_PAN_PARAM + i));
+                        // Smart input arrangement: L/R side-mounted, staggered
+                        addInput(createInputCentered<PJ301MPort>(rack::mm2px(rack::Vec(x - 2.f, inputRowY)), module, Xezbeth4X::CHANNEL_INPUT_L + i));
+                        addInput(createInputCentered<PJ301MPort>(rack::mm2px(rack::Vec(x + 2.f, inputRowY + inputStagger)), module, Xezbeth4X::CHANNEL_INPUT_R + i));
 
-                        addParam(createParamCentered<LEDButton>(mutePos, module, Xezbeth4X::CHANNEL_MUTE_PARAM + i));
-                        addParam(createParamCentered<LEDButton>(soloPos, module, Xezbeth4X::CHANNEL_SOLO_PARAM + i));
-                        addParam(createParamCentered<LEDButton>(pflPos, module, Xezbeth4X::CHANNEL_PFL_PARAM + i));
+                        // Dual-concentric style: Trim above, pan integrated
+                        addParam(createParamCentered<Trimpot>(rack::mm2px(rack::Vec(x, knobY)), module, Xezbeth4X::CHANNEL_TRIM_PARAM + i));
+                        addParam(createParamCentered<Trimpot>(rack::mm2px(rack::Vec(x, knobY + 8.f)), module, Xezbeth4X::CHANNEL_PAN_PARAM + i));
 
-                        addInput(createInputCentered<PJ301MPort>(inLPos, module, Xezbeth4X::CHANNEL_INPUT_L + i));
-                        addInput(createInputCentered<PJ301MPort>(inRPos, module, Xezbeth4X::CHANNEL_INPUT_R + i));
+                        // Compact button stack with integrated lights
+                        addParam(createParamCentered<TL1105>(rack::mm2px(rack::Vec(x, btnY)), module, Xezbeth4X::CHANNEL_MUTE_PARAM + i));
+                        addChild(createLightCentered<TinyLight<GreenLight>>(rack::mm2px(rack::Vec(x - 3.5f, btnY)), module, Xezbeth4X::CHANNEL_POST_LIGHT + i));
 
+                        addParam(createParamCentered<TL1105>(rack::mm2px(rack::Vec(x, btnY + btnSpacing)), module, Xezbeth4X::CHANNEL_SOLO_PARAM + i));
+
+                        addParam(createParamCentered<TL1105>(rack::mm2px(rack::Vec(x, btnY + 2 * btnSpacing)), module, Xezbeth4X::CHANNEL_PFL_PARAM + i));
+                        addChild(createLightCentered<TinyLight<RedLight>>(rack::mm2px(rack::Vec(x - 3.5f, btnY + 2 * btnSpacing)), module, Xezbeth4X::CHANNEL_CLIP_LIGHT + i));
+
+                        // Ultra-thin integrated meter
                         auto* meter = new StereoMeterWidget();
                         meter->module = module;
                         meter->channel = i;
-                        meter->box.pos = meterPos;
-                        meter->box.size = rack::mm2px(rack::Vec(8.f, meterHeight));
+                        meter->box.pos = rack::mm2px(rack::Vec(x - meterW/2.f, meterY));
+                        meter->box.size = rack::mm2px(rack::Vec(meterW, meterH));
                         addChild(meter);
-
-                        addChild(createLightCentered<MediumLight<GreenLight>>(rack::mm2px(rack::Vec(columnX - 10.f, buttonStartY + buttonStep)), module, Xezbeth4X::CHANNEL_POST_LIGHT + i));
-                        addChild(createLightCentered<SmallLight<RedLight>>(rack::mm2px(rack::Vec(columnX - 10.f, buttonStartY + buttonStep + 6.f)), module, Xezbeth4X::CHANNEL_CLIP_LIGHT + i));
                 }
 
-                const float masterX = 140.f;
-                rack::Vec masterTrimPos = rack::mm2px(rack::Vec(masterX, 30.f));
-                addParam(createParamCentered<RoundLargeBlackKnob>(masterTrimPos, module, Xezbeth4X::MASTER_TRIM_PARAM));
+                // === MASTER SECTION - Compact vertical right strip ===
+                const float mX = 52.f;
 
-                addParam(createParamCentered<LEDButton>(rack::mm2px(rack::Vec(masterX - 10.f, 72.f)), module, Xezbeth4X::MONO_PARAM));
-                addParam(createParamCentered<LEDButton>(rack::mm2px(rack::Vec(masterX, 86.f)), module, Xezbeth4X::DIM_PARAM));
-                addParam(createParamCentered<LEDButton>(rack::mm2px(rack::Vec(masterX + 10.f, 100.f)), module, Xezbeth4X::CLIPSAFE_PARAM));
+                // Master trim - medium knob
+                addParam(createParamCentered<RoundBlackKnob>(rack::mm2px(rack::Vec(mX, 22.f)), module, Xezbeth4X::MASTER_TRIM_PARAM));
 
+                // Master buttons - horizontal mini row
+                addParam(createParamCentered<LEDButton>(rack::mm2px(rack::Vec(mX - 5.5f, 36.f)), module, Xezbeth4X::MONO_PARAM));
+                addParam(createParamCentered<LEDButton>(rack::mm2px(rack::Vec(mX, 36.f)), module, Xezbeth4X::DIM_PARAM));
+                addParam(createParamCentered<LEDButton>(rack::mm2px(rack::Vec(mX + 5.5f, 36.f)), module, Xezbeth4X::CLIPSAFE_PARAM));
+
+                // Dual meters - ultra-thin side by side
                 auto* masterMeter = new StereoMeterWidget();
                 masterMeter->module = module;
                 masterMeter->channel = 4;
-                masterMeter->box.pos = rack::mm2px(rack::Vec(masterX + 18.f, 20.f));
-                masterMeter->box.size = rack::mm2px(rack::Vec(10.f, 90.f));
+                masterMeter->box.pos = rack::mm2px(rack::Vec(mX - 5.f, 45.f));
+                masterMeter->box.size = rack::mm2px(rack::Vec(4.5f, 50.f));
                 addChild(masterMeter);
 
                 auto* pflMeter = new StereoMeterWidget();
                 pflMeter->module = module;
                 pflMeter->channel = 5;
-                pflMeter->box.pos = rack::mm2px(rack::Vec(masterX + 32.f, 20.f));
-                pflMeter->box.size = rack::mm2px(rack::Vec(6.f, 90.f));
+                pflMeter->box.pos = rack::mm2px(rack::Vec(mX + 1.f, 45.f));
+                pflMeter->box.size = rack::mm2px(rack::Vec(3.5f, 50.f));
                 pflMeter->drawPeakHold = false;
                 addChild(pflMeter);
 
-                addChild(createLightCentered<MediumLight<RedLight>>(rack::mm2px(rack::Vec(masterX + 18.f, 16.f)), module, Xezbeth4X::MASTER_CLIP_LIGHT));
-                addChild(createLightCentered<SmallLight<YellowLight>>(rack::mm2px(rack::Vec(masterX + 32.f, 16.f)), module, Xezbeth4X::PFL_ACTIVE_LIGHT));
+                // Clip indicators
+                addChild(createLightCentered<TinyLight<RedLight>>(rack::mm2px(rack::Vec(mX - 2.75f, 42.5f)), module, Xezbeth4X::MASTER_CLIP_LIGHT));
+                addChild(createLightCentered<TinyLight<YellowLight>>(rack::mm2px(rack::Vec(mX + 2.75f, 42.5f)), module, Xezbeth4X::PFL_ACTIVE_LIGHT));
 
-                const float outputTopY = 110.f;
-                const float outputStepY = 14.f;
-                const float outputLeftX = masterX - 6.f;
-                const float outputRightX = masterX + 8.f;
+                // === OUTPUTS - Ultra-compact 2-column grid ===
+                const float outY = 99.f;
+                const float outRowSpace = 6.5f;
+                const float outCol1 = mX - 4.5f;
+                const float outCol2 = mX + 4.5f;
 
-                addOutput(createOutputCentered<DarkPJ301MPort>(rack::mm2px(rack::Vec(outputLeftX, outputTopY)), module, Xezbeth4X::MASTER_OUTPUT_L));
-                addOutput(createOutputCentered<DarkPJ301MPort>(rack::mm2px(rack::Vec(outputRightX, outputTopY)), module, Xezbeth4X::MASTER_OUTPUT_R));
+                // Master outputs
+                addOutput(createOutputCentered<PJ301MPort>(rack::mm2px(rack::Vec(outCol1, outY)), module, Xezbeth4X::MASTER_OUTPUT_L));
+                addOutput(createOutputCentered<PJ301MPort>(rack::mm2px(rack::Vec(outCol2, outY)), module, Xezbeth4X::MASTER_OUTPUT_R));
 
-                addOutput(createOutputCentered<DarkPJ301MPort>(rack::mm2px(rack::Vec(outputLeftX, outputTopY + outputStepY)), module, Xezbeth4X::PFL_OUTPUT_L));
-                addOutput(createOutputCentered<DarkPJ301MPort>(rack::mm2px(rack::Vec(outputRightX, outputTopY + outputStepY)), module, Xezbeth4X::PFL_OUTPUT_R));
+                // PFL outputs
+                addOutput(createOutputCentered<PJ301MPort>(rack::mm2px(rack::Vec(outCol1, outY + outRowSpace)), module, Xezbeth4X::PFL_OUTPUT_L));
+                addOutput(createOutputCentered<PJ301MPort>(rack::mm2px(rack::Vec(outCol2, outY + outRowSpace)), module, Xezbeth4X::PFL_OUTPUT_R));
 
-                addOutput(createOutputCentered<DarkPJ301MPort>(rack::mm2px(rack::Vec(outputLeftX, outputTopY + 2 * outputStepY)), module, Xezbeth4X::POST_OUTPUT_L));
-                addOutput(createOutputCentered<DarkPJ301MPort>(rack::mm2px(rack::Vec(outputRightX, outputTopY + 2 * outputStepY)), module, Xezbeth4X::POST_OUTPUT_R));
+                // Post outputs
+                addOutput(createOutputCentered<PJ301MPort>(rack::mm2px(rack::Vec(outCol1, outY + 2 * outRowSpace)), module, Xezbeth4X::POST_OUTPUT_L));
+                addOutput(createOutputCentered<PJ301MPort>(rack::mm2px(rack::Vec(outCol2, outY + 2 * outRowSpace)), module, Xezbeth4X::POST_OUTPUT_R));
         }
 
         void appendContextMenu(rack::ui::Menu* menu) override {
