@@ -625,7 +625,7 @@ struct NergalAmpWidget : ModuleWidget {
                 // Audio I/O — mirrored at bottom (2HP and 6HP positions)
                 constexpr float AUDIO_Y = 115.0f;          // comfortably above the bottom edge
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(2.0f * HP, AUDIO_Y)), module, NergalAmp::SIGNAL_INPUT));   // ~10.16 mm
-                addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(4.0f * HP, AUDIO_Y)), module, NergalAmp::SIGNAL_OUTPUT)); // ~30.48 mm
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(4.0f * HP, AUDIO_Y)), module, NergalAmp::SIGNAL_OUTPUT)); // ~30.48 mm
 
         }
 
