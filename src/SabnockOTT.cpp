@@ -78,7 +78,7 @@ struct SabnockOTT : Module {
 	// Vital DSP components
 	std::unique_ptr<vital::MultibandCompressor> compressor;
 	std::unique_ptr<vital::Output> sig_in;
-	std::array<vital::Value*, 21> vals = {};
+	std::array<vital::Value*, 19> vals = {};
 
 	float in_gain = 1.0f;
 	float out_gain = 1.0f;
@@ -189,12 +189,7 @@ struct SabnockOTT : Module {
 		// Clear all buffers after initialization
 		sig_in->clearBuffer();
 		compressor->reset(vital::constants::kFullMask);
-	}
-
-	~SabnockOTT() {
-		for (int i = 0; i < vals.size(); i++) {
-			delete vals[i];
-		}
+		updateParams();
 	}
 
 	void initVals() {
@@ -202,7 +197,6 @@ struct SabnockOTT : Module {
 			vals[i] = new vital::SmoothValue(0);
 		}
 		vals[vital::MultibandCompressor::kEnabledBands - 1]->set(vital::MultibandCompressor::kMultiband);
-		updateParams();
 	}
 
 	void updateParams() {
