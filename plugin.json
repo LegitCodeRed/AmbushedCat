@@ -130,6 +130,16 @@
       ]
     },
     {
+      "slug": "SabnockOTT",
+      "name": "Sabnock OTT",
+      "description": "Stereo multiband OTT-style compressor with 3-band crossover, upward/downward compression controls, per-band micro-tuning, lookahead, and extensive CV access.",
+      "tags": [
+        "Dynamics",
+        "Effect",
+        "Utility"
+      ]
+    },
+    {
       "slug": "Xezbeth4X",
       "name": "Xezbeth:4X",
       "description": "High-end stereo summing mixer with flexible pan laws, switchable clean/Neve summing, harmonic drive, and comprehensive metering for hybrid workflows.",

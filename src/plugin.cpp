@@ -19,6 +19,7 @@ void init(Plugin* p) {
         p->addModel(modelBuer);
         p->addModel(modelNergalAmp);
         p->addModel(modelXezbeth4X);
+        p->addModel(modelSabnockOTT);
         // Add modules here
         // p->addModel(modelMyModule);
 

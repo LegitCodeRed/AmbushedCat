@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="81.28mm" height="128.5mm" viewBox="0 0 81.28 128.5">
+  <defs>
+    <linearGradient id="brushed" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#2a2d31"/>
+      <stop offset="1" stop-color="#1d2023"/>
+    </linearGradient>
+    <style type="text/css"><![CDATA[
+      .label { font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; letter-spacing: 0.6px; fill: #f1f2f4; text-transform: uppercase; }
+      .small { font-size: 3px; }
+      .medium { font-size: 3.6px; }
+      .large { font-size: 5px; }
+    ]]></style>
+  </defs>
+  <rect width="81.28" height="128.5" fill="url(#brushed)" rx="1.5"/>
+  <rect x="38" y="98" width="5" height="30" fill="#12395a" opacity="0.8"/>
+  <rect x="43.5" y="98" width="5" height="30" fill="#1d7667" opacity="0.8"/>
+  <rect x="49" y="98" width="5" height="30" fill="#7bc0d8" opacity="0.8"/>
+  <text x="10" y="10" class="label large">AMBUSHED CAT DSP</text>
+  <text x="10" y="16" class="label medium">SABNOCK OTT</text>
+  <text x="10" y="24" class="label small">MULTIBAND UP/DOWN COMPRESSOR</text>
+  <text x="11" y="110" class="label small">L</text>
+  <text x="16" y="110" class="label small">R</text>
+  <text x="21" y="110" class="label small">SC</text>
+  <text x="32" y="110" class="label small">CV</text>
+  <text x="50" y="110" class="label small">MIX</text>
+  <text x="62" y="110" class="label small">OUT</text>
+  <text x="72" y="110" class="label small">TAPS</text>
+  <text x="60" y="101" class="label small">LOW</text>
+  <text x="60" y="115" class="label small">MID</text>
+  <text x="60" y="126" class="label small">HIGH</text>
+  <g fill="#f1f2f4" font-size="3.2px" font-family="Roboto Condensed, Arial Narrow, sans-serif">
+    <text x="15" y="36">IN</text>
+    <text x="63" y="36">OUT</text>
+    <text x="15" y="59">MIX</text>
+    <text x="40" y="59">DEPTH</text>
+    <text x="65" y="59">TIME</text>
+    <text x="15" y="82">UP</text>
+    <text x="40" y="82">DOWN</text>
+    <text x="64" y="82">KNEE</text>
+    <text x="12" y="97">LA</text>
+    <text x="23" y="97">LINK</text>
+    <text x="39" y="97">SC HPF</text>
+    <text x="58" y="97">X-LOW</text>
+    <text x="70" y="97">X-HI</text>
+    <text x="59" y="118">AMT</text>
+    <text x="71" y="118">ATK</text>
+    <text x="59" y="123">REL</text>
+    <text x="71" y="123">MKUP</text>
+  </g>
+</svg>
