@@ -1,154 +1,12 @@
 #include "plugin.hpp"
+#include "vital_dsp/compressor.h"
+#include "vital_dsp/framework/value.h"
+#include "vital_dsp/utilities/smooth_value.h"
 #include <cmath>
 #include <algorithm>
+#include <array>
 
 using namespace rack;
-
-namespace {
-
-// High-quality biquad filter with proper coefficient calculation
-struct Biquad {
-	float b0 = 1.f, b1 = 0.f, b2 = 0.f;
-	float a1 = 0.f, a2 = 0.f;
-	float z1 = 0.f, z2 = 0.f;
-
-	void reset() {
-		z1 = z2 = 0.f;
-	}
-
-	float process(float in) {
-		float out = b0 * in + z1;
-		z1 = b1 * in - a1 * out + z2;
-		z2 = b2 * in - a2 * out;
-		return out;
-	}
-
-	void setLowpass(float sampleRate, float freq) {
-		freq = clamp(freq, 20.f, sampleRate * 0.49f);
-		float w0 = 2.f * M_PI * freq / sampleRate;
-		float cosw0 = std::cos(w0);
-		float sinw0 = std::sin(w0);
-		float alpha = sinw0 * M_SQRT1_2; // Q = 0.707 (Butterworth)
-
-		float a0 = 1.f + alpha;
-		b0 = (1.f - cosw0) * 0.5f / a0;
-		b1 = (1.f - cosw0) / a0;
-		b2 = b0;
-		a1 = -2.f * cosw0 / a0;
-		a2 = (1.f - alpha) / a0;
-	}
-
-	void setHighpass(float sampleRate, float freq) {
-		freq = clamp(freq, 20.f, sampleRate * 0.49f);
-		float w0 = 2.f * M_PI * freq / sampleRate;
-		float cosw0 = std::cos(w0);
-		float sinw0 = std::sin(w0);
-		float alpha = sinw0 * M_SQRT1_2;
-
-		float a0 = 1.f + alpha;
-		b0 = (1.f + cosw0) * 0.5f / a0;
-		b1 = -(1.f + cosw0) / a0;
-		b2 = b0;
-		a1 = -2.f * cosw0 / a0;
-		a2 = (1.f - alpha) / a0;
-	}
-};
-
-// Linkwitz-Riley 4th order crossover (phase-coherent)
-struct LR4Crossover {
-	Biquad lpA, lpB, hpA, hpB;
-
-	void setCutoff(float sampleRate, float freq) {
-		lpA.setLowpass(sampleRate, freq);
-		lpB.setLowpass(sampleRate, freq);
-		hpA.setHighpass(sampleRate, freq);
-		hpB.setHighpass(sampleRate, freq);
-	}
-
-	float low(float in) {
-		return lpB.process(lpA.process(in));
-	}
-
-	float high(float in) {
-		return hpB.process(hpA.process(in));
-	}
-
-	void reset() {
-		lpA.reset(); lpB.reset();
-		hpA.reset(); hpB.reset();
-	}
-};
-
-// RMS-style envelope follower for smooth, musical compression
-struct EnvelopeFollower {
-	float env = 0.f;
-
-	float process(float input, float attack, float release) {
-		// Use absolute value for peak detection
-		float rectified = std::abs(input);
-
-		// Attack/release with proper coefficient
-		float coeff = (rectified > env) ? attack : release;
-		env += (rectified - env) * coeff;
-
-		return env;
-	}
-
-	void reset() {
-		env = 0.f;
-	}
-};
-
-// High-quality OTT-style dual compressor
-struct DualCompressor {
-	EnvelopeFollower envFollower;
-	float gainSmooth = 1.f;
-
-	// OTT-style compression with separate upward/downward
-	float process(float input, float upAmount, float downAmount, float attack, float release) {
-		// Get envelope (linear, normalized to ~1.0 for typical signal)
-		float env = envFollower.process(input / 5.f, attack, release); // Normalize typical 5V audio
-
-		// Convert to dB for compression calculation
-		float envDb = (env > 1e-6f) ? 20.f * std::log10f(env) : -120.f;
-
-		// OTT uses 0dB threshold for the envelope
-		const float threshold = 0.f;
-		float gainDb = 0.f;
-
-		// UPWARD compression: Bring up quiet parts (below threshold)
-		if (upAmount > 0.f) {
-			float below = std::max(0.f, threshold - envDb);
-			// At full upAmount, use ratio of 100:1 (very aggressive)
-			float ratio = 1.f + upAmount * 99.f;
-			gainDb += below * (1.f - 1.f / ratio);
-		}
-
-		// DOWNWARD compression: Reduce loud parts (above threshold)
-		if (downAmount > 0.f) {
-			float above = std::max(0.f, envDb - threshold);
-			// At full downAmount, use ratio of 100:1 (very aggressive)
-			float ratio = 1.f + downAmount * 99.f;
-			gainDb -= above * (1.f - 1.f / ratio);
-		}
-
-		// Convert to linear gain
-		float targetGain = std::pow(10.f, gainDb / 20.f);
-
-		// Very fast smoothing for OTT character (essentially no smoothing)
-		float smoothCoeff = 0.5f; // Instant response
-		gainSmooth += (targetGain - gainSmooth) * smoothCoeff;
-
-		return gainSmooth;
-	}
-
-	void reset() {
-		envFollower.reset();
-		gainSmooth = 1.f;
-	}
-};
-
-} // namespace
 
 struct SabnockOTT : Module {
 	enum ParamId {
@@ -178,132 +36,199 @@ struct SabnockOTT : Module {
 		NUM_LIGHTS
 	};
 
-	// DSP components per channel
-	struct Channel {
-		LR4Crossover xover1; // Split low from mid+high
-		LR4Crossover xover2; // Split mid from high
-		DualCompressor compLow;
-		DualCompressor compMid;
-		DualCompressor compHigh;
+	// Vital DSP components
+	std::unique_ptr<vital::MultibandCompressor> compressor;
+	std::unique_ptr<vital::Output> sig_in;
+	std::array<vital::Value*, 21> vals = {};
 
-		void reset() {
-			xover1.reset();
-			xover2.reset();
-			compLow.reset();
-			compMid.reset();
-			compHigh.reset();
-		}
-	};
+	float in_gain = 1.0f;
+	float out_gain = 1.0f;
 
-	Channel channels[2];
-	float crossover1Freq = 250.f;  // Low/Mid split
+	float crossover1Freq = 120.f;  // Low/Mid split
 	float crossover2Freq = 2500.f; // Mid/High split
 
 	SabnockOTT() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
 		// Classic OTT controls
-		configParam(PARAM_DEPTH, 0.f, 1.f, 0.5f, "Depth", "%", 0.f, 100.f);
+		configParam(PARAM_DEPTH, 0.f, 1.f, 1.0f, "Depth", "%", 0.f, 100.f);
 		configParam(PARAM_TIME, 0.f, 1.f, 0.5f, "Time", "%", 0.f, 100.f);
-		configParam(PARAM_INPUT, -12.f, 12.f, 0.f, "Input Gain", " dB");
-		configParam(PARAM_OUTPUT, -12.f, 12.f, 0.f, "Output Gain", " dB");
+		configParam(PARAM_INPUT, -60.f, 30.f, 0.f, "Input Gain", " dB");
+		configParam(PARAM_OUTPUT, -60.f, 30.f, 0.f, "Output Gain", " dB");
 
 		// Per-band controls
-		configParam(PARAM_LOW_UP, 0.f, 1.f, 0.5f, "Low Up", "%", 0.f, 100.f);
-		configParam(PARAM_LOW_DOWN, 0.f, 1.f, 0.5f, "Low Down", "%", 0.f, 100.f);
-		configParam(PARAM_MID_UP, 0.f, 1.f, 0.5f, "Mid Up", "%", 0.f, 100.f);
-		configParam(PARAM_MID_DOWN, 0.f, 1.f, 0.5f, "Mid Down", "%", 0.f, 100.f);
-		configParam(PARAM_HIGH_UP, 0.f, 1.f, 0.5f, "High Up", "%", 0.f, 100.f);
-		configParam(PARAM_HIGH_DOWN, 0.f, 1.f, 0.5f, "High Down", "%", 0.f, 100.f);
+		configParam(PARAM_LOW_UP, 0.f, 2.f, 1.0f, "Low Up");
+		configParam(PARAM_LOW_DOWN, 0.f, 2.f, 1.0f, "Low Down");
+		configParam(PARAM_MID_UP, 0.f, 2.f, 1.0f, "Mid Up");
+		configParam(PARAM_MID_DOWN, 0.f, 2.f, 1.0f, "Mid Down");
+		configParam(PARAM_HIGH_UP, 0.f, 2.f, 1.0f, "High Up");
+		configParam(PARAM_HIGH_DOWN, 0.f, 2.f, 1.0f, "High Down");
 
 		configInput(INPUT_L, "Left");
 		configInput(INPUT_R, "Right");
 		configOutput(OUTPUT_L, "Left");
 		configOutput(OUTPUT_R, "Right");
+
+		// Initialize vital DSP
+		compressor = std::make_unique<vital::MultibandCompressor>();
+		sig_in = std::make_unique<vital::Output>();
+		compressor->plug(sig_in.get(), vital::MultibandCompressor::kAudio);
+
+		initVals();
+		for (int i = 0; i < vals.size(); i++) {
+			compressor->plug(vals[i], i + 1);
+		}
+	}
+
+	~SabnockOTT() {
+		for (int i = 0; i < vals.size(); i++) {
+			delete vals[i];
+		}
+	}
+
+	void initVals() {
+		for (int i = 0; i < vals.size(); i++) {
+			vals[i] = new vital::SmoothValue(0);
+		}
+		vals[vital::MultibandCompressor::kEnabledBands - 1]->set(vital::MultibandCompressor::kMultiband);
+		updateParams();
+	}
+
+	void updateParams() {
+		// Get parameters from Rack
+		float depth = params[PARAM_DEPTH].getValue();
+		float timeParam = params[PARAM_TIME].getValue();
+		in_gain = params[PARAM_INPUT].getValue();
+		out_gain = params[PARAM_OUTPUT].getValue();
+
+		float upward = params[PARAM_LOW_UP].getValue();
+		float downward = params[PARAM_LOW_DOWN].getValue();
+
+		// Calculate attack/release times
+		float att_time = timeParam;
+		float rel_time = timeParam;
+
+		// Default thresholds (from original vitOTT)
+		float ll_thres = -35.0f;
+		float lu_thres = -28.0f;
+		float bl_thres = -36.0f;
+		float bu_thres = -25.0f;
+		float hl_thres = -35.0f;
+		float hu_thres = -30.0f;
+
+		// Default ratios
+		float ll_ratio = 0.8f;
+		float lu_ratio = 0.9f;
+		float bl_ratio = 0.8f;
+		float bu_ratio = 0.857f;
+		float hl_ratio = 0.8f;
+		float hu_ratio = 1.0f;
+
+		// Gains from vitOTT defaults
+		float lgain = 16.3f;
+		float mgain = 11.7f;
+		float hgain = 16.3f;
+
+		// Get per-band controls
+		float lowUp = params[PARAM_LOW_UP].getValue();
+		float lowDown = params[PARAM_LOW_DOWN].getValue();
+		float midUp = params[PARAM_MID_UP].getValue();
+		float midDown = params[PARAM_MID_DOWN].getValue();
+		float highUp = params[PARAM_HIGH_UP].getValue();
+		float highDown = params[PARAM_HIGH_DOWN].getValue();
+
+		// Set thresholds
+		vals[vital::MultibandCompressor::kLowLowerThreshold - 1]->set(ll_thres);
+		vals[vital::MultibandCompressor::kLowUpperThreshold - 1]->set(lu_thres);
+		vals[vital::MultibandCompressor::kBandLowerThreshold - 1]->set(bl_thres);
+		vals[vital::MultibandCompressor::kBandUpperThreshold - 1]->set(bu_thres);
+		vals[vital::MultibandCompressor::kHighLowerThreshold - 1]->set(hl_thres);
+		vals[vital::MultibandCompressor::kHighUpperThreshold - 1]->set(hu_thres);
+
+		// Set ratios (scaled by depth and per-band controls)
+		vals[vital::MultibandCompressor::kLowLowerRatio - 1]->set(ll_ratio * depth * lowUp);
+		vals[vital::MultibandCompressor::kLowUpperRatio - 1]->set(lu_ratio * depth * lowDown);
+		vals[vital::MultibandCompressor::kBandLowerRatio - 1]->set(bl_ratio * depth * midUp);
+		vals[vital::MultibandCompressor::kBandUpperRatio - 1]->set(bu_ratio * depth * midDown);
+		vals[vital::MultibandCompressor::kHighLowerRatio - 1]->set(hl_ratio * depth * highUp);
+		vals[vital::MultibandCompressor::kHighUpperRatio - 1]->set(hu_ratio * depth * highDown);
+
+		// Set attack/release
+		vals[vital::MultibandCompressor::kAttack - 1]->set(att_time);
+		vals[vital::MultibandCompressor::kRelease - 1]->set(rel_time);
+
+		// Set output gains
+		vals[vital::MultibandCompressor::kLowOutputGain - 1]->set(lgain);
+		vals[vital::MultibandCompressor::kBandOutputGain - 1]->set(mgain);
+		vals[vital::MultibandCompressor::kHighOutputGain - 1]->set(hgain);
+
+		// Set crossover frequencies
+		vals[vital::MultibandCompressor::kLMFrequency - 1]->set(crossover1Freq);
+		vals[vital::MultibandCompressor::kMHFrequency - 1]->set(crossover2Freq);
+
+		// Set mix to 100%
+		vals[vital::MultibandCompressor::kMix - 1]->set(1.0f);
 	}
 
 	void onReset() override {
-		for (int c = 0; c < 2; c++) {
-			channels[c].reset();
-		}
+		compressor->reset(vital::constants::kFullMask);
 	}
 
 	void onSampleRateChange() override {
 		float sr = APP->engine->getSampleRate();
-		for (int c = 0; c < 2; c++) {
-			channels[c].xover1.setCutoff(sr, crossover1Freq);
-			channels[c].xover2.setCutoff(sr, crossover2Freq);
+		compressor->setSampleRate(sr);
+	}
+
+	void readAudio(vital::poly_float* comp_buf, float* leftBuf, float* rightBuf, int samples) {
+		vital::mono_float* comp_output = (vital::mono_float*)comp_buf;
+		float mag = vital::utils::dbToMagnitude(in_gain);
+
+		for (int i = 0; i < samples; ++i) {
+			comp_output[vital::poly_float::kSize * i + 0] = leftBuf[i] * mag;
+			comp_output[vital::poly_float::kSize * i + 1] = rightBuf[i] * mag;
+		}
+	}
+
+	void writeAudio(vital::poly_float* comp_buf, float* leftBuf, float* rightBuf, int samples) {
+		const vital::mono_float* comp_output = (const vital::mono_float*)comp_buf;
+		float mag = vital::utils::dbToMagnitude(out_gain);
+
+		for (int i = 0; i < samples; ++i) {
+			leftBuf[i] = comp_output[vital::poly_float::kSize * i + 0] * mag;
+			rightBuf[i] = comp_output[vital::poly_float::kSize * i + 1] * mag;
 		}
 	}
 
 	void process(const ProcessArgs& args) override {
-		float sampleRate = args.sampleRate;
+		// Update parameters
+		updateParams();
 
-		// Get parameters
-		float depth = params[PARAM_DEPTH].getValue();
-		float timeParam = params[PARAM_TIME].getValue();
-		float inputGain = std::pow(10.f, params[PARAM_INPUT].getValue() / 20.f);
-		float outputGain = std::pow(10.f, params[PARAM_OUTPUT].getValue() / 20.f);
+		// Get input
+		float inL = inputs[INPUT_L].getVoltage();
+		float inR = inputs[INPUT_R].isConnected() ? inputs[INPUT_R].getVoltage() : inL;
 
-		// Calculate time constants (OTT-style: fast attack, slower release)
-		// Attack: 0.1ms to 10ms (very fast by default)
-		float attackMs = 0.1f + timeParam * timeParam * 9.9f;
-		// Release: 10ms to 1000ms (much slower)
-		float releaseMs = 10.f + timeParam * timeParam * 990.f;
+		// Convert from 5V to normalized float (assuming +/- 5V range)
+		float leftBuf = inL / 5.0f;
+		float rightBuf = inR / 5.0f;
 
-		// Convert to coefficient (exponential decay)
-		float attack = 1.f - std::exp(-1000.f / (attackMs * sampleRate));
-		float release = 1.f - std::exp(-1000.f / (releaseMs * sampleRate));
-
-		// Per-band amounts (scaled by master depth)
-		float lowUp = params[PARAM_LOW_UP].getValue() * depth;
-		float lowDown = params[PARAM_LOW_DOWN].getValue() * depth;
-		float midUp = params[PARAM_MID_UP].getValue() * depth;
-		float midDown = params[PARAM_MID_DOWN].getValue() * depth;
-		float highUp = params[PARAM_HIGH_UP].getValue() * depth;
-		float highDown = params[PARAM_HIGH_DOWN].getValue() * depth;
-
-		// Update crossover frequencies (fixed for now)
-		if (channels[0].xover1.lpA.b0 == 0.f) {
-			onSampleRateChange();
+		// Process values (smooth parameters)
+		for (auto& val : vals) {
+			val->process(1);
 		}
 
-		// Process each channel
-		for (int c = 0; c < 2; c++) {
-			int inputId = (c == 0) ? INPUT_L : INPUT_R;
-			int outputId = (c == 0) ? OUTPUT_L : OUTPUT_R;
+		// Read audio into vital buffer
+		readAudio(sig_in->buffer, &leftBuf, &rightBuf, 1);
 
-			// Get input (with mono normalization)
-			float in = 0.f;
-			if (inputs[inputId].isConnected()) {
-				in = inputs[inputId].getVoltage() * inputGain;
-			} else if (c == 1 && inputs[INPUT_L].isConnected()) {
-				in = inputs[INPUT_L].getVoltage() * inputGain;
-			}
+		// Process compression
+		compressor->process(1);
 
-			// Split into 3 bands using cascaded crossovers
-			float lowMidHigh = in;
-			float low = channels[c].xover1.low(lowMidHigh);
+		// Write audio from vital buffer
+		writeAudio(compressor->output(vital::MultibandCompressor::kAudioOut)->buffer,
+		           &leftBuf, &rightBuf, 1);
 
-			float midHigh = channels[c].xover1.high(in);
-			float mid = channels[c].xover2.low(midHigh);
-			float high = channels[c].xover2.high(midHigh);
-
-			// Compress each band
-			float gainLow = channels[c].compLow.process(low, lowUp, lowDown, attack, release);
-			float gainMid = channels[c].compMid.process(mid, midUp, midDown, attack, release);
-			float gainHigh = channels[c].compHigh.process(high, highUp, highDown, attack, release);
-
-			// Apply gains
-			low *= gainLow;
-			mid *= gainMid;
-			high *= gainHigh;
-
-			// Sum bands and apply output gain
-			float out = (low + mid + high) * outputGain;
-
-			outputs[outputId].setVoltage(out);
-		}
+		// Convert back to 5V range and output
+		outputs[OUTPUT_L].setVoltage(leftBuf * 5.0f);
+		outputs[OUTPUT_R].setVoltage(rightBuf * 5.0f);
 	}
 };
 

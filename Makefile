@@ -6,6 +6,7 @@ FLAGS +=
 CFLAGS +=
 CXXFLAGS += -Idep -Idep/NeuralAmpModelerCore -Idep/NeuralAmpModelerCore/NAM -Idep/NeuralAmpModelerCore/Dependencies -Idep/NeuralAmpModelerCore/Dependencies/nlohmann
 CXXFLAGS += -Idep/eigen3 -I$(RACK_DIR)/dep/include -I$(RACK_DIR)/dep/include/eigen3
+CXXFLAGS += -Idep/SabnockOTT/Source -Idep/SabnockOTT/Source/vital_dsp
 
 
 # Careful about linking to shared libraries, since you can't assume much about the user's environment and library search path.
@@ -16,6 +17,13 @@ LDFLAGS +=
 SOURCES += $(wildcard src/*.cpp)
 SOURCES += $(wildcard src/dsp/*.cpp)
 SOURCES += $(wildcard dep/NeuralAmpModelerCore/NAM/*.cpp)
+SOURCES += dep/SabnockOTT/Source/vital_dsp/compressor.cpp
+SOURCES += dep/SabnockOTT/Source/vital_dsp/framework/operators.cpp
+SOURCES += dep/SabnockOTT/Source/vital_dsp/framework/processor.cpp
+SOURCES += dep/SabnockOTT/Source/vital_dsp/framework/utils.cpp
+SOURCES += dep/SabnockOTT/Source/vital_dsp/framework/value.cpp
+SOURCES += dep/SabnockOTT/Source/vital_dsp/linkwitz_riley_filter.cpp
+SOURCES += dep/SabnockOTT/Source/vital_dsp/utilities/smooth_value.cpp
 
 # Add files to the ZIP package when running `make dist`
 # The compiled plugin and "plugin.json" are automatically added.
