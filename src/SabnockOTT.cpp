@@ -10,20 +10,29 @@ using namespace rack;
 
 struct SabnockOTT : Module {
 	enum ParamId {
-		PARAM_ATTACK,     // Attack time
-		PARAM_RELEASE,    // Release time
-		PARAM_MIX,        // Dry/Wet mix (was depth)
-		PARAM_LOW_GAIN,   // Low band output gain
-		PARAM_MID_GAIN,   // Mid band output gain
-		PARAM_HIGH_GAIN,  // High band output gain
-		PARAM_INPUT,      // Input gain
-		PARAM_OUTPUT,     // Output gain
-		PARAM_LOW_UP,     // Low band upward compression
-		PARAM_LOW_DOWN,   // Low band downward compression
-		PARAM_MID_UP,     // Mid band upward compression
-		PARAM_MID_DOWN,   // Mid band downward compression
-		PARAM_HIGH_UP,    // High band upward compression
-		PARAM_HIGH_DOWN,  // High band downward compression
+		PARAM_ATTACK,          // Attack time
+		PARAM_RELEASE,         // Release time
+		PARAM_MIX,             // Dry/Wet mix (was depth)
+		PARAM_LOW_GAIN,        // Low band output gain
+		PARAM_MID_GAIN,        // Mid band output gain
+		PARAM_HIGH_GAIN,       // High band output gain
+		PARAM_INPUT,           // Input gain
+		PARAM_OUTPUT,          // Output gain
+		// Low band controls
+		PARAM_LOW_UP_THRESH,   // Low band upward threshold
+		PARAM_LOW_UP_RATIO,    // Low band upward ratio
+		PARAM_LOW_DOWN_THRESH, // Low band downward threshold
+		PARAM_LOW_DOWN_RATIO,  // Low band downward ratio
+		// Mid band controls
+		PARAM_MID_UP_THRESH,   // Mid band upward threshold
+		PARAM_MID_UP_RATIO,    // Mid band upward ratio
+		PARAM_MID_DOWN_THRESH, // Mid band downward threshold
+		PARAM_MID_DOWN_RATIO,  // Mid band downward ratio
+		// High band controls
+		PARAM_HIGH_UP_THRESH,  // High band upward threshold
+		PARAM_HIGH_UP_RATIO,   // High band upward ratio
+		PARAM_HIGH_DOWN_THRESH,// High band downward threshold
+		PARAM_HIGH_DOWN_RATIO, // High band downward ratio
 		NUM_PARAMS
 	};
 	enum InputId {
@@ -68,13 +77,29 @@ struct SabnockOTT : Module {
 		configParam(PARAM_INPUT, -60.f, 30.f, 0.f, "Input Gain", " dB");
 		configParam(PARAM_OUTPUT, -60.f, 30.f, 0.f, "Output Gain", " dB");
 
-		// Per-band compression controls (0-100%, default 100%)
-		configParam(PARAM_LOW_UP, 0.f, 1.f, 1.0f, "Low Upward", "%", 0.f, 100.f);
-		configParam(PARAM_LOW_DOWN, 0.f, 1.f, 1.0f, "Low Downward", "%", 0.f, 100.f);
-		configParam(PARAM_MID_UP, 0.f, 1.f, 1.0f, "Mid Upward", "%", 0.f, 100.f);
-		configParam(PARAM_MID_DOWN, 0.f, 1.f, 1.0f, "Mid Downward", "%", 0.f, 100.f);
-		configParam(PARAM_HIGH_UP, 0.f, 1.f, 1.0f, "High Upward", "%", 0.f, 100.f);
-		configParam(PARAM_HIGH_DOWN, 0.f, 1.f, 1.0f, "High Downward", "%", 0.f, 100.f);
+		// LOW BAND (Top = Downward/Upper, Bottom = Upward/Lower)
+		// Top knob: Downward (compression) - Upper threshold
+		configParam(PARAM_LOW_DOWN_THRESH, -79.f, -1.f, -28.5f, "Low Downward Threshold", " dB");
+		configParam(PARAM_LOW_DOWN_RATIO, 0.f, 1.f, 0.9f, "Low Downward Ratio", "%", 0.f, 100.f);
+		// Bottom knob: Upward (expansion) - Lower threshold
+		configParam(PARAM_LOW_UP_THRESH, -79.f, -1.f, -35.0f, "Low Upward Threshold", " dB");
+		configParam(PARAM_LOW_UP_RATIO, 0.f, 1.f, 0.8f, "Low Upward Ratio", "%", 0.f, 100.f);
+
+		// MID BAND (Top = Downward/Upper, Bottom = Upward/Lower)
+		// Top knob: Downward (compression) - Upper threshold
+		configParam(PARAM_MID_DOWN_THRESH, -79.f, -1.f, -25.0f, "Mid Downward Threshold", " dB");
+		configParam(PARAM_MID_DOWN_RATIO, 0.f, 1.f, 0.857f, "Mid Downward Ratio", "%", 0.f, 100.f);
+		// Bottom knob: Upward (expansion) - Lower threshold
+		configParam(PARAM_MID_UP_THRESH, -79.f, -1.f, -36.0f, "Mid Upward Threshold", " dB");
+		configParam(PARAM_MID_UP_RATIO, 0.f, 1.f, 0.8f, "Mid Upward Ratio", "%", 0.f, 100.f);
+
+		// HIGH BAND (Top = Downward/Upper, Bottom = Upward/Lower)
+		// Top knob: Downward (compression) - Upper threshold
+		configParam(PARAM_HIGH_DOWN_THRESH, -79.f, -1.f, -30.0f, "High Downward Threshold", " dB");
+		configParam(PARAM_HIGH_DOWN_RATIO, 0.f, 1.f, 1.0f, "High Downward Ratio", "%", 0.f, 100.f);
+		// Bottom knob: Upward (expansion) - Lower threshold
+		configParam(PARAM_HIGH_UP_THRESH, -79.f, -1.f, -35.0f, "High Upward Threshold", " dB");
+		configParam(PARAM_HIGH_UP_RATIO, 0.f, 1.f, 0.8f, "High Upward Ratio", "%", 0.f, 100.f);
 
 		configInput(INPUT_L, "Left");
 		configInput(INPUT_R, "Right");
@@ -119,36 +144,45 @@ struct SabnockOTT : Module {
 		float att_time = std::pow(attackParam, 2.0f);   // 0-1 range
 		float rel_time = std::pow(releaseParam, 2.0f);  // 0-1 range
 
-		// Default thresholds (from original vitOTT)
-		float ll_thres = -35.0f;  // Low band lower (upward) threshold
-		float lu_thres = -28.0f;  // Low band upper (downward) threshold
-		float bl_thres = -36.0f;  // Mid band lower (upward) threshold
-		float bu_thres = -25.0f;  // Mid band upper (downward) threshold
-		float hl_thres = -35.0f;  // High band lower (upward) threshold
-		float hu_thres = -30.0f;  // High band upper (downward) threshold
-
-		// Default ratios (base compression amounts)
-		float ll_ratio = 0.8f;   // Low band upward (expansion) ratio
-		float lu_ratio = 0.9f;   // Low band downward (compression) ratio
-		float bl_ratio = 0.8f;   // Mid band upward (expansion) ratio
-		float bu_ratio = 0.857f; // Mid band downward (compression) ratio
-		float hl_ratio = 0.8f;   // High band upward (expansion) ratio
-		float hu_ratio = 1.0f;   // High band downward (compression) ratio
-
 		// Get band gains from controls
 		float lgain = params[PARAM_LOW_GAIN].getValue();
 		float mgain = params[PARAM_MID_GAIN].getValue();
 		float hgain = params[PARAM_HIGH_GAIN].getValue();
 
-		// Get per-band compression controls (0-1 range, default 1.0 = 100%)
-		float lowUp = params[PARAM_LOW_UP].getValue();      // Low band upward (expansion)
-		float lowDown = params[PARAM_LOW_DOWN].getValue();  // Low band downward (compression)
-		float midUp = params[PARAM_MID_UP].getValue();      // Mid band upward (expansion)
-		float midDown = params[PARAM_MID_DOWN].getValue();  // Mid band downward (compression)
-		float highUp = params[PARAM_HIGH_UP].getValue();    // High band upward (expansion)
-		float highDown = params[PARAM_HIGH_DOWN].getValue();// High band downward (compression)
+		// Get thresholds from controls
+		// Lower threshold = upward compression (expansion) - bottom knob
+		// Upper threshold = downward compression - top knob
+		float ll_thres = params[PARAM_LOW_UP_THRESH].getValue();      // Lower (upward/expansion)
+		float lu_thres = params[PARAM_LOW_DOWN_THRESH].getValue();    // Upper (downward/compression)
+		float bl_thres = params[PARAM_MID_UP_THRESH].getValue();      // Lower (upward/expansion)
+		float bu_thres = params[PARAM_MID_DOWN_THRESH].getValue();    // Upper (downward/compression)
+		float hl_thres = params[PARAM_HIGH_UP_THRESH].getValue();     // Lower (upward/expansion)
+		float hu_thres = params[PARAM_HIGH_DOWN_THRESH].getValue();   // Upper (downward/compression)
 
-		// Set thresholds (fixed values from OTT)
+		// Enforce threshold constraint: upper threshold must be >= lower threshold
+		// If they overlap, push the lower one down
+		if (lu_thres < ll_thres) {
+			ll_thres = lu_thres;
+			params[PARAM_LOW_UP_THRESH].setValue(ll_thres);
+		}
+		if (bu_thres < bl_thres) {
+			bl_thres = bu_thres;
+			params[PARAM_MID_UP_THRESH].setValue(bl_thres);
+		}
+		if (hu_thres < hl_thres) {
+			hl_thres = hu_thres;
+			params[PARAM_HIGH_UP_THRESH].setValue(hl_thres);
+		}
+
+		// Get ratios directly from controls
+		float ll_ratio = params[PARAM_LOW_UP_RATIO].getValue();
+		float lu_ratio = params[PARAM_LOW_DOWN_RATIO].getValue();
+		float bl_ratio = params[PARAM_MID_UP_RATIO].getValue();
+		float bu_ratio = params[PARAM_MID_DOWN_RATIO].getValue();
+		float hl_ratio = params[PARAM_HIGH_UP_RATIO].getValue();
+		float hu_ratio = params[PARAM_HIGH_DOWN_RATIO].getValue();
+
+		// Set thresholds
 		vals[vital::MultibandCompressor::kLowLowerThreshold - 1]->set(ll_thres);
 		vals[vital::MultibandCompressor::kLowUpperThreshold - 1]->set(lu_thres);
 		vals[vital::MultibandCompressor::kBandLowerThreshold - 1]->set(bl_thres);
@@ -156,14 +190,14 @@ struct SabnockOTT : Module {
 		vals[vital::MultibandCompressor::kHighLowerThreshold - 1]->set(hl_thres);
 		vals[vital::MultibandCompressor::kHighUpperThreshold - 1]->set(hu_thres);
 
-		// Set ratios (scaled by per-band controls)
+		// Set ratios
 		// Note: Lower = Upward compression (expansion), Upper = Downward compression
-		vals[vital::MultibandCompressor::kLowLowerRatio - 1]->set(ll_ratio * lowUp);
-		vals[vital::MultibandCompressor::kLowUpperRatio - 1]->set(lu_ratio * lowDown);
-		vals[vital::MultibandCompressor::kBandLowerRatio - 1]->set(bl_ratio * midUp);
-		vals[vital::MultibandCompressor::kBandUpperRatio - 1]->set(bu_ratio * midDown);
-		vals[vital::MultibandCompressor::kHighLowerRatio - 1]->set(hl_ratio * highUp);
-		vals[vital::MultibandCompressor::kHighUpperRatio - 1]->set(hu_ratio * highDown);
+		vals[vital::MultibandCompressor::kLowLowerRatio - 1]->set(ll_ratio);
+		vals[vital::MultibandCompressor::kLowUpperRatio - 1]->set(lu_ratio);
+		vals[vital::MultibandCompressor::kBandLowerRatio - 1]->set(bl_ratio);
+		vals[vital::MultibandCompressor::kBandUpperRatio - 1]->set(bu_ratio);
+		vals[vital::MultibandCompressor::kHighLowerRatio - 1]->set(hl_ratio);
+		vals[vital::MultibandCompressor::kHighUpperRatio - 1]->set(hu_ratio);
 
 		// Set attack/release
 		vals[vital::MultibandCompressor::kAttack - 1]->set(att_time);
@@ -268,21 +302,44 @@ struct SabnockOTTWidget : ModuleWidget {
 		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(25.f, 58.f)), module, SabnockOTT::PARAM_INPUT));
 		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(45.f, 58.f)), module, SabnockOTT::PARAM_OUTPUT));
 
-		// Band compression controls: LEFT=Upward (expansion), RIGHT=Downward (compression)
-		float bandY = 75.f;
-		float bandSpacing = 16.f;
+		// Band compression controls: Each column has TOP and BOTTOM knobs
+		// TOP knob (large) = Downward compression threshold (upper threshold)
+		// Small knob below TOP = Downward compression ratio
+		// BOTTOM knob (large) = Upward expansion threshold (lower threshold)
+		// Small knob below BOTTOM = Upward expansion ratio
 
-		// LOW BAND (left=upward expansion, right=downward compression)
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(20.f, bandY)), module, SabnockOTT::PARAM_LOW_UP));
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(50.f, bandY)), module, SabnockOTT::PARAM_LOW_DOWN));
+		float bandStartY = 70.f;
+		float bandSpacing = 23.f;
+		float leftX = 20.f;
+		float rightX = 50.f;
+		float knobPairOffset = 8.f;  // Distance between large knob and its small ratio knob
 
-		// MID BAND (left=upward expansion, right=downward compression)
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(20.f, bandY + bandSpacing)), module, SabnockOTT::PARAM_MID_UP));
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(50.f, bandY + bandSpacing)), module, SabnockOTT::PARAM_MID_DOWN));
+		// LOW BAND (Left column)
+		float lowY = bandStartY;
+		// Top pair: Downward (compression) - upper threshold
+		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(leftX, lowY)), module, SabnockOTT::PARAM_LOW_DOWN_THRESH));
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(leftX, lowY + knobPairOffset)), module, SabnockOTT::PARAM_LOW_DOWN_RATIO));
+		// Bottom pair: Upward (expansion) - lower threshold
+		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(leftX, lowY + bandSpacing)), module, SabnockOTT::PARAM_LOW_UP_THRESH));
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(leftX, lowY + bandSpacing + knobPairOffset)), module, SabnockOTT::PARAM_LOW_UP_RATIO));
 
-		// HIGH BAND (left=upward expansion, right=downward compression)
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(20.f, bandY + 2 * bandSpacing)), module, SabnockOTT::PARAM_HIGH_UP));
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(50.f, bandY + 2 * bandSpacing)), module, SabnockOTT::PARAM_HIGH_DOWN));
+		// MID BAND (Middle column)
+		float midY = bandStartY;
+		// Top pair: Downward (compression) - upper threshold
+		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(35.f, midY)), module, SabnockOTT::PARAM_MID_DOWN_THRESH));
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(35.f, midY + knobPairOffset)), module, SabnockOTT::PARAM_MID_DOWN_RATIO));
+		// Bottom pair: Upward (expansion) - lower threshold
+		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(35.f, midY + bandSpacing)), module, SabnockOTT::PARAM_MID_UP_THRESH));
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(35.f, midY + bandSpacing + knobPairOffset)), module, SabnockOTT::PARAM_MID_UP_RATIO));
+
+		// HIGH BAND (Right column)
+		float highY = bandStartY;
+		// Top pair: Downward (compression) - upper threshold
+		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(rightX, highY)), module, SabnockOTT::PARAM_HIGH_DOWN_THRESH));
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(rightX, highY + knobPairOffset)), module, SabnockOTT::PARAM_HIGH_DOWN_RATIO));
+		// Bottom pair: Upward (expansion) - lower threshold
+		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(rightX, highY + bandSpacing)), module, SabnockOTT::PARAM_HIGH_UP_THRESH));
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(rightX, highY + bandSpacing + knobPairOffset)), module, SabnockOTT::PARAM_HIGH_UP_RATIO));
 
 		// I/O at bottom
 		float ioY = 117.f;
