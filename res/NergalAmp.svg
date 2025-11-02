@@ -136,6 +136,11 @@
        y="-10.258151"
        style="display:inline;fill:none;fill-opacity:1;stroke:url(#linearGradient3304);stroke-width:1"
        sodipodi:insensitive="true" />
+    <!-- Stereo labels at bottom -->
+    <text class="panel-text label" x="-5" y="104" style="font-size:2.2px;fill:#b8accd;text-anchor:middle">L</text>
+    <text class="panel-text label" x="-5" y="113" style="font-size:2.2px;fill:#b8accd;text-anchor:middle">R</text>
+    <text class="panel-text label" x="5" y="104" style="font-size:2.2px;fill:#b8accd;text-anchor:middle">L</text>
+    <text class="panel-text label" x="5" y="113" style="font-size:2.2px;fill:#b8accd;text-anchor:middle">R</text>
     <g
        aria-label="AMBUSHED CAT DSP"
        id="text261"

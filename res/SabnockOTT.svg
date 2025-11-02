@@ -1,51 +1,68 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="81.28mm" height="128.5mm" viewBox="0 0 81.28 128.5">
+<svg xmlns="http://www.w3.org/2000/svg" width="70mm" height="128.5mm" viewBox="0 0 70 128.5">
   <defs>
     <linearGradient id="brushed" x1="0" x2="0" y1="0" y2="1">
-      <stop offset="0" stop-color="#2a2d31"/>
-      <stop offset="1" stop-color="#1d2023"/>
+      <stop offset="0" stop-color="#1a1d21"/>
+      <stop offset="1" stop-color="#0d0f11"/>
     </linearGradient>
     <style type="text/css"><![CDATA[
-      .label { font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; letter-spacing: 0.6px; fill: #f1f2f4; text-transform: uppercase; }
-      .small { font-size: 3px; }
-      .medium { font-size: 3.6px; }
-      .large { font-size: 5px; }
+      .label {
+        font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
+        letter-spacing: 0.8px;
+        fill: #e8e9eb;
+        text-transform: uppercase;
+        text-anchor: middle;
+      }
+      .title { font-size: 6px; font-weight: 700; fill: #c8a2ff; }
+      .subtitle { font-size: 3px; font-weight: 400; fill: #8899aa; }
+      .large { font-size: 4.5px; font-weight: 600; }
+      .medium { font-size: 3.5px; font-weight: 500; }
+      .small { font-size: 2.5px; font-weight: 400; fill: #aabbcc; }
+      .band { font-size: 3px; font-weight: 600; fill: #ffaa44; }
     ]]></style>
   </defs>
-  <rect width="81.28" height="128.5" fill="url(#brushed)" rx="1.5"/>
-  <rect x="38" y="98" width="5" height="30" fill="#12395a" opacity="0.8"/>
-  <rect x="43.5" y="98" width="5" height="30" fill="#1d7667" opacity="0.8"/>
-  <rect x="49" y="98" width="5" height="30" fill="#7bc0d8" opacity="0.8"/>
-  <text x="10" y="10" class="label large">AMBUSHED CAT DSP</text>
-  <text x="10" y="16" class="label medium">SABNOCK OTT</text>
-  <text x="10" y="24" class="label small">MULTIBAND UP/DOWN COMPRESSOR</text>
-  <text x="11" y="110" class="label small">L</text>
-  <text x="16" y="110" class="label small">R</text>
-  <text x="21" y="110" class="label small">SC</text>
-  <text x="32" y="110" class="label small">CV</text>
-  <text x="50" y="110" class="label small">MIX</text>
-  <text x="62" y="110" class="label small">OUT</text>
-  <text x="72" y="110" class="label small">TAPS</text>
-  <text x="60" y="101" class="label small">LOW</text>
-  <text x="60" y="115" class="label small">MID</text>
-  <text x="60" y="126" class="label small">HIGH</text>
-  <g fill="#f1f2f4" font-size="3.2px" font-family="Roboto Condensed, Arial Narrow, sans-serif">
-    <text x="15" y="36">IN</text>
-    <text x="63" y="36">OUT</text>
-    <text x="15" y="59">MIX</text>
-    <text x="40" y="59">DEPTH</text>
-    <text x="65" y="59">TIME</text>
-    <text x="15" y="82">UP</text>
-    <text x="40" y="82">DOWN</text>
-    <text x="64" y="82">KNEE</text>
-    <text x="12" y="97">LA</text>
-    <text x="23" y="97">LINK</text>
-    <text x="39" y="97">SC HPF</text>
-    <text x="58" y="97">X-LOW</text>
-    <text x="70" y="97">X-HI</text>
-    <text x="59" y="118">AMT</text>
-    <text x="71" y="118">ATK</text>
-    <text x="59" y="123">REL</text>
-    <text x="71" y="123">MKUP</text>
-  </g>
+
+  <!-- Background -->
+  <rect width="70" height="128.5" fill="url(#brushed)" rx="1.5"/>
+
+  <!-- Subtle accent line -->
+  <line x1="5" y1="14" x2="65" y2="14" stroke="#c8a2ff" stroke-width="0.2" opacity="0.4"/>
+
+  <!-- Title -->
+  <text x="35" y="8" class="label title">SABNOCK</text>
+  <text x="35" y="12.5" class="label subtitle">MULTIBAND COMPRESSOR</text>
+
+  <!-- TOP ROW - Classic OTT: 4 BIG KNOBS -->
+  <text x="20" y="20" class="label large">DEPTH</text>
+  <text x="50" y="20" class="label large">TIME</text>
+  <text x="20" y="45" class="label large">IN</text>
+  <text x="50" y="45" class="label large">OUT</text>
+
+  <!-- Decorative band separators -->
+  <line x1="8" y1="66" x2="62" y2="66" stroke="#3a4055" stroke-width="0.15" opacity="0.5"/>
+  <line x1="8" y1="82" x2="62" y2="82" stroke="#3a4055" stroke-width="0.15" opacity="0.5"/>
+  <line x1="8" y1="98" x2="62" y2="98" stroke="#3a4055" stroke-width="0.15" opacity="0.5"/>
+
+  <!-- LOW BAND -->
+  <text x="7" y="77" class="label band">LOW</text>
+  <text x="20" y="71" class="label medium">UP</text>
+  <text x="50" y="71" class="label medium">DOWN</text>
+
+  <!-- MID BAND -->
+  <text x="7" y="93" class="label band">MID</text>
+  <text x="20" y="87" class="label medium">UP</text>
+  <text x="50" y="87" class="label medium">DOWN</text>
+
+  <!-- HIGH BAND -->
+  <text x="7" y="109" class="label band">HIGH</text>
+  <text x="20" y="103" class="label medium">UP</text>
+  <text x="50" y="103" class="label medium">DOWN</text>
+
+  <!-- I/O Section -->
+  <line x1="5" y1="112" x2="65" y2="112" stroke="#3a4055" stroke-width="0.2" opacity="0.4"/>
+  <text x="15" y="114" class="label small">IN L</text>
+  <text x="25" y="114" class="label small">IN R</text>
+  <text x="45" y="114" class="label small">OUT L</text>
+  <text x="55" y="114" class="label small">OUT R</text>
+
 </svg>

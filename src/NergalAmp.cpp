@@ -138,7 +138,8 @@ struct NergalAmp : Module {
                 NUM_PARAMS
         };
         enum InputIds {
-                SIGNAL_INPUT,
+                SIGNAL_INPUT_L,
+                SIGNAL_INPUT_R,
                 DRIVE_CV_INPUT,
                 TONE_CV_INPUT,
                 INPUT_CV_INPUT,
@@ -147,7 +148,8 @@ struct NergalAmp : Module {
                 NUM_INPUTS
         };
         enum OutputIds {
-                SIGNAL_OUTPUT,
+                SIGNAL_OUTPUT_L,
+                SIGNAL_OUTPUT_R,
                 NUM_OUTPUTS
         };
         enum LightIds {
@@ -167,9 +169,11 @@ struct NergalAmp : Module {
 #endif
         std::atomic<bool> workerRunning{false};
 
-        // Lock-free ring buffers (8192 samples = ~170ms @ 48kHz)
-        RingBuffer<float, 8192> inputBuffer;
-        RingBuffer<float, 8192> outputBuffer;
+        // Lock-free ring buffers for stereo (8192 samples = ~170ms @ 48kHz)
+        RingBuffer<float, 8192> inputBufferL;
+        RingBuffer<float, 8192> outputBufferL;
+        RingBuffer<float, 8192> inputBufferR;
+        RingBuffer<float, 8192> outputBufferR;
 
         // Model state (protected by mutex on non-Windows)
         std::unique_ptr<nam::DSP> model;
@@ -177,9 +181,11 @@ struct NergalAmp : Module {
         double modelSampleRate = 48000.0;
         std::atomic<bool> modelReady{false};
 
-        // Audio thread state (no mutex needed)
-        ToneShaper tone;
-        float previousModelInput = 0.0f;
+        // Audio thread state (no mutex needed) - stereo
+        ToneShaper toneL;
+        ToneShaper toneR;
+        float previousModelInputL = 0.0f;
+        float previousModelInputR = 0.0f;
         bool firstFrame = true;
 
         // Deferred loading
@@ -201,14 +207,16 @@ struct NergalAmp : Module {
                 configParam(MIX_PARAM, 0.f, 1.f, 1.f, "Dry/Wet Mix", "%", 0.f, 100.f);
                 configParam(OUTPUT_PARAM, -24.f, 24.f, 0.f, "Output Level", " dB");
 
-                configInput(SIGNAL_INPUT, "Audio");
+                configInput(SIGNAL_INPUT_L, "Audio L");
+                configInput(SIGNAL_INPUT_R, "Audio R");
                 configInput(INPUT_CV_INPUT, "Input Trim CV");
                 configInput(DRIVE_CV_INPUT, "Drive CV");
                 configInput(TONE_CV_INPUT, "Tone CV");
                 configInput(MIX_CV_INPUT, "Mix CV");
                 configInput(OUTPUT_CV_INPUT, "Output Level CV");
 
-                configOutput(SIGNAL_OUTPUT, "Audio");
+                configOutput(SIGNAL_OUTPUT_L, "Audio L");
+                configOutput(SIGNAL_OUTPUT_R, "Audio R");
 
                 // Start worker thread
                 workerRunning = true;
@@ -255,41 +263,76 @@ struct NergalAmp : Module {
         }
 #endif
 
-        // Worker thread function - processes NAM model in background
+        // Worker thread function - processes NAM model in background (stereo)
         void workerThreadFunc() {
                 while (workerRunning) {
-                        float input;
-                        bool hasWork = inputBuffer.pop(input);
+                        float inputL, inputR;
+                        bool hasWorkL = inputBufferL.pop(inputL);
+                        bool hasWorkR = inputBufferR.pop(inputR);
 
-                        if (hasWork && modelReady.load(std::memory_order_acquire)) {
-                                // Process through NAM model
-                                NAM_SAMPLE inputFrame = (NAM_SAMPLE)input;
-                                NAM_SAMPLE outputFrame = 0.0;
+                        if ((hasWorkL || hasWorkR) && modelReady.load(std::memory_order_acquire)) {
+                                // Process L channel through NAM model
+                                if (hasWorkL) {
+                                        NAM_SAMPLE inputFrame = (NAM_SAMPLE)inputL;
+                                        NAM_SAMPLE outputFrame = 0.0;
 
-                                // Lock only for actual model processing
+                                        // Lock only for actual model processing
 #ifdef ARCH_WIN
-                                EnterCriticalSection(&modelMutex);
-                                if (model) {
-                                        model->process(&inputFrame, &outputFrame, 1);
-                                }
-                                LeaveCriticalSection(&modelMutex);
-#else
-                                {
-                                        std::lock_guard<std::mutex> lock(workerMutex);
+                                        EnterCriticalSection(&modelMutex);
                                         if (model) {
                                                 model->process(&inputFrame, &outputFrame, 1);
                                         }
-                                }
+                                        LeaveCriticalSection(&modelMutex);
+#else
+                                        {
+                                                std::lock_guard<std::mutex> lock(workerMutex);
+                                                if (model) {
+                                                        model->process(&inputFrame, &outputFrame, 1);
+                                                }
+                                        }
 #endif
 
-                                // Push result to output buffer (lock-free)
-                                while (!outputBuffer.push((float)outputFrame)) {
-                                        // Output buffer full, yield CPU
+                                        // Push result to output buffer (lock-free)
+                                        while (!outputBufferL.push((float)outputFrame)) {
+                                                // Output buffer full, yield CPU
 #ifdef ARCH_WIN
-                                        Sleep(0);
+                                                Sleep(0);
 #else
-                                        std::this_thread::yield();
+                                                std::this_thread::yield();
 #endif
+                                        }
+                                }
+
+                                // Process R channel through NAM model
+                                if (hasWorkR) {
+                                        NAM_SAMPLE inputFrame = (NAM_SAMPLE)inputR;
+                                        NAM_SAMPLE outputFrame = 0.0;
+
+                                        // Lock only for actual model processing
+#ifdef ARCH_WIN
+                                        EnterCriticalSection(&modelMutex);
+                                        if (model) {
+                                                model->process(&inputFrame, &outputFrame, 1);
+                                        }
+                                        LeaveCriticalSection(&modelMutex);
+#else
+                                        {
+                                                std::lock_guard<std::mutex> lock(workerMutex);
+                                                if (model) {
+                                                        model->process(&inputFrame, &outputFrame, 1);
+                                                }
+                                        }
+#endif
+
+                                        // Push result to output buffer (lock-free)
+                                        while (!outputBufferR.push((float)outputFrame)) {
+                                                // Output buffer full, yield CPU
+#ifdef ARCH_WIN
+                                                Sleep(0);
+#else
+                                                std::this_thread::yield();
+#endif
+                                        }
                                 }
                         }
                         else {
@@ -312,9 +355,12 @@ struct NergalAmp : Module {
                 std::lock_guard<std::mutex> lock(workerMutex);
 #endif
                 firstFrame = true;
-                tone.reset();
-                inputBuffer.clear();
-                outputBuffer.clear();
+                toneL.reset();
+                toneR.reset();
+                inputBufferL.clear();
+                outputBufferL.clear();
+                inputBufferR.clear();
+                outputBufferR.clear();
                 if (model) {
                         const double effectiveRate = modelSampleRate > 0.0 ? modelSampleRate : APP->engine->getSampleRate();
                         model->Reset(effectiveRate, 64);
@@ -331,9 +377,18 @@ struct NergalAmp : Module {
                         loadModelInternal(pendingModelPath);
                 }
 
-                // Get input signal and normalize from ±10V to ±1 range
-                const float inVolts = inputs[SIGNAL_INPUT].getVoltage();
-                const float drySignal = inVolts * 0.1f;
+                // Determine stereo/mono mode
+                bool leftConnected = inputs[SIGNAL_INPUT_L].isConnected();
+                bool rightConnected = inputs[SIGNAL_INPUT_R].isConnected();
+
+                // Get input signals and normalize from ±10V to ±1 range
+                float inVoltsL = leftConnected ? inputs[SIGNAL_INPUT_L].getVoltage() :
+                                (rightConnected ? inputs[SIGNAL_INPUT_R].getVoltage() : 0.f);
+                float inVoltsR = rightConnected ? inputs[SIGNAL_INPUT_R].getVoltage() :
+                                (leftConnected ? inputs[SIGNAL_INPUT_L].getVoltage() : 0.f);
+
+                const float drySignalL = inVoltsL * 0.1f;
+                const float drySignalR = inVoltsR * 0.1f;
 
                 // Get parameter values with CV modulation
                 float inputGain = dbToGain(math::clamp(
@@ -362,15 +417,20 @@ struct NergalAmp : Module {
                         -24.f, 24.f));
 
                 // Stage 1: Apply input trim
-                const float trimmed = drySignal * inputGain;
+                const float trimmedL = drySignalL * inputGain;
+                const float trimmedR = drySignalR * inputGain;
 
-                // Stage 2: Worker thread NAM processing (lock-free)
-                float modelOutput = trimmed;
+                // Stage 2: Worker thread NAM processing (lock-free stereo)
+                float modelOutputL = trimmedL;
+                float modelOutputR = trimmedR;
                 bool hasModel = modelReady.load(std::memory_order_acquire);
 
                 if (hasModel) {
-                        // Push input to worker thread (non-blocking)
-                        if (inputBuffer.push(trimmed)) {
+                        // Push both channels to worker thread (non-blocking)
+                        bool pushedL = inputBufferL.push(trimmedL);
+                        bool pushedR = inputBufferR.push(trimmedR);
+
+                        if (pushedL || pushedR) {
 #ifdef ARCH_WIN
                                 SetEvent(workerEvent);  // Wake worker
 #else
@@ -378,36 +438,46 @@ struct NergalAmp : Module {
 #endif
                         }
 
-                        // Try to get processed output (non-blocking)
-                        float workerOutput;
-                        if (outputBuffer.pop(workerOutput)) {
-                                modelOutput = workerOutput;
+                        // Try to get processed outputs (non-blocking)
+                        float workerOutputL, workerOutputR;
+                        if (outputBufferL.pop(workerOutputL)) {
+                                modelOutputL = workerOutputL;
+                        }
+                        if (outputBufferR.pop(workerOutputR)) {
+                                modelOutputR = workerOutputR;
                         }
                         // else: use previous output (smooth latency handling)
                 }
 
                 // Stage 3: Apply drive/saturation
-                float driven = modelOutput * driveAmount;
+                float drivenL = modelOutputL * driveAmount;
+                float drivenR = modelOutputR * driveAmount;
                 if (enableClipper.load(std::memory_order_relaxed) && driveAmount > 1.0f) {
-                        driven = softClip(driven);
+                        drivenL = softClip(drivenL);
+                        drivenR = softClip(drivenR);
                 }
 
                 // Stage 4: Tone shaping (optimized with caching)
-                float shaped = tone.process(driven, toneAmount, args.sampleRate);
+                float shapedL = toneL.process(drivenL, toneAmount, args.sampleRate);
+                float shapedR = toneR.process(drivenR, toneAmount, args.sampleRate);
 
                 // Stage 5: Dry/Wet mix
-                float mixed = drySignal + mixAmount * (shaped - drySignal);
+                float mixedL = drySignalL + mixAmount * (shapedL - drySignalL);
+                float mixedR = drySignalR + mixAmount * (shapedR - drySignalR);
 
                 // Stage 6: Output level and convert back to ±10V
-                outputs[SIGNAL_OUTPUT].setVoltage(mixed * outputGain * 10.f);
+                outputs[SIGNAL_OUTPUT_L].setVoltage(mixedL * outputGain * 10.f);
+                outputs[SIGNAL_OUTPUT_R].setVoltage(mixedR * outputGain * 10.f);
 
                 lights[LOADED_LIGHT].setBrightness(hasModel ? 1.f : 0.f);
         }
 
         void clearModel() {
                 modelReady.store(false, std::memory_order_release);
-                inputBuffer.clear();
-                outputBuffer.clear();
+                inputBufferL.clear();
+                outputBufferL.clear();
+                inputBufferR.clear();
+                outputBufferR.clear();
 
 #ifdef ARCH_WIN
                 EnterCriticalSection(&modelMutex);
@@ -418,7 +488,8 @@ struct NergalAmp : Module {
                 modelPath.clear();
                 modelSampleRate = 48000.0;
                 firstFrame = true;
-                tone.reset();
+                toneL.reset();
+                toneR.reset();
 #ifdef ARCH_WIN
                 LeaveCriticalSection(&modelMutex);
 #endif
@@ -453,8 +524,10 @@ struct NergalAmp : Module {
                         loaded->Reset(sampleRate, 64);
 
                         // Clear buffers before swapping model
-                        inputBuffer.clear();
-                        outputBuffer.clear();
+                        inputBufferL.clear();
+                        outputBufferL.clear();
+                        inputBufferR.clear();
+                        outputBufferR.clear();
 
                         // Quick atomic swap with worker mutex
 #ifdef ARCH_WIN
@@ -467,7 +540,8 @@ struct NergalAmp : Module {
                                 modelPath = path;
                                 modelSampleRate = sampleRate;
                                 firstFrame = true;
-                                tone.reset();
+                                toneL.reset();
+                                toneR.reset();
 #ifdef ARCH_WIN
                         LeaveCriticalSection(&modelMutex);
 #else
@@ -622,10 +696,13 @@ struct NergalAmpWidget : ModuleWidget {
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(CV_X, FIRST_ROW_Y + 3 * ROW_STEP)), module, NergalAmp::MIX_CV_INPUT));
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(CV_X, FIRST_ROW_Y + 4 * ROW_STEP)), module, NergalAmp::OUTPUT_CV_INPUT));
 
-                // Audio I/O — mirrored at bottom (2HP and 6HP positions)
-                constexpr float AUDIO_Y = 115.0f;          // comfortably above the bottom edge
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(2.0f * HP, AUDIO_Y)), module, NergalAmp::SIGNAL_INPUT));   // ~10.16 mm
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(4.0f * HP, AUDIO_Y)), module, NergalAmp::SIGNAL_OUTPUT)); // ~30.48 mm
+                // Audio I/O — stereo at bottom (2 inputs left, 2 outputs right)
+                constexpr float AUDIO_Y_TOP = 110.0f;      // top row of audio I/O
+                constexpr float AUDIO_Y_BOTTOM = 119.0f;   // bottom row of audio I/O
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(2.0f * HP, AUDIO_Y_TOP)), module, NergalAmp::SIGNAL_INPUT_L));     // L input
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(2.0f * HP, AUDIO_Y_BOTTOM)), module, NergalAmp::SIGNAL_INPUT_R));  // R input
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(6.0f * HP, AUDIO_Y_TOP)), module, NergalAmp::SIGNAL_OUTPUT_L));    // L output
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(6.0f * HP, AUDIO_Y_BOTTOM)), module, NergalAmp::SIGNAL_OUTPUT_R)); // R output
 
         }
 
