@@ -38,6 +38,32 @@ struct SabnockOTT : Module {
 	enum InputId {
 		INPUT_L,
 		INPUT_R,
+		// Main control CV inputs
+		INPUT_ATTACK_CV,
+		INPUT_RELEASE_CV,
+		INPUT_MIX_CV,
+		// Band gain CV inputs
+		INPUT_LOW_GAIN_CV,
+		INPUT_MID_GAIN_CV,
+		INPUT_HIGH_GAIN_CV,
+		// I/O gain CV inputs
+		INPUT_INPUT_GAIN_CV,
+		INPUT_OUTPUT_GAIN_CV,
+		// Low band CV inputs
+		INPUT_LOW_UP_THRESH_CV,
+		INPUT_LOW_UP_RATIO_CV,
+		INPUT_LOW_DOWN_THRESH_CV,
+		INPUT_LOW_DOWN_RATIO_CV,
+		// Mid band CV inputs
+		INPUT_MID_UP_THRESH_CV,
+		INPUT_MID_UP_RATIO_CV,
+		INPUT_MID_DOWN_THRESH_CV,
+		INPUT_MID_DOWN_RATIO_CV,
+		// High band CV inputs
+		INPUT_HIGH_UP_THRESH_CV,
+		INPUT_HIGH_UP_RATIO_CV,
+		INPUT_HIGH_DOWN_THRESH_CV,
+		INPUT_HIGH_DOWN_RATIO_CV,
 		NUM_INPUTS
 	};
 	enum OutputId {
@@ -59,6 +85,14 @@ struct SabnockOTT : Module {
 
 	float crossover1Freq = 120.f;  // Low/Mid split
 	float crossover2Freq = 2500.f; // Mid/High split
+
+	// Previous threshold values for tracking changes
+	float prev_ll_thres = -35.0f;
+	float prev_lu_thres = -28.5f;
+	float prev_bl_thres = -36.0f;
+	float prev_bu_thres = -25.0f;
+	float prev_hl_thres = -35.0f;
+	float prev_hu_thres = -30.0f;
 
 	SabnockOTT() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -101,10 +135,43 @@ struct SabnockOTT : Module {
 		configParam(PARAM_HIGH_UP_THRESH, -79.f, -1.f, -35.0f, "High Upward Threshold", " dB");
 		configParam(PARAM_HIGH_UP_RATIO, 0.f, 1.f, 0.8f, "High Upward Ratio", "%", 0.f, 100.f);
 
+		// Audio I/O
 		configInput(INPUT_L, "Left");
 		configInput(INPUT_R, "Right");
 		configOutput(OUTPUT_L, "Left");
 		configOutput(OUTPUT_R, "Right");
+
+		// Main control CV inputs
+		configInput(INPUT_ATTACK_CV, "Attack CV");
+		configInput(INPUT_RELEASE_CV, "Release CV");
+		configInput(INPUT_MIX_CV, "Mix CV");
+
+		// Band gain CV inputs
+		configInput(INPUT_LOW_GAIN_CV, "Low Band Gain CV");
+		configInput(INPUT_MID_GAIN_CV, "Mid Band Gain CV");
+		configInput(INPUT_HIGH_GAIN_CV, "High Band Gain CV");
+
+		// I/O gain CV inputs
+		configInput(INPUT_INPUT_GAIN_CV, "Input Gain CV");
+		configInput(INPUT_OUTPUT_GAIN_CV, "Output Gain CV");
+
+		// Low band CV inputs
+		configInput(INPUT_LOW_UP_THRESH_CV, "Low Upward Threshold CV");
+		configInput(INPUT_LOW_UP_RATIO_CV, "Low Upward Ratio CV");
+		configInput(INPUT_LOW_DOWN_THRESH_CV, "Low Downward Threshold CV");
+		configInput(INPUT_LOW_DOWN_RATIO_CV, "Low Downward Ratio CV");
+
+		// Mid band CV inputs
+		configInput(INPUT_MID_UP_THRESH_CV, "Mid Upward Threshold CV");
+		configInput(INPUT_MID_UP_RATIO_CV, "Mid Upward Ratio CV");
+		configInput(INPUT_MID_DOWN_THRESH_CV, "Mid Downward Threshold CV");
+		configInput(INPUT_MID_DOWN_RATIO_CV, "Mid Downward Ratio CV");
+
+		// High band CV inputs
+		configInput(INPUT_HIGH_UP_THRESH_CV, "High Upward Threshold CV");
+		configInput(INPUT_HIGH_UP_RATIO_CV, "High Upward Ratio CV");
+		configInput(INPUT_HIGH_DOWN_THRESH_CV, "High Downward Threshold CV");
+		configInput(INPUT_HIGH_DOWN_RATIO_CV, "High Downward Ratio CV");
 
 		// Initialize vital DSP
 		compressor = std::make_unique<vital::MultibandCompressor>();
@@ -132,55 +199,153 @@ struct SabnockOTT : Module {
 	}
 
 	void updateParams() {
-		// Get parameters from Rack
+		// Get parameters from Rack with CV modulation
+		// Attack/Release: CV is 0-10V, map to 0-1 range (0.1 per volt)
 		float attackParam = params[PARAM_ATTACK].getValue();
+		attackParam += inputs[INPUT_ATTACK_CV].getVoltage() * 0.1f;
+		attackParam = clamp(attackParam, 0.0f, 1.0f);
+
 		float releaseParam = params[PARAM_RELEASE].getValue();
+		releaseParam += inputs[INPUT_RELEASE_CV].getVoltage() * 0.1f;
+		releaseParam = clamp(releaseParam, 0.0f, 1.0f);
+
+		// Mix: CV is 0-10V, map to 0-1 range (0.1 per volt)
 		float mix = params[PARAM_MIX].getValue();
+		mix += inputs[INPUT_MIX_CV].getVoltage() * 0.1f;
+		mix = clamp(mix, 0.0f, 1.0f);
+
+		// I/O Gains: CV is 0-10V, map to -60 to +30 dB range (9 dB per volt)
 		in_gain = params[PARAM_INPUT].getValue();
+		in_gain += inputs[INPUT_INPUT_GAIN_CV].getVoltage() * 9.0f;
+		in_gain = clamp(in_gain, -60.0f, 30.0f);
+
 		out_gain = params[PARAM_OUTPUT].getValue();
+		out_gain += inputs[INPUT_OUTPUT_GAIN_CV].getVoltage() * 9.0f;
+		out_gain = clamp(out_gain, -60.0f, 30.0f);
 
 		// Calculate attack/release times (scale from 0-1 with exponential curve)
 		// Using exponential scaling for more musical response
 		float att_time = std::pow(attackParam, 2.0f);   // 0-1 range
 		float rel_time = std::pow(releaseParam, 2.0f);  // 0-1 range
 
-		// Get band gains from controls
+		// Get band gains from controls with CV modulation
+		// CV is 0-10V, map to -30 to +30 dB range (6 dB per volt)
 		float lgain = params[PARAM_LOW_GAIN].getValue();
-		float mgain = params[PARAM_MID_GAIN].getValue();
-		float hgain = params[PARAM_HIGH_GAIN].getValue();
+		lgain += inputs[INPUT_LOW_GAIN_CV].getVoltage() * 6.0f;
+		lgain = clamp(lgain, -30.0f, 30.0f);
 
-		// Get thresholds from controls
+		float mgain = params[PARAM_MID_GAIN].getValue();
+		mgain += inputs[INPUT_MID_GAIN_CV].getVoltage() * 6.0f;
+		mgain = clamp(mgain, -30.0f, 30.0f);
+
+		float hgain = params[PARAM_HIGH_GAIN].getValue();
+		hgain += inputs[INPUT_HIGH_GAIN_CV].getVoltage() * 6.0f;
+		hgain = clamp(hgain, -30.0f, 30.0f);
+
+		// Get thresholds from controls with CV modulation
 		// Lower threshold = upward compression (expansion) - bottom knob
 		// Upper threshold = downward compression - top knob
-		float ll_thres = params[PARAM_LOW_UP_THRESH].getValue();      // Lower (upward/expansion)
-		float lu_thres = params[PARAM_LOW_DOWN_THRESH].getValue();    // Upper (downward/compression)
-		float bl_thres = params[PARAM_MID_UP_THRESH].getValue();      // Lower (upward/expansion)
-		float bu_thres = params[PARAM_MID_DOWN_THRESH].getValue();    // Upper (downward/compression)
-		float hl_thres = params[PARAM_HIGH_UP_THRESH].getValue();     // Lower (upward/expansion)
-		float hu_thres = params[PARAM_HIGH_DOWN_THRESH].getValue();   // Upper (downward/compression)
+		// CV is 0-10V, map to -79 to -1 dB range (7.8 dB per volt)
+		float ll_thres = params[PARAM_LOW_UP_THRESH].getValue();
+		ll_thres += inputs[INPUT_LOW_UP_THRESH_CV].getVoltage() * 7.8f;
+		ll_thres = clamp(ll_thres, -79.0f, -1.0f);
+
+		float lu_thres = params[PARAM_LOW_DOWN_THRESH].getValue();
+		lu_thres += inputs[INPUT_LOW_DOWN_THRESH_CV].getVoltage() * 7.8f;
+		lu_thres = clamp(lu_thres, -79.0f, -1.0f);
+
+		float bl_thres = params[PARAM_MID_UP_THRESH].getValue();
+		bl_thres += inputs[INPUT_MID_UP_THRESH_CV].getVoltage() * 7.8f;
+		bl_thres = clamp(bl_thres, -79.0f, -1.0f);
+
+		float bu_thres = params[PARAM_MID_DOWN_THRESH].getValue();
+		bu_thres += inputs[INPUT_MID_DOWN_THRESH_CV].getVoltage() * 7.8f;
+		bu_thres = clamp(bu_thres, -79.0f, -1.0f);
+
+		float hl_thres = params[PARAM_HIGH_UP_THRESH].getValue();
+		hl_thres += inputs[INPUT_HIGH_UP_THRESH_CV].getVoltage() * 7.8f;
+		hl_thres = clamp(hl_thres, -79.0f, -1.0f);
+
+		float hu_thres = params[PARAM_HIGH_DOWN_THRESH].getValue();
+		hu_thres += inputs[INPUT_HIGH_DOWN_THRESH_CV].getVoltage() * 7.8f;
+		hu_thres = clamp(hu_thres, -79.0f, -1.0f);
 
 		// Enforce threshold constraint: upper threshold must be >= lower threshold
-		// If they overlap, push the lower one down
-		if (lu_thres < ll_thres) {
+		// Detect which knob changed and push the other one
+
+		// LOW BAND
+		bool ll_changed = (ll_thres != prev_ll_thres);
+		bool lu_changed = (lu_thres != prev_lu_thres);
+
+		if (ll_changed && ll_thres > lu_thres) {
+			// Lower moved up past upper, push upper up
+			lu_thres = ll_thres;
+			params[PARAM_LOW_DOWN_THRESH].setValue(lu_thres);
+		} else if (lu_changed && lu_thres < ll_thres) {
+			// Upper moved down past lower, push lower down
 			ll_thres = lu_thres;
 			params[PARAM_LOW_UP_THRESH].setValue(ll_thres);
 		}
-		if (bu_thres < bl_thres) {
+		prev_ll_thres = ll_thres;
+		prev_lu_thres = lu_thres;
+
+		// MID BAND
+		bool bl_changed = (bl_thres != prev_bl_thres);
+		bool bu_changed = (bu_thres != prev_bu_thres);
+
+		if (bl_changed && bl_thres > bu_thres) {
+			// Lower moved up past upper, push upper up
+			bu_thres = bl_thres;
+			params[PARAM_MID_DOWN_THRESH].setValue(bu_thres);
+		} else if (bu_changed && bu_thres < bl_thres) {
+			// Upper moved down past lower, push lower down
 			bl_thres = bu_thres;
 			params[PARAM_MID_UP_THRESH].setValue(bl_thres);
 		}
-		if (hu_thres < hl_thres) {
+		prev_bl_thres = bl_thres;
+		prev_bu_thres = bu_thres;
+
+		// HIGH BAND
+		bool hl_changed = (hl_thres != prev_hl_thres);
+		bool hu_changed = (hu_thres != prev_hu_thres);
+
+		if (hl_changed && hl_thres > hu_thres) {
+			// Lower moved up past upper, push upper up
+			hu_thres = hl_thres;
+			params[PARAM_HIGH_DOWN_THRESH].setValue(hu_thres);
+		} else if (hu_changed && hu_thres < hl_thres) {
+			// Upper moved down past lower, push lower down
 			hl_thres = hu_thres;
 			params[PARAM_HIGH_UP_THRESH].setValue(hl_thres);
 		}
+		prev_hl_thres = hl_thres;
+		prev_hu_thres = hu_thres;
 
-		// Get ratios directly from controls
+		// Get ratios from controls with CV modulation
+		// CV is 0-10V, map to 0-1 range (0.1 per volt)
 		float ll_ratio = params[PARAM_LOW_UP_RATIO].getValue();
+		ll_ratio += inputs[INPUT_LOW_UP_RATIO_CV].getVoltage() * 0.1f;
+		ll_ratio = clamp(ll_ratio, 0.0f, 1.0f);
+
 		float lu_ratio = params[PARAM_LOW_DOWN_RATIO].getValue();
+		lu_ratio += inputs[INPUT_LOW_DOWN_RATIO_CV].getVoltage() * 0.1f;
+		lu_ratio = clamp(lu_ratio, 0.0f, 1.0f);
+
 		float bl_ratio = params[PARAM_MID_UP_RATIO].getValue();
+		bl_ratio += inputs[INPUT_MID_UP_RATIO_CV].getVoltage() * 0.1f;
+		bl_ratio = clamp(bl_ratio, 0.0f, 1.0f);
+
 		float bu_ratio = params[PARAM_MID_DOWN_RATIO].getValue();
+		bu_ratio += inputs[INPUT_MID_DOWN_RATIO_CV].getVoltage() * 0.1f;
+		bu_ratio = clamp(bu_ratio, 0.0f, 1.0f);
+
 		float hl_ratio = params[PARAM_HIGH_UP_RATIO].getValue();
+		hl_ratio += inputs[INPUT_HIGH_UP_RATIO_CV].getVoltage() * 0.1f;
+		hl_ratio = clamp(hl_ratio, 0.0f, 1.0f);
+
 		float hu_ratio = params[PARAM_HIGH_DOWN_RATIO].getValue();
+		hu_ratio += inputs[INPUT_HIGH_DOWN_RATIO_CV].getVoltage() * 0.1f;
+		hu_ratio = clamp(hu_ratio, 0.0f, 1.0f);
 
 		// Set thresholds
 		vals[vital::MultibandCompressor::kLowLowerThreshold - 1]->set(ll_thres);
@@ -288,65 +453,112 @@ struct SabnockOTTWidget : ModuleWidget {
 		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		// Top row: Attack, Release, Mix (3 big knobs)
-		addParam(createParamCentered<RoundHugeBlackKnob>(mm2px(Vec(15.f, 20.f)), module, SabnockOTT::PARAM_ATTACK));
-		addParam(createParamCentered<RoundHugeBlackKnob>(mm2px(Vec(35.f, 20.f)), module, SabnockOTT::PARAM_RELEASE));
-		addParam(createParamCentered<RoundHugeBlackKnob>(mm2px(Vec(55.f, 20.f)), module, SabnockOTT::PARAM_MIX));
+		// Top row: Attack, Release, Mix (3 medium knobs)
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15.f, 15.f)), module, SabnockOTT::PARAM_ATTACK));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(35.f, 15.f)), module, SabnockOTT::PARAM_RELEASE));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(55.f, 15.f)), module, SabnockOTT::PARAM_MIX));
 
-		// Second row: Band Gains (Low, Mid, High - 3 medium knobs)
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(15.f, 40.f)), module, SabnockOTT::PARAM_LOW_GAIN));
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(35.f, 40.f)), module, SabnockOTT::PARAM_MID_GAIN));
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(55.f, 40.f)), module, SabnockOTT::PARAM_HIGH_GAIN));
+		// Second row: Band Gains (Low, Mid, High - 3 small knobs)
+		float gainY = 28.f;
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(15.f, gainY)), module, SabnockOTT::PARAM_LOW_GAIN));
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(35.f, gainY)), module, SabnockOTT::PARAM_MID_GAIN));
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(55.f, gainY)), module, SabnockOTT::PARAM_HIGH_GAIN));
 
-		// Third row: Input and Output gain
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(25.f, 58.f)), module, SabnockOTT::PARAM_INPUT));
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(45.f, 58.f)), module, SabnockOTT::PARAM_OUTPUT));
+		// Third row: Input and Output gain (small knobs)
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(25.f, 38.f)), module, SabnockOTT::PARAM_INPUT));
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(45.f, 38.f)), module, SabnockOTT::PARAM_OUTPUT));
 
 		// Band compression controls: Each column has TOP and BOTTOM knobs
-		// TOP knob (large) = Downward compression threshold (upper threshold)
-		// Small knob below TOP = Downward compression ratio
-		// BOTTOM knob (large) = Upward expansion threshold (lower threshold)
-		// Small knob below BOTTOM = Upward expansion ratio
+		// TOP = Downward (compression), BOTTOM = Upward (expansion)
+		// Layout: Small knob (threshold) with Trimpot (ratio) below
 
-		float bandStartY = 70.f;
-		float bandSpacing = 23.f;
-		float leftX = 20.f;
-		float rightX = 50.f;
-		float knobPairOffset = 8.f;  // Distance between large knob and its small ratio knob
+		float bandStartY = 48.f;
+		float pairSpacing = 13.f;  // Vertical distance between top and bottom pairs
+		float knobToTrimOffset = 5.5f;  // Threshold knob to ratio trimpot
+
+		float lowX = 15.f;
+		float midX = 35.f;
+		float highX = 55.f;
 
 		// LOW BAND (Left column)
-		float lowY = bandStartY;
-		// Top pair: Downward (compression) - upper threshold
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(leftX, lowY)), module, SabnockOTT::PARAM_LOW_DOWN_THRESH));
-		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(leftX, lowY + knobPairOffset)), module, SabnockOTT::PARAM_LOW_DOWN_RATIO));
-		// Bottom pair: Upward (expansion) - lower threshold
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(leftX, lowY + bandSpacing)), module, SabnockOTT::PARAM_LOW_UP_THRESH));
-		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(leftX, lowY + bandSpacing + knobPairOffset)), module, SabnockOTT::PARAM_LOW_UP_RATIO));
+		float lowDownY = bandStartY;
+		// Top: Downward (compression)
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(lowX, lowDownY)), module, SabnockOTT::PARAM_LOW_DOWN_THRESH));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(lowX, lowDownY + knobToTrimOffset)), module, SabnockOTT::PARAM_LOW_DOWN_RATIO));
+
+		float lowUpY = lowDownY + pairSpacing;
+		// Bottom: Upward (expansion)
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(lowX, lowUpY)), module, SabnockOTT::PARAM_LOW_UP_THRESH));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(lowX, lowUpY + knobToTrimOffset)), module, SabnockOTT::PARAM_LOW_UP_RATIO));
 
 		// MID BAND (Middle column)
-		float midY = bandStartY;
-		// Top pair: Downward (compression) - upper threshold
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(35.f, midY)), module, SabnockOTT::PARAM_MID_DOWN_THRESH));
-		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(35.f, midY + knobPairOffset)), module, SabnockOTT::PARAM_MID_DOWN_RATIO));
-		// Bottom pair: Upward (expansion) - lower threshold
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(35.f, midY + bandSpacing)), module, SabnockOTT::PARAM_MID_UP_THRESH));
-		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(35.f, midY + bandSpacing + knobPairOffset)), module, SabnockOTT::PARAM_MID_UP_RATIO));
+		float midDownY = bandStartY;
+		// Top: Downward (compression)
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(midX, midDownY)), module, SabnockOTT::PARAM_MID_DOWN_THRESH));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(midX, midDownY + knobToTrimOffset)), module, SabnockOTT::PARAM_MID_DOWN_RATIO));
+
+		float midUpY = midDownY + pairSpacing;
+		// Bottom: Upward (expansion)
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(midX, midUpY)), module, SabnockOTT::PARAM_MID_UP_THRESH));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(midX, midUpY + knobToTrimOffset)), module, SabnockOTT::PARAM_MID_UP_RATIO));
 
 		// HIGH BAND (Right column)
-		float highY = bandStartY;
-		// Top pair: Downward (compression) - upper threshold
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(rightX, highY)), module, SabnockOTT::PARAM_HIGH_DOWN_THRESH));
-		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(rightX, highY + knobPairOffset)), module, SabnockOTT::PARAM_HIGH_DOWN_RATIO));
-		// Bottom pair: Upward (expansion) - lower threshold
-		addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(rightX, highY + bandSpacing)), module, SabnockOTT::PARAM_HIGH_UP_THRESH));
-		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(rightX, highY + bandSpacing + knobPairOffset)), module, SabnockOTT::PARAM_HIGH_UP_RATIO));
+		float highDownY = bandStartY;
+		// Top: Downward (compression)
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(highX, highDownY)), module, SabnockOTT::PARAM_HIGH_DOWN_THRESH));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(highX, highDownY + knobToTrimOffset)), module, SabnockOTT::PARAM_HIGH_DOWN_RATIO));
 
-		// I/O at bottom
-		float ioY = 117.f;
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(15.f, ioY)), module, SabnockOTT::INPUT_L));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(25.f, ioY)), module, SabnockOTT::INPUT_R));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(45.f, ioY)), module, SabnockOTT::OUTPUT_L));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(55.f, ioY)), module, SabnockOTT::OUTPUT_R));
+		float highUpY = highDownY + pairSpacing;
+		// Bottom: Upward (expansion)
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(highX, highUpY)), module, SabnockOTT::PARAM_HIGH_UP_THRESH));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(highX, highUpY + knobToTrimOffset)), module, SabnockOTT::PARAM_HIGH_UP_RATIO));
+
+		// Audio I/O section
+		float audioIOY = 75.f;
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.f, audioIOY)), module, SabnockOTT::INPUT_L));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(20.f, audioIOY)), module, SabnockOTT::INPUT_R));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(50.f, audioIOY)), module, SabnockOTT::OUTPUT_L));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(60.f, audioIOY)), module, SabnockOTT::OUTPUT_R));
+
+		// CV inputs section at bottom - arranged in a compact grid
+		float cvStartY = 86.f;
+		float cvRowSpacing = 5.5f;
+		float cvColSpacing = 7.f;
+
+		// Row 1: Main controls CV (Attack, Release, Mix)
+		float row1Y = cvStartY;
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f, row1Y)), module, SabnockOTT::INPUT_ATTACK_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f + cvColSpacing, row1Y)), module, SabnockOTT::INPUT_RELEASE_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f + 2*cvColSpacing, row1Y)), module, SabnockOTT::INPUT_MIX_CV));
+
+		// Row 2: Band gains CV (Low, Mid, High) + I/O gains
+		float row2Y = row1Y + cvRowSpacing;
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f, row2Y)), module, SabnockOTT::INPUT_LOW_GAIN_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f + cvColSpacing, row2Y)), module, SabnockOTT::INPUT_MID_GAIN_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f + 2*cvColSpacing, row2Y)), module, SabnockOTT::INPUT_HIGH_GAIN_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f + 3*cvColSpacing, row2Y)), module, SabnockOTT::INPUT_INPUT_GAIN_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f + 4*cvColSpacing, row2Y)), module, SabnockOTT::INPUT_OUTPUT_GAIN_CV));
+
+		// Row 3: Low band thresholds and ratios
+		float row3Y = row2Y + cvRowSpacing;
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f, row3Y)), module, SabnockOTT::INPUT_LOW_DOWN_THRESH_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f + cvColSpacing, row3Y)), module, SabnockOTT::INPUT_LOW_DOWN_RATIO_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f + 2*cvColSpacing, row3Y)), module, SabnockOTT::INPUT_LOW_UP_THRESH_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f + 3*cvColSpacing, row3Y)), module, SabnockOTT::INPUT_LOW_UP_RATIO_CV));
+
+		// Row 4: Mid band thresholds and ratios
+		float row4Y = row3Y + cvRowSpacing;
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f, row4Y)), module, SabnockOTT::INPUT_MID_DOWN_THRESH_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f + cvColSpacing, row4Y)), module, SabnockOTT::INPUT_MID_DOWN_RATIO_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f + 2*cvColSpacing, row4Y)), module, SabnockOTT::INPUT_MID_UP_THRESH_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f + 3*cvColSpacing, row4Y)), module, SabnockOTT::INPUT_MID_UP_RATIO_CV));
+
+		// Row 5: High band thresholds and ratios
+		float row5Y = row4Y + cvRowSpacing;
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f, row5Y)), module, SabnockOTT::INPUT_HIGH_DOWN_THRESH_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f + cvColSpacing, row5Y)), module, SabnockOTT::INPUT_HIGH_DOWN_RATIO_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f + 2*cvColSpacing, row5Y)), module, SabnockOTT::INPUT_HIGH_UP_THRESH_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.f + 3*cvColSpacing, row5Y)), module, SabnockOTT::INPUT_HIGH_UP_RATIO_CV));
 	}
 };
 
