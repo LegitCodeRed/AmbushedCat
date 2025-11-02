@@ -187,7 +187,7 @@ struct Ahriman : Module {
 
                 configParam(BLEND_PARAM, 0.f, 1.f, 0.5f, "Blend", "%", 0.f, 100.f);
                 configParam(TONE_PARAM, -1.f, 1.f, 0.f, "Tone");
-                configParam(REGEN_PARAM, 0.f, 1.f, 0.45f, "Regen");
+                configParam(REGEN_PARAM, 0.f, 1.f, 0.45f, "Regen", "%", 0.f, 100.f);
                 configParam(SPEED_PARAM, 0.f, 1.f, 0.5f, "Speed");
                 configParam(INDEX_PARAM, -1.f, 1.f, 0.f, "Index");
                 configParam(SIZE_PARAM, 0.f, 1.f, 0.5f, "Size");
@@ -281,16 +281,49 @@ struct Ahriman : Module {
 
                 inputEnv += 0.0025f * (((std::fabs(inL) + std::fabs(inR)) * 0.5f) - inputEnv);
 
-                float regenShape = (regen < 0.55f) ? (0.9f * regen) : (0.495f + (regen - 0.55f) * 1.35f);
-                float feedback = rack::math::clamp(0.25f + 0.75f * regenShape, 0.f, 0.995f);
+                // REGEN: Immersive feedback control inspired by Desmodus Versio
+                // 0.0 - 0.5: Short reverbs (0% to ~85% feedback) - smaller synthetic spaces
+                // 0.5 - 0.6: Transition to infinite (85% to 100% feedback)
+                // 0.6 - 1.0: Infinite tail with increasing ducking effect
 
-                if (regen > 0.75f) {
-                        float duck = rack::math::clamp((regen - 0.75f) / 0.25f, 0.f, 1.f);
-                        feedback *= (1.f - duck * rack::math::clamp(inputEnv * 0.25f, 0.f, 1.f));
+                float feedback = 0.f;
+                float inputGain = 0.f;
+                float denseShape = rack::math::crossfade(0.4f, 0.9f, dense);
+
+                if (regen < 0.5f) {
+                        // 0.0 to 0.5: Short reverbs - exponential curve for natural feel
+                        // Maps 0-0.5 to feedback of 0.0-0.85 with exponential growth
+                        float normalized = regen * 2.f; // 0.0 to 1.0
+                        feedback = normalized * normalized * 0.85f; // Exponential: 0.0 to 0.85
+                        inputGain = rack::math::crossfade(0.2f, 0.35f, dense); // Normal input
+
+                } else if (regen < 0.6f) {
+                        // 0.5 to 0.6: Transition zone to infinite reverb
+                        float normalized = (regen - 0.5f) * 10.f; // 0.0 to 1.0
+                        feedback = 0.85f + normalized * 0.145f; // 0.85 to 0.995
+                        inputGain = rack::math::crossfade(0.35f, 0.25f, normalized * dense); // Start reducing input
+
+                } else {
+                        // 0.6 to 1.0: Infinite reverb with ducking
+                        feedback = 0.995f; // Maximum feedback
+
+                        // Calculate ducking amount (0.0 at regen=0.6, 1.0 at regen=1.0)
+                        float duckAmount = (regen - 0.6f) / 0.4f; // 0.0 to 1.0
+
+                        // Input ducking: reduce input gain as ducking increases
+                        float baseInputGain = rack::math::crossfade(0.25f, 0.05f, dense);
+                        inputGain = baseInputGain * (1.f - duckAmount * 0.85f);
+
+                        // Sidechain-style ducking: reduce feedback when input is present
+                        // More aggressive ducking at higher regen values
+                        float duckSensitivity = 0.3f + duckAmount * 1.2f; // Increasing sensitivity
+                        float duckDepth = duckAmount * 0.75f; // How much to duck (0% to 75%)
+                        float inputLevel = rack::math::clamp(inputEnv * duckSensitivity, 0.f, 1.f);
+                        feedback *= (1.f - duckDepth * inputLevel);
                 }
 
-                float denseShape = rack::math::crossfade(0.4f, 0.9f, dense);
-                float inputGain = rack::math::crossfade(0.15f, 0.35f, dense);
+                // Ensure feedback stays in safe range
+                feedback = rack::math::clamp(feedback, 0.f, 0.9975f);
 
                 float sizeShaped = size * size;
                 float baseSeconds = 0.03f + sizeShaped * 1.8f;
