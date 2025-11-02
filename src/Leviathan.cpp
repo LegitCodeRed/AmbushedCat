@@ -1,7 +1,11 @@
 #include "plugin.hpp"
+#include "effects/distortion.h"
+#include "framework/value.h"
+#include "utilities/smooth_value.h"
 #include <array>
 #include <cmath>
 #include <algorithm>
+#include <memory>
 
 namespace {
 static constexpr float HUGE_SMOOSH_GAIN = 39810717.f; // 128 dB of drive
@@ -331,6 +335,7 @@ struct Leviathan : Module {
         enum ParamIds {
                 BLEND_PARAM,
                 FOLD_PARAM,
+                DIST_TYPE_PARAM,
                 CENTER_PARAM,
                 DOOM_PARAM,
                 PHASE_PARAM,
@@ -346,6 +351,7 @@ struct Leviathan : Module {
                 IN_R_INPUT,
                 BLEND_CV_INPUT,
                 FOLD_CV_INPUT,
+                DIST_TYPE_CV_INPUT,
                 CENTER_CV_INPUT,
                 DOOM_CV_INPUT,
                 PHASE_CV_INPUT,
@@ -381,6 +387,14 @@ struct Leviathan : Module {
         std::array<NotchFilter, PORT_MAX_CHANNELS> notchL{};
         std::array<NotchFilter, PORT_MAX_CHANNELS> notchR{};
 
+        // Vital distortion processors
+        std::array<std::unique_ptr<vital::Distortion>, PORT_MAX_CHANNELS> vitalDistL{};
+        std::array<std::unique_ptr<vital::Distortion>, PORT_MAX_CHANNELS> vitalDistR{};
+        std::array<std::unique_ptr<vital::Output>, PORT_MAX_CHANNELS> vitalSigInL{};
+        std::array<std::unique_ptr<vital::Output>, PORT_MAX_CHANNELS> vitalSigInR{};
+        std::array<std::array<vital::Value*, 2>, PORT_MAX_CHANNELS> vitalValsL{};
+        std::array<std::array<vital::Value*, 2>, PORT_MAX_CHANNELS> vitalValsR{};
+
         float bootTimer = 1.2f;
         bool bootActive = true;
 
@@ -389,6 +403,8 @@ struct Leviathan : Module {
 
                 configParam(BLEND_PARAM, 0.f, 1.f, 0.5f, "Blend");
                 configParam(FOLD_PARAM, 0.f, 1.f, 0.25f, "Fold");
+                configSwitch(DIST_TYPE_PARAM, 0.f, 6.f, 0.f, "Distortion Type",
+                        {"Infinifolder", "Soft Clip", "Hard Clip", "Linear Fold", "Sin Fold", "Bit Crush", "Down Sample"});
                 configParam(CENTER_PARAM, 0.f, 1.f, 0.5f, "Center");
                 configParam(DOOM_PARAM, 0.f, 1.f, 0.f, "Doom");
                 configParam(PHASE_PARAM, 0.f, 1.f, 0.f, "Phase");
@@ -402,6 +418,7 @@ struct Leviathan : Module {
                 configInput(IN_R_INPUT, "Right audio");
                 configInput(BLEND_CV_INPUT, "Blend CV");
                 configInput(FOLD_CV_INPUT, "Fold CV");
+                configInput(DIST_TYPE_CV_INPUT, "Distortion Type CV");
                 configInput(CENTER_CV_INPUT, "Center CV");
                 configInput(DOOM_CV_INPUT, "Doom CV");
                 configInput(PHASE_CV_INPUT, "Phase CV");
@@ -413,6 +430,28 @@ struct Leviathan : Module {
 
                 configOutput(OUT_L_OUTPUT, "Left audio");
                 configOutput(OUT_R_OUTPUT, "Right audio");
+
+                // Initialize Vital distortion processors for each channel
+                for (int c = 0; c < PORT_MAX_CHANNELS; ++c) {
+                        vitalDistL[c] = std::make_unique<vital::Distortion>();
+                        vitalDistR[c] = std::make_unique<vital::Distortion>();
+
+                        vitalSigInL[c] = std::make_unique<vital::Output>(vital::kMaxBufferSize);
+                        vitalSigInR[c] = std::make_unique<vital::Output>(vital::kMaxBufferSize);
+
+                        vitalDistL[c]->plug(vitalSigInL[c].get(), vital::Distortion::kAudio);
+                        vitalDistR[c]->plug(vitalSigInR[c].get(), vital::Distortion::kAudio);
+
+                        for (size_t i = 0; i < 2; i++) {
+                                vitalValsL[c][i] = new vital::SmoothValue(0);
+                                vitalValsR[c][i] = new vital::SmoothValue(0);
+                        }
+
+                        vitalDistL[c]->plug(vitalValsL[c][0], vital::Distortion::kType);
+                        vitalDistL[c]->plug(vitalValsL[c][1], vital::Distortion::kDrive);
+                        vitalDistR[c]->plug(vitalValsR[c][0], vital::Distortion::kType);
+                        vitalDistR[c]->plug(vitalValsR[c][1], vital::Distortion::kDrive);
+                }
 
                 onSampleRateChange();
         }
@@ -430,6 +469,8 @@ struct Leviathan : Module {
                         phaseR[c].set(200.f, sr);
                         notchL[c].set(1000.f, 4.f, sr);
                         notchR[c].set(1000.f, 4.f, sr);
+                        if (vitalDistL[c]) vitalDistL[c]->setSampleRate(sr);
+                        if (vitalDistR[c]) vitalDistR[c]->setSampleRate(sr);
                 }
         }
 
@@ -445,6 +486,8 @@ struct Leviathan : Module {
                         phaseR[c].reset();
                         notchL[c].reset();
                         notchR[c].reset();
+                        if (vitalDistL[c]) vitalDistL[c]->reset(vital::poly_mask(-1));
+                        if (vitalDistR[c]) vitalDistR[c]->reset(vital::poly_mask(-1));
                 }
         }
 
@@ -461,6 +504,14 @@ struct Leviathan : Module {
                         base += inputs[inputId].getPolyVoltage(c) / 5.f;
                 int mode = (int)std::round(base);
                 return rack::math::clamp(mode, 0, 2);
+        }
+
+        int getDistTypeWithCv(int c) {
+                float base = params[DIST_TYPE_PARAM].getValue();
+                if (inputs[DIST_TYPE_CV_INPUT].isConnected())
+                        base += inputs[DIST_TYPE_CV_INPUT].getPolyVoltage(c) * 1.4f; // 0-10V -> 0-14 (covers 0-6 with headroom)
+                int distType = (int)std::round(base);
+                return rack::math::clamp(distType, 0, 6);
         }
 
         void process(const ProcessArgs& args) override {
@@ -481,6 +532,7 @@ struct Leviathan : Module {
                 for (int c = 0; c < channels; ++c) {
                         float blend = rack::math::clamp(blendParam + inputs[BLEND_CV_INPUT].getPolyVoltage(c) / 5.f, 0.f, 1.f);
                         float foldAmount = getParamWithCv(FOLD_PARAM, FOLD_CV_INPUT, c);
+                        int distType = getDistTypeWithCv(c);
                         float centerControl = getParamWithCv(CENTER_PARAM, CENTER_CV_INPUT, c);
                         float doomAmount = getParamWithCv(DOOM_PARAM, DOOM_CV_INPUT, c);
                         float phaseAmount = getParamWithCv(PHASE_PARAM, PHASE_CV_INPUT, c);
@@ -488,6 +540,18 @@ struct Leviathan : Module {
                         float rectAmount = getParamWithCv(RECTIFY_PARAM, RECTIFY_CV_INPUT, c);
                         int flowMode = getSwitchWithCv(FLOW_PARAM, FLOW_CV_INPUT, c);
                         int notchMode = getSwitchWithCv(NOTCH_PARAM, NOTCH_CV_INPUT, c);
+
+                        // Update Vital distortion parameters
+                        if (distType > 0) {
+                                float driveDb = -30.f + foldAmount * 60.f;
+                                vitalValsL[c][0]->set(distType - 1); // Type: 0-5 for Vital (subtract 1 because 0 is Infinifolder)
+                                vitalValsL[c][1]->set(driveDb);
+                                vitalValsR[c][0]->set(distType - 1);
+                                vitalValsR[c][1]->set(driveDb);
+
+                                for (auto& val : vitalValsL[c]) { val->process(1); }
+                                for (auto& val : vitalValsR[c]) { val->process(1); }
+                        }
 
                         float inL = inputs[IN_L_INPUT].getPolyVoltage(c);
                         float inR = inputs[IN_R_INPUT].isConnected() ? inputs[IN_R_INPUT].getPolyVoltage(c) : inL;
@@ -501,8 +565,23 @@ struct Leviathan : Module {
 
                         auto applyFlow = [&](float& left, float& right) {
                                 auto foldStage = [&](float& lx, float& rx) {
-                                        lx = applyWavefolder(lx, foldAmount);
-                                        rx = applyWavefolder(rx, foldAmount);
+                                        if (distType == 0) {
+                                                // Use Infinifolder
+                                                lx = applyWavefolder(lx, foldAmount);
+                                                rx = applyWavefolder(rx, foldAmount);
+                                        } else {
+                                                // Use Vital distortion (types 1-6)
+                                                // Normalize to +/- 1.0 range for Vital
+                                                ((vital::mono_float*)vitalSigInL[c]->buffer)[0] = lx / 5.0f;
+                                                ((vital::mono_float*)vitalSigInL[c]->buffer)[1] = 0;
+                                                vitalDistL[c]->process(1);
+                                                lx = ((const vital::mono_float*)vitalDistL[c]->output(vital::Distortion::kAudioOut)->buffer)[0] * 5.0f;
+
+                                                ((vital::mono_float*)vitalSigInR[c]->buffer)[0] = rx / 5.0f;
+                                                ((vital::mono_float*)vitalSigInR[c]->buffer)[1] = 0;
+                                                vitalDistR[c]->process(1);
+                                                rx = ((const vital::mono_float*)vitalDistR[c]->output(vital::Distortion::kAudioOut)->buffer)[0] * 5.0f;
+                                        }
                                 };
                                 auto doomStage = [&](float& lx, float& rx) {
                                         lx = doomL[c].process(lx, doomAmount);
@@ -665,6 +744,9 @@ struct LeviathanWidget : ModuleWidget {
                 addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(13.0, 62.0)), module, Leviathan::RECTIFY_PARAM));
 
                 // === SWITCHES & BUTTON SECTION ===
+                // Distortion Type selector knob (small knob)
+                addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(25.4, 58.0)), module, Leviathan::DIST_TYPE_PARAM));
+
                 // FLOW / NOTCH switches (y=67mm and 75mm)
                 addParam(createParamCentered<CKSSThree>(mm2px(Vec(37.8, 63.0)), module, Leviathan::FLOW_PARAM));
                 addParam(createParamCentered<CKSSThree>(mm2px(Vec(37.8, 77.0)), module, Leviathan::NOTCH_PARAM));
@@ -677,6 +759,7 @@ struct LeviathanWidget : ModuleWidget {
                 // Row 1 CVs (y=96mm)
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.5, 92.0)), module, Leviathan::BLEND_CV_INPUT));
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(17.5, 92.0)), module, Leviathan::FOLD_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(25.4, 92.0)), module, Leviathan::DIST_TYPE_CV_INPUT));
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(33.3, 92.0)), module, Leviathan::CENTER_CV_INPUT));
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(42.3, 92.0)), module, Leviathan::DOOM_CV_INPUT));
 
