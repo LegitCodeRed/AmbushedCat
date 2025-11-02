@@ -1,413 +1,12 @@
 #include "plugin.hpp"
-#include <array>
+#include "effects/distortion.h"
+#include "framework/value.h"
+#include "utilities/smooth_value.h"
 #include <cmath>
 #include <algorithm>
-#include <climits>
+#include <array>
 
 namespace {
-static constexpr float HUGE_SMOOSH_GAIN = 39810717.f; // 128 dB of drive
-
-struct OnePole {
-        float a = 0.f;
-        float b = 0.f;
-        float z = 0.f;
-
-        void set(float cutoff, float sampleRate) {
-                cutoff = rack::math::clamp(cutoff, 1.f, sampleRate * 0.45f);
-                float alpha = std::exp(-2.f * M_PI * cutoff / sampleRate);
-                a = alpha;
-                b = 1.f - alpha;
-        }
-
-        float process(float x) {
-                z = a * z + b * x;
-                return z;
-        }
-
-        void reset() {
-                z = 0.f;
-        }
-};
-
-// Enhanced distortion using Vital's algorithms
-struct VitalDistortionProcessor {
-    float ds_phase = 0.f;
-    float ds_lastSample = 0.f;
-
-    void reset() {
-        ds_phase = 0.f;
-        ds_lastSample = 0.f;
-    }
-
-    float process(float x, int distType, float amount, float sampleRate) {
-        if (amount <= 1e-5f)
-            return x;
-
-        float drive = 1.0f;
-
-        // Apply drive scaling based on distortion type
-        switch(distType) {
-            case 0: // Soft Clip
-            case 1: // Hard Clip
-            case 2: // Linear Fold
-            case 3: // Sin Fold
-            {
-                float driveDb = -30.f + amount * 60.f;
-                drive = std::pow(10.f, driveDb / 20.f);
-            }
-            break;
-            case 4: // Bit Crush
-            {
-                // Map amount to a more intuitive bit depth reduction
-                float bitDepth = 16.f * (1.f - amount);
-                bitDepth = rack::math::clamp(bitDepth, 1.f, 16.f);
-                float steps = std::pow(2.f, bitDepth);
-                drive = 1.f / steps; // Quantization step size
-            }
-            break;
-            case 5: // Down Sample
-            {
-                // Map amount to sample hold period
-                if (sampleRate <= 0) sampleRate = 44100.f;
-                float maxPeriod = sampleRate / 100.f; // Min sample rate of 100 Hz
-                float period = 1.f + amount * amount * (maxPeriod - 1.f);
-                drive = period; // Use 'drive' to store the period
-            }
-            break;
-        }
-
-        // Apply distortion algorithms
-        float distorted = x;
-        switch(distType) {
-            case 0: // Soft Clip (tanh)
-                distorted = std::tanh(x * drive);
-                break;
-            case 1: // Hard Clip
-                distorted = rack::math::clamp(x * drive, -1.0f, 1.0f);
-                break;
-            case 2: // Linear Fold
-            {
-                float adjust = x * drive * 0.25f + 0.75f;
-                float range = adjust - std::floor(adjust); // mod operation
-                distorted = std::abs(range * -4.0f + 2.0f) - 1.0f;
-            }
-            break;
-            case 3: // Sin Fold
-            {
-                float adjust = x * drive * -0.25f + 0.5f;
-                float range = adjust - std::floor(adjust); // mod operation
-                // Approximation of sin(2*pi*x) using polynomial
-                float t = range * 2.0f - 1.0f;
-                distorted = t * (1.0f - 0.16605f * t * t);
-            }
-            break;
-            case 4: // Bit Crush
-                distorted = std::round(x / drive) * drive;
-                break;
-            case 5: // Down Sample
-            {
-                ds_phase += 1.f;
-                if (ds_phase >= drive) { // drive is period
-                    ds_phase -= drive;
-                    ds_lastSample = x;
-                }
-                distorted = ds_lastSample;
-            }
-            break;
-        }
-
-        // Dry/wet blend based on amount
-        float wetAmount = rack::math::clamp(0.3f + amount * 0.7f, 0.f, 1.f);
-        return rack::math::crossfade(x, distorted, wetAmount);
-    }
-};
-
-struct RectifierStage {
-        float sampleRate = 44100.f;
-        float dcState = 0.f;
-        float alpha = 0.999f;
-
-        void setSampleRate(float sr) {
-                sampleRate = std::max(1.f, sr);
-                float cutoff = 5.f;
-                alpha = std::exp(-2.f * M_PI * cutoff / sampleRate);
-        }
-
-        void reset() {
-                dcState = 0.f;
-        }
-
-        float process(float in, float amount) {
-                if (amount <= 1e-5f)
-                        return in;
-
-                // Full-wave rectification
-                float rect = std::fabs(in);
-
-                // DC blocking
-                dcState = rack::math::clamp(alpha * dcState + (1.f - alpha) * rect, -10.f, 10.f);
-                float centered = rect - dcState;
-
-                // Much heavier distortion - Pura Ruina style
-                // Pre-gain for more aggressive rectification
-                float preGain = 1.5f + amount * 4.5f;
-                float driven = centered * preGain;
-
-                // Hard clip for more aggressive character
-                driven = rack::math::clamp(driven, -3.f, 3.f);
-
-                // Asymmetric waveshaping for octave-up character
-                float asymmetry = 0.2f + amount * 0.3f;
-                float shaped = std::tanh((driven + asymmetry) * (2.5f + 8.f * amount)) - asymmetry * 0.5f;
-
-                // Add harmonics boost
-                shaped *= (1.f + amount * 0.6f);
-
-                // More wet mix at higher amounts
-                float wetAmount = amount * (0.8f + amount * 0.4f);
-                return rack::math::crossfade(in, shaped, wetAmount);
-        }
-};
-
-struct NotchFilter {
-        float b0 = 1.f, b1 = 0.f, b2 = 0.f;
-        float a1 = 0.f, a2 = 0.f;
-        float z1 = 0.f, z2 = 0.f;
-
-        void set(float freq, float q, float sampleRate) {
-                freq = rack::math::clamp(freq, 20.f, sampleRate * 0.45f);
-                q = std::max(0.1f, q);
-                float w0 = 2.f * M_PI * freq / sampleRate;
-                float cosw = std::cos(w0);
-                float alpha = std::sin(w0) / (2.f * q);
-                float a0 = 1.f + alpha;
-                b0 = 1.f / a0;
-                b1 = -2.f * cosw / a0;
-                b2 = 1.f / a0;
-                a1 = -2.f * cosw / a0;
-                a2 = (1.f - alpha) / a0;
-        }
-
-        void reset() {
-                z1 = z2 = 0.f;
-        }
-
-        float process(float in) {
-                float out = b0 * in + z1;
-                z1 = b1 * in + z2 - a1 * out;
-                z2 = b2 * in - a2 * out;
-                return out;
-        }
-};
-
-struct AllpassPhase {
-        float a = 0.f;
-        float z = 0.f;
-
-        void set(float freq, float sampleRate) {
-                freq = rack::math::clamp(freq, 5.f, sampleRate * 0.49f);
-                float k = std::tan(M_PI * freq / sampleRate);
-                a = (k - 1.f) / (k + 1.f);
-        }
-
-        void reset() {
-                z = 0.f;
-        }
-
-        float process(float in) {
-                float y = -a * in + z;
-                z = in + a * y;
-                return y;
-        }
-};
-
-struct SubOctaveChorus {
-        float sampleRate = 44100.f;
-        bool prevPositive = false;
-        float subPolarity = 1.f;
-        float env = 0.f;
-        float detunePhase = 0.f;
-        float buzzPhase = 0.f;
-        OnePole smoother;
-
-        void setSampleRate(float sr) {
-                sampleRate = std::max(1.f, sr);
-                smoother.set(100.f, sampleRate);
-        }
-
-        void reset() {
-                prevPositive = false;
-                subPolarity = 1.f;
-                env = 0.f;
-                detunePhase = 0.f;
-                buzzPhase = 0.f;
-                smoother.reset();
-        }
-
-        float process(float input, float amount) {
-                if (amount <= 1e-5f)
-                        return input;
-
-                // Simple suboctave: flip polarity on zero crossings
-                bool positive = input >= 0.f;
-                if (positive != prevPositive) {
-                        subPolarity = -subPolarity;
-                        prevPositive = positive;
-                }
-
-                // Track envelope
-                float absIn = std::fabs(input);
-                env += 0.002f * (absIn - env);
-
-                // Base suboctave square wave
-                float sub = subPolarity * rack::math::clamp(env, 0.f, 1.f);
-                sub = smoother.process(sub);
-
-                // Detuning that gets worse as amount increases
-                // Slow LFO for pitch warble - starts immediately
-                float detuneSpeed = 1.2f + amount * 2.2f; // Faster base speed
-                detunePhase += detuneSpeed / sampleRate;
-                if (detunePhase >= 1.f)
-                        detunePhase -= 1.f;
-
-                float detune = std::sin(2.f * M_PI * detunePhase);
-
-                // Apply detuning - starts early and gets more extreme
-                // More linear at start, then accelerates
-                float detuneDepth = (0.15f + amount * 0.9f) * amount;
-                float detuned = sub * (1.f + detune * detuneDepth);
-
-                // In top quarter, add overtone buzz
-                float output = detuned;
-                if (amount > 0.75f) {
-                        float buzzAmount = (amount - 0.75f) * 4.f; // 0-1 in last quarter
-
-                        // Fast buzz oscillator
-                        buzzPhase += 120.f / sampleRate;
-                        if (buzzPhase >= 1.f)
-                                buzzPhase -= 1.f;
-
-                        // Generate buzz with harmonics
-                        float buzz = std::sin(2.f * M_PI * buzzPhase);
-                        buzz += 0.5f * std::sin(4.f * M_PI * buzzPhase);
-                        buzz += 0.3f * std::sin(6.f * M_PI * buzzPhase);
-
-                        // Mix buzz with envelope
-                        output += buzz * env * buzzAmount * 0.6f;
-                }
-
-                // Volume increases with amount
-                float level = amount;
-                return input + output * level;
-        }
-};
-
-struct MultiBandSaturator {
-        OnePole low;
-        OnePole lowMid;
-        OnePole highMid;
-        float sampleRate = 44100.f;
-
-        void setSampleRate(float sr) {
-                sampleRate = std::max(1.f, sr);
-                low.reset();
-                lowMid.reset();
-                highMid.reset();
-        }
-
-        float process(float in, float emphasis, float centerControl, float smooshBoost) {
-                if (sampleRate <= 0.f)
-                        return in;
-
-                float centerFreq = 200.f * std::pow(2.f, centerControl * 4.f);
-                float width = 0.9f + 1.8f * centerControl;
-                float split1 = centerFreq / width;
-                float split2 = centerFreq;
-                float split3 = centerFreq * width;
-                split1 = rack::math::clamp(split1, 40.f, sampleRate * 0.25f);
-                split2 = rack::math::clamp(split2, split1 + 10.f, sampleRate * 0.35f);
-                split3 = rack::math::clamp(split3, split2 + 10.f, sampleRate * 0.45f);
-
-                low.set(split1, sampleRate);
-                lowMid.set(split2, sampleRate);
-                highMid.set(split3, sampleRate);
-
-                float lowBand = low.process(in);
-                float remaining = in - lowBand;
-                float lowMidBand = lowMid.process(remaining);
-                remaining -= lowMidBand;
-                float highMidBand = highMid.process(remaining);
-                float highBand = remaining - highMidBand;
-
-                float segment = rack::math::clamp(emphasis * 3.f, 0.f, 3.f);
-                float wLow = 0.f;
-                float wLowMid = 0.f;
-                float wHighMid = 0.f;
-                float wHigh = 0.f;
-                if (segment <= 1.f) {
-                        wLow = 1.f - segment;
-                        wLowMid = segment;
-                } else if (segment <= 2.f) {
-                        wLowMid = 2.f - segment;
-                        wHighMid = segment - 1.f;
-                } else {
-                        wHighMid = 3.f - segment;
-                        wHigh = segment - 2.f;
-                }
-                float weightSum = wLow + wLowMid + wHighMid + wHigh;
-                if (weightSum <= 0.f)
-                        weightSum = 1.f;
-                wLow /= weightSum;
-                wLowMid /= weightSum;
-                wHighMid /= weightSum;
-                wHigh /= weightSum;
-
-                // Enhanced saturation with Vital-style drive scaling
-                float intensity = rack::math::clamp(0.6f + 0.8f * emphasis + smooshBoost, 0.f, 1.f);
-                auto saturateBand = [&](float sample, float weight, float softness) {
-                        // Vital-inspired drive curve: convert emphasis to dB range
-                        // Map emphasis (0-1) to drive range similar to Vital (-10 to +20 dB for musical range)
-                        float driveDb = -10.f + (emphasis + smooshBoost) * 30.f;
-                        float driveMagnitude = std::pow(10.f, driveDb / 20.f);
-
-                        // Weight-based emphasis for each band
-                        float bandDrive = driveMagnitude * (1.f + weight * 2.5f);
-
-                        // Pre-saturation with Vital-style soft clipping
-                        float driven = sample * bandDrive;
-
-                        // Multi-stage saturation for richer harmonics
-                        // Stage 1: Soft clip with tanh
-                        float stage1 = std::tanh(driven * 0.8f);
-
-                        // Stage 2: Asymmetric waveshaping for character
-                        float offset = 0.08f * weight;
-                        float stage2 = std::tanh((stage1 + offset) * 1.5f) - offset * 0.4f;
-
-                        // Stage 3: Gentle hard clip to prevent excess
-                        float shaped = rack::math::clamp(stage2, -1.1f, 1.1f);
-
-                        // Adaptive makeup gain based on drive amount
-                        float makeupGain = 1.f / std::max(0.3f, std::sqrt(driveMagnitude));
-                        shaped *= makeupGain * (1.f + 0.3f * weight);
-
-                        // Blend with dry signal based on intensity and softness
-                        float wetAmount = rack::math::clamp(intensity * softness, 0.f, 1.f);
-                        return rack::math::crossfade(sample, shaped, wetAmount);
-                };
-
-                float lowSat = saturateBand(lowBand, wLow, 1.0f);
-                float lowMidSat = saturateBand(lowMidBand, wLowMid, 1.1f);
-                float highMidSat = saturateBand(highMidBand, wHighMid, 1.15f);
-                float highSat = saturateBand(highBand, wHigh, 1.2f);
-
-                float combined = lowSat + lowMidSat + highMidSat + highSat;
-
-                // More wet mix for heavier saturation
-                float wetAmount = rack::math::clamp(0.7f + 0.7f * emphasis + 0.4f * smooshBoost, 0.f, 1.f);
-                return rack::math::crossfade(in, combined, wetAmount);
-        }
-};
 } // namespace
 
 struct Leviathan : Module {
@@ -455,19 +54,10 @@ struct Leviathan : Module {
                 NUM_LIGHTS
         };
 
-        std::array<RectifierStage, PORT_MAX_CHANNELS> rectifierL{};
-        std::array<RectifierStage, PORT_MAX_CHANNELS> rectifierR{};
-        std::array<SubOctaveChorus, PORT_MAX_CHANNELS> doomL{};
-        std::array<SubOctaveChorus, PORT_MAX_CHANNELS> doomR{};
-        std::array<MultiBandSaturator, PORT_MAX_CHANNELS> saturatorL{};
-        std::array<MultiBandSaturator, PORT_MAX_CHANNELS> saturatorR{};
-        std::array<AllpassPhase, PORT_MAX_CHANNELS> phaseL{};
-        std::array<AllpassPhase, PORT_MAX_CHANNELS> phaseR{};
-        std::array<NotchFilter, PORT_MAX_CHANNELS> notchL{};
-        std::array<NotchFilter, PORT_MAX_CHANNELS> notchR{};
-
-        std::array<VitalDistortionProcessor, PORT_MAX_CHANNELS> distL{};
-        std::array<VitalDistortionProcessor, PORT_MAX_CHANNELS> distR{};
+        std::unique_ptr<vital::Distortion> distL, distR;
+        std::unique_ptr<vital::Output> sig_inL, sig_inR;
+        std::array<vital::Value*, 2> valsL = {};
+        std::array<vital::Value*, 2> valsR = {};
 
         float bootTimer = 1.2f;
         bool bootActive = true;
@@ -505,40 +95,42 @@ struct Leviathan : Module {
                 configOutput(OUT_L_OUTPUT, "Left audio");
                 configOutput(OUT_R_OUTPUT, "Right audio");
 
-                onSampleRateChange();
+        // --- Vital DSP Integration ---
+        distL = std::make_unique<vital::Distortion>();
+        distR = std::make_unique<vital::Distortion>();
+
+        sig_inL = std::make_unique<vital::Output>(vital::kMaxBufferSize);
+        sig_inR = std::make_unique<vital::Output>(vital::kMaxBufferSize);
+
+        distL->plug(sig_inL.get(), vital::Distortion::kAudio);
+        distR->plug(sig_inR.get(), vital::Distortion::kAudio);
+
+		for (size_t i = 0; i < valsL.size(); i++) {
+			valsL[i] = new vital::SmoothValue(0);
+            valsR[i] = new vital::SmoothValue(0);
+		}
+
+        distL->plug(valsL[0], vital::Distortion::kType);
+        distL->plug(valsL[1], vital::Distortion::kDrive);
+        distR->plug(valsR[0], vital::Distortion::kType);
+        distR->plug(valsR[1], vital::Distortion::kDrive);
+
+        onSampleRateChange();
+        distL->reset(vital::poly_mask(-1));
+        distR->reset(vital::poly_mask(-1));
         }
 
         void onSampleRateChange() override {
                 float sr = APP ? APP->engine->getSampleRate() : 44100.f;
-                for (int c = 0; c < PORT_MAX_CHANNELS; ++c) {
-                        rectifierL[c].setSampleRate(sr);
-                        rectifierR[c].setSampleRate(sr);
-                        doomL[c].setSampleRate(sr);
-                        doomR[c].setSampleRate(sr);
-                        saturatorL[c].setSampleRate(sr);
-                        saturatorR[c].setSampleRate(sr);
-                        phaseL[c].set(200.f, sr);
-                        phaseR[c].set(200.f, sr);
-                        notchL[c].set(1000.f, 4.f, sr);
-                        notchR[c].set(1000.f, 4.f, sr);
-                }
+                if (distL) distL->setSampleRate(sr);
+                if (distR) distR->setSampleRate(sr);
         }
 
         void onReset() override {
                 bootActive = true;
                 bootTimer = 1.2f;
-                for (int c = 0; c < PORT_MAX_CHANNELS; ++c) {
-                        rectifierL[c].reset();
-                        rectifierR[c].reset();
-                        doomL[c].reset();
-                        doomR[c].reset();
-                        phaseL[c].reset();
-                        phaseR[c].reset();
-                        notchL[c].reset();
-                        notchR[c].reset();
-                        distL[c].reset();
-                        distR[c].reset();
-                }
+                if (distL) distL->reset(vital::poly_mask(-1));
+                if (distR) distR->reset(vital::poly_mask(-1));
         }
 
         float getParamWithCv(int paramId, int inputId, int c) {
@@ -565,128 +157,71 @@ struct Leviathan : Module {
         }
 
         void process(const ProcessArgs& args) override {
-                int channels = std::max(inputs[IN_L_INPUT].getChannels(), inputs[IN_R_INPUT].getChannels());
-                if (channels == 0)
-                        channels = 1;
-                outputs[OUT_L_OUTPUT].setChannels(channels);
-                outputs[OUT_R_OUTPUT].setChannels(channels);
+            // Update parameters for Vital processors
+            float foldAmount = getParamWithCv(FOLD_PARAM, FOLD_CV_INPUT, 0);
+            int distType = getDistTypeWithCv(0);
 
-                float blendParam = params[BLEND_PARAM].getValue();
-                bool smoosh = params[SMOOSH_PARAM].getValue() > 0.5f || inputs[SMOOSH_GATE_INPUT].getVoltage() > 2.f;
-                float smooshBoost = smoosh ? 0.35f : 0.f;
+            // Drive is -30 to 30 dB range
+            float driveDb = -30.f + foldAmount * 60.f;
 
-                bootTimer -= args.sampleTime;
-                if (bootTimer <= 0.f)
-                        bootActive = false;
+            valsL[0]->set(distType);
+            valsL[1]->set(driveDb);
+            valsR[0]->set(distType);
+            valsR[1]->set(driveDb);
 
-                for (int c = 0; c < channels; ++c) {
-                        float blend = rack::math::clamp(blendParam + inputs[BLEND_CV_INPUT].getPolyVoltage(c) / 5.f, 0.f, 1.f);
-                        float foldAmount = getParamWithCv(FOLD_PARAM, FOLD_CV_INPUT, c);
-                        int distType = getDistTypeWithCv(c);
-                        float centerControl = getParamWithCv(CENTER_PARAM, CENTER_CV_INPUT, c);
-                        float doomAmount = getParamWithCv(DOOM_PARAM, DOOM_CV_INPUT, c);
-                        float phaseAmount = getParamWithCv(PHASE_PARAM, PHASE_CV_INPUT, c);
-                        float driveAmount = getParamWithCv(DRIVE_PARAM, DRIVE_CV_INPUT, c);
-                        float rectAmount = getParamWithCv(RECTIFY_PARAM, RECTIFY_CV_INPUT, c);
-                        int flowMode = getSwitchWithCv(FLOW_PARAM, FLOW_CV_INPUT, c);
-                        int notchMode = getSwitchWithCv(NOTCH_PARAM, NOTCH_CV_INPUT, c);
+            // Process smoothers
+            for (auto& val : valsL) { val->process(1); }
+            for (auto& val : valsR) { val->process(1); }
 
-                        float inL = inputs[IN_L_INPUT].getPolyVoltage(c);
-                        float inR = inputs[IN_R_INPUT].isConnected() ? inputs[IN_R_INPUT].getPolyVoltage(c) : inL;
-                        float dryL = inL;
-                        float dryR = inR;
+            // Get audio input
+            float inL = inputs[IN_L_INPUT].getVoltage();
+            float inR = inputs[IN_R_INPUT].isConnected() ? inputs[IN_R_INPUT].getVoltage() : inL;
+            float dryL = inL;
+            float dryR = inR;
 
-                        if (smoosh) {
-                                inL = rack::math::clamp(inL * HUGE_SMOOSH_GAIN, -15.f, 15.f);
-                                inR = rack::math::clamp(inR * HUGE_SMOOSH_GAIN, -15.f, 15.f);
-                        }
+            // --- Process Left Channel ---
+            // Write to Vital input buffer (normalizing to +/- 1.0 range, Vital works internally with this range)
+            ((vital::mono_float*)sig_inL->buffer)[0] = inL / 5.0f;
+            ((vital::mono_float*)sig_inL->buffer)[1] = 0; // Second voice is unused for mono
 
-                        auto applyFlow = [&](float& left, float& right) {
-                                auto foldStage = [&](float& lx, float& rx) {
-                                        lx = distL[c].process(lx, distType, foldAmount, args.sampleRate);
-                                        rx = distR[c].process(rx, distType, foldAmount, args.sampleRate);
-                                };
-                                auto doomStage = [&](float& lx, float& rx) {
-                                        lx = doomL[c].process(lx, doomAmount);
-                                        rx = doomR[c].process(rx, doomAmount);
-                                };
-                                auto rectStage = [&](float& lx, float& rx) {
-                                        lx = rectifierL[c].process(lx, rectAmount);
-                                        rx = rectifierR[c].process(rx, rectAmount);
-                                };
-                                auto satStage = [&](float& lx, float& rx) {
-                                        lx = saturatorL[c].process(lx, driveAmount, centerControl, smooshBoost);
-                                        rx = saturatorR[c].process(rx, driveAmount, centerControl, smooshBoost);
-                                };
+            // Process with Vital
+            distL->process(1);
 
-                                switch (flowMode) {
-                                        case 0: // UND
-                                        default:
-                                                foldStage(left, right);
-                                                doomStage(left, right);
-                                                rectStage(left, right);
-                                                satStage(left, right);
-                                                break;
-                                        case 1: // X
-                                                foldStage(left, right);
-                                                satStage(left, right);
-                                                rectStage(left, right);
-                                                doomStage(left, right);
-                                                break;
-                                        case 2: // OVR
-                                                foldStage(left, right);
-                                                doomStage(left, right);
-                                                rectStage(left, right);
-                                                satStage(left, right);
-                                                foldStage(left, right);
-                                                break;
-                                }
-                        };
+            // Read from Vital output buffer
+            float wetL = ((const vital::mono_float*)distL->output(vital::Distortion::kAudioOut)->buffer)[0] * 5.0f;
 
-                        float left = inL;
-                        float right = inR;
-                        applyFlow(left, right);
+            // --- Process Right Channel ---
+            ((vital::mono_float*)sig_inR->buffer)[0] = inR / 5.0f;
+            ((vital::mono_float*)sig_inR->buffer)[1] = 0;
+            distR->process(1);
+            float wetR = ((const vital::mono_float*)distR->output(vital::Distortion::kAudioOut)->buffer)[0] * 5.0f;
 
-                        float phaseFreq = 40.f + std::pow(phaseAmount, 2.f) * 6000.f;
-                        phaseL[c].set(phaseFreq, args.sampleRate);
-                        phaseR[c].set(phaseFreq * (1.2f + 0.5f * phaseAmount), args.sampleRate);
-                        float phasedL = phaseL[c].process(left);
-                        float phasedR = phaseR[c].process(right);
-                        left = rack::math::crossfade(left, phasedL, phaseAmount);
-                        right = rack::math::crossfade(right, phasedR, phaseAmount);
+            // --- Final Mixing ---
+            float blend = rack::math::clamp(params[BLEND_PARAM].getValue() + inputs[BLEND_CV_INPUT].getPolyVoltage(0) / 5.f, 0.f, 1.f);
+            float outL = rack::math::crossfade(dryL, wetL, blend);
+            float outR = rack::math::crossfade(dryR, wetR, blend);
 
-                        if (notchMode > 0) {
-                                float notchFreq = 1000.f;
-                                if (notchMode == 2) {
-                                        notchFreq = 150.f + centerControl * 4800.f;
-                                }
-                                notchL[c].set(notchFreq, 4.f, args.sampleRate);
-                                notchR[c].set(notchFreq, 4.f, args.sampleRate);
-                                left = notchL[c].process(left);
-                                right = notchR[c].process(right);
-                        }
+            outputs[OUT_L_OUTPUT].setVoltage(outL);
+            outputs[OUT_R_OUTPUT].setVoltage(outR);
 
-                        float outL = rack::math::crossfade(dryL, left, blend);
-                        float outR = rack::math::crossfade(dryR, right, blend);
-
-                        outputs[OUT_L_OUTPUT].setVoltage(outL, c);
-                        outputs[OUT_R_OUTPUT].setVoltage(outR, c);
-                }
-
-                lights[SMOOSH_LIGHT].setBrightness(smoosh ? 1.f : 0.f);
-                if (bootActive) {
-                        float bootProgress = rack::math::clamp(bootTimer / 1.2f, 0.f, 1.f);
-                        float fade = 1.f - bootProgress;
-                        lights[BOOT_LEFT_LIGHT].setSmoothBrightness(0.8f * fade, args.sampleTime);
-                        lights[BOOT_LEFT_CENTER_LIGHT].setSmoothBrightness(0.8f * fade, args.sampleTime);
-                        lights[BOOT_RIGHT_CENTER_LIGHT].setSmoothBrightness(0.5f * fade, args.sampleTime);
-                        lights[BOOT_RIGHT_LIGHT].setSmoothBrightness(0.9f * fade, args.sampleTime);
-                } else {
-                        lights[BOOT_LEFT_LIGHT].setBrightness(0.f);
-                        lights[BOOT_LEFT_CENTER_LIGHT].setBrightness(0.f);
-                        lights[BOOT_RIGHT_CENTER_LIGHT].setBrightness(0.f);
-                        lights[BOOT_RIGHT_LIGHT].setBrightness(0.f);
-                }
+            // --- Lights ---
+            bool smoosh = params[SMOOSH_PARAM].getValue() > 0.5f || inputs[SMOOSH_GATE_INPUT].getVoltage() > 2.f;
+            lights[SMOOSH_LIGHT].setBrightness(smoosh ? 1.f : 0.f);
+            bootTimer -= args.sampleTime;
+            if (bootTimer <= 0.f) {
+                bootActive = false;
+                lights[BOOT_LEFT_LIGHT].setBrightness(0.f);
+                lights[BOOT_LEFT_CENTER_LIGHT].setBrightness(0.f);
+                lights[BOOT_RIGHT_CENTER_LIGHT].setBrightness(0.f);
+                lights[BOOT_RIGHT_LIGHT].setBrightness(0.f);
+            } else {
+                 float bootProgress = rack::math::clamp(bootTimer / 1.2f, 0.f, 1.f);
+                 float fade = 1.f - bootProgress;
+                 lights[BOOT_LEFT_LIGHT].setSmoothBrightness(0.8f * fade, args.sampleTime);
+                 lights[BOOT_LEFT_CENTER_LIGHT].setSmoothBrightness(0.8f * fade, args.sampleTime);
+                 lights[BOOT_RIGHT_CENTER_LIGHT].setSmoothBrightness(0.5f * fade, args.sampleTime);
+                 lights[BOOT_RIGHT_LIGHT].setSmoothBrightness(0.9f * fade, args.sampleTime);
+            }
         }
 };
 
