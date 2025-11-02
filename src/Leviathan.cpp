@@ -30,82 +30,97 @@ struct OnePole {
 };
 
 // Enhanced distortion using Vital's algorithms
-static float applyVitalDistortion(float x, int distType, float amount) {
-        if (amount <= 1e-5f)
-                return x;
+struct VitalDistortionProcessor {
+    float ds_phase = 0.f;
+    float ds_lastSample = 0.f;
 
-        // Map amount (0-1) to Vital's drive range (-30 to +30 dB)
-        float driveDb = -30.f + amount * 60.f;
+    void reset() {
+        ds_phase = 0.f;
+        ds_lastSample = 0.f;
+    }
+
+    float process(float x, int distType, float amount, float sampleRate) {
+        if (amount <= 1e-5f)
+            return x;
+
         float drive = 1.0f;
 
-        // Apply Vital's drive scaling based on distortion type
+        // Apply drive scaling based on distortion type
         switch(distType) {
-                case 0: // Soft Clip
-                case 1: // Hard Clip
-                case 2: // Linear Fold
-                case 3: // Sin Fold
-                        // Standard dB to magnitude conversion
-                        drive = std::pow(10.f, driveDb / 20.f);
-                        break;
-                case 4: // Bit Crush
-                        {
-                                constexpr float kDriveScale = 1.0f / 60.f; // (30 - (-30))
-                                constexpr float kMinDistortionMult = 32.0f / INT_MAX;
-                                float normalized = std::max(driveDb + 30.f, 0.f) * kDriveScale;
-                                drive = rack::math::clamp(normalized * normalized, kMinDistortionMult, 1.0f);
-                        }
-                        break;
-                case 5: // Down Sample
-                        {
-                                constexpr float kDriveScale = 1.0f / 60.f;
-                                constexpr float kMinDistortionMult = 32.0f / INT_MAX;
-                                constexpr float kPeriodScale = 1.0f / 88200.0f;
-                                float normalized = std::max(driveDb + 30.f, 0.f) * kDriveScale;
-                                normalized = -normalized + 1.0f;
-                                drive = 1.0f / rack::math::clamp(normalized * normalized, kMinDistortionMult, 1.0f);
-                                drive = std::max(drive * 0.99f, 1.0f) * kPeriodScale;
-                        }
-                        break;
+            case 0: // Soft Clip
+            case 1: // Hard Clip
+            case 2: // Linear Fold
+            case 3: // Sin Fold
+            {
+                float driveDb = -30.f + amount * 60.f;
+                drive = std::pow(10.f, driveDb / 20.f);
+            }
+            break;
+            case 4: // Bit Crush
+            {
+                // Map amount to a more intuitive bit depth reduction
+                float bitDepth = 16.f * (1.f - amount);
+                bitDepth = rack::math::clamp(bitDepth, 1.f, 16.f);
+                float steps = std::pow(2.f, bitDepth);
+                drive = 1.f / steps; // Quantization step size
+            }
+            break;
+            case 5: // Down Sample
+            {
+                // Map amount to sample hold period
+                if (sampleRate <= 0) sampleRate = 44100.f;
+                float maxPeriod = sampleRate / 100.f; // Min sample rate of 100 Hz
+                float period = 1.f + amount * amount * (maxPeriod - 1.f);
+                drive = period; // Use 'drive' to store the period
+            }
+            break;
         }
 
-        // Apply Vital distortion algorithms
+        // Apply distortion algorithms
         float distorted = x;
         switch(distType) {
-                case 0: // Soft Clip (tanh)
-                        distorted = std::tanh(x * drive);
-                        break;
-                case 1: // Hard Clip
-                        distorted = rack::math::clamp(x * drive, -1.0f, 1.0f);
-                        break;
-                case 2: // Linear Fold
-                        {
-                                float adjust = x * drive * 0.25f + 0.75f;
-                                float range = adjust - std::floor(adjust); // mod operation
-                                distorted = std::abs(range * -4.0f + 2.0f) - 1.0f;
-                        }
-                        break;
-                case 3: // Sin Fold
-                        {
-                                float adjust = x * drive * -0.25f + 0.5f;
-                                float range = adjust - std::floor(adjust); // mod operation
-                                // Approximation of sin(2*pi*x) using polynomial
-                                float t = range * 2.0f - 1.0f;
-                                distorted = t * (1.0f - 0.16605f * t * t);
-                        }
-                        break;
-                case 4: // Bit Crush
-                        distorted = std::round(x / drive) * drive;
-                        break;
-                case 5: // Down Sample (simplified for single-sample context)
-                        // For proper downsampling, need state - fallback to bit crush-like behavior
-                        distorted = std::round(x / (drive * 100.f)) * (drive * 100.f);
-                        break;
+            case 0: // Soft Clip (tanh)
+                distorted = std::tanh(x * drive);
+                break;
+            case 1: // Hard Clip
+                distorted = rack::math::clamp(x * drive, -1.0f, 1.0f);
+                break;
+            case 2: // Linear Fold
+            {
+                float adjust = x * drive * 0.25f + 0.75f;
+                float range = adjust - std::floor(adjust); // mod operation
+                distorted = std::abs(range * -4.0f + 2.0f) - 1.0f;
+            }
+            break;
+            case 3: // Sin Fold
+            {
+                float adjust = x * drive * -0.25f + 0.5f;
+                float range = adjust - std::floor(adjust); // mod operation
+                // Approximation of sin(2*pi*x) using polynomial
+                float t = range * 2.0f - 1.0f;
+                distorted = t * (1.0f - 0.16605f * t * t);
+            }
+            break;
+            case 4: // Bit Crush
+                distorted = std::round(x / drive) * drive;
+                break;
+            case 5: // Down Sample
+            {
+                ds_phase += 1.f;
+                if (ds_phase >= drive) { // drive is period
+                    ds_phase -= drive;
+                    ds_lastSample = x;
+                }
+                distorted = ds_lastSample;
+            }
+            break;
         }
 
         // Dry/wet blend based on amount
         float wetAmount = rack::math::clamp(0.3f + amount * 0.7f, 0.f, 1.f);
         return rack::math::crossfade(x, distorted, wetAmount);
-}
+    }
+};
 
 struct RectifierStage {
         float sampleRate = 44100.f;
@@ -451,6 +466,9 @@ struct Leviathan : Module {
         std::array<NotchFilter, PORT_MAX_CHANNELS> notchL{};
         std::array<NotchFilter, PORT_MAX_CHANNELS> notchR{};
 
+        std::array<VitalDistortionProcessor, PORT_MAX_CHANNELS> distL{};
+        std::array<VitalDistortionProcessor, PORT_MAX_CHANNELS> distR{};
+
         float bootTimer = 1.2f;
         bool bootActive = true;
 
@@ -518,6 +536,8 @@ struct Leviathan : Module {
                         phaseR[c].reset();
                         notchL[c].reset();
                         notchR[c].reset();
+                        distL[c].reset();
+                        distR[c].reset();
                 }
         }
 
@@ -583,8 +603,8 @@ struct Leviathan : Module {
 
                         auto applyFlow = [&](float& left, float& right) {
                                 auto foldStage = [&](float& lx, float& rx) {
-                                        lx = applyVitalDistortion(lx, distType, foldAmount);
-                                        rx = applyVitalDistortion(rx, distType, foldAmount);
+                                        lx = distL[c].process(lx, distType, foldAmount, args.sampleRate);
+                                        rx = distR[c].process(rx, distType, foldAmount, args.sampleRate);
                                 };
                                 auto doomStage = [&](float& lx, float& rx) {
                                         lx = doomL[c].process(lx, doomAmount);
