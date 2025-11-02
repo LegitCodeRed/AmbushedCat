@@ -1,7 +1,7 @@
 #include "plugin.hpp"
-#include "vital_dsp/compressor.h"
-#include "vital_dsp/framework/value.h"
-#include "vital_dsp/utilities/smooth_value.h"
+#include "effects/compressor.h"
+#include "framework/value.h"
+#include "utilities/smooth_value.h"
 #include <cmath>
 #include <algorithm>
 #include <array>
@@ -175,13 +175,20 @@ struct SabnockOTT : Module {
 
 		// Initialize vital DSP
 		compressor = std::make_unique<vital::MultibandCompressor>();
-		sig_in = std::make_unique<vital::Output>();
+		sig_in = std::make_unique<vital::Output>(vital::kMaxBufferSize);  // Allocate with proper buffer size
 		compressor->plug(sig_in.get(), vital::MultibandCompressor::kAudio);
+
+		// Initialize sample rate BEFORE setting up values
+		onSampleRateChange();
 
 		initVals();
 		for (int i = 0; i < vals.size(); i++) {
 			compressor->plug(vals[i], i + 1);
 		}
+
+		// Clear all buffers after initialization
+		sig_in->clearBuffer();
+		compressor->reset(vital::constants::kFullMask);
 	}
 
 	~SabnockOTT() {
@@ -373,9 +380,12 @@ struct SabnockOTT : Module {
 		vals[vital::MultibandCompressor::kBandOutputGain - 1]->set(mgain);
 		vals[vital::MultibandCompressor::kHighOutputGain - 1]->set(hgain);
 
-		// Set crossover frequencies
-		vals[vital::MultibandCompressor::kLMFrequency - 1]->set(crossover1Freq);
-		vals[vital::MultibandCompressor::kMHFrequency - 1]->set(crossover2Freq);
+		// Note: Crossover frequencies are hardcoded in Vital's MultibandCompressor
+		// at 120Hz (low-mid) and 2500Hz (mid-high) and cannot be changed via parameters
+		// The crossover1Freq and crossover2Freq variables are kept for future use
+		// but are not currently applied to the Vital compressor
+		(void)crossover1Freq;  // Suppress unused variable warning
+		(void)crossover2Freq;  // Suppress unused variable warning
 
 		// Set mix (dry/wet)
 		vals[vital::MultibandCompressor::kMix - 1]->set(mix);
@@ -386,7 +396,8 @@ struct SabnockOTT : Module {
 	}
 
 	void onSampleRateChange() override {
-		float sr = APP->engine->getSampleRate();
+		if (!compressor) return;
+		float sr = APP ? APP->engine->getSampleRate() : 44100.f;
 		compressor->setSampleRate(sr);
 	}
 

@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <algorithm>
+#include <climits>
 
 namespace {
 static constexpr float HUGE_SMOOSH_GAIN = 39810717.f; // 128 dB of drive
@@ -28,30 +29,82 @@ struct OnePole {
         }
 };
 
-static float applyWavefolder(float x, float amount) {
+// Enhanced distortion using Vital's algorithms
+static float applyVitalDistortion(float x, int distType, float amount) {
         if (amount <= 1e-5f)
                 return x;
 
-        // More aggressive gain curve - Infinifolder style
-        float gain = 1.f + amount * amount * 24.f;
-        float folded = x * gain;
+        // Map amount (0-1) to Vital's drive range (-30 to +30 dB)
+        float driveDb = -30.f + amount * 60.f;
+        float drive = 1.0f;
 
-        // More iterations for harder crushing
-        for (int i = 0; i < 12; ++i) {
-                if (folded > 1.f) {
-                        folded = 2.f - folded;
-                } else if (folded < -1.f) {
-                        folded = -2.f - folded;
-                }
+        // Apply Vital's drive scaling based on distortion type
+        switch(distType) {
+                case 0: // Soft Clip
+                case 1: // Hard Clip
+                case 2: // Linear Fold
+                case 3: // Sin Fold
+                        // Standard dB to magnitude conversion
+                        drive = std::pow(10.f, driveDb / 20.f);
+                        break;
+                case 4: // Bit Crush
+                        {
+                                constexpr float kDriveScale = 1.0f / 60.f; // (30 - (-30))
+                                constexpr float kMinDistortionMult = 32.0f / INT_MAX;
+                                float normalized = std::max(driveDb + 30.f, 0.f) * kDriveScale;
+                                drive = rack::math::clamp(normalized * normalized, kMinDistortionMult, 1.0f);
+                        }
+                        break;
+                case 5: // Down Sample
+                        {
+                                constexpr float kDriveScale = 1.0f / 60.f;
+                                constexpr float kMinDistortionMult = 32.0f / INT_MAX;
+                                constexpr float kPeriodScale = 1.0f / 88200.0f;
+                                float normalized = std::max(driveDb + 30.f, 0.f) * kDriveScale;
+                                normalized = -normalized + 1.0f;
+                                drive = 1.0f / rack::math::clamp(normalized * normalized, kMinDistortionMult, 1.0f);
+                                drive = std::max(drive * 0.99f, 1.0f) * kPeriodScale;
+                        }
+                        break;
         }
 
-        // Asymmetric saturation for more character
-        float offset = 0.15f * amount;
-        folded = std::tanh((folded + offset) * (1.f + amount * 1.5f)) - offset * 0.5f;
+        // Apply Vital distortion algorithms
+        float distorted = x;
+        switch(distType) {
+                case 0: // Soft Clip (tanh)
+                        distorted = std::tanh(x * drive);
+                        break;
+                case 1: // Hard Clip
+                        distorted = rack::math::clamp(x * drive, -1.0f, 1.0f);
+                        break;
+                case 2: // Linear Fold
+                        {
+                                float adjust = x * drive * 0.25f + 0.75f;
+                                float range = adjust - std::floor(adjust); // mod operation
+                                distorted = std::abs(range * -4.0f + 2.0f) - 1.0f;
+                        }
+                        break;
+                case 3: // Sin Fold
+                        {
+                                float adjust = x * drive * -0.25f + 0.5f;
+                                float range = adjust - std::floor(adjust); // mod operation
+                                // Approximation of sin(2*pi*x) using polynomial
+                                float t = range * 2.0f - 1.0f;
+                                distorted = t * (1.0f - 0.16605f * t * t);
+                        }
+                        break;
+                case 4: // Bit Crush
+                        distorted = std::round(x / drive) * drive;
+                        break;
+                case 5: // Down Sample (simplified for single-sample context)
+                        // For proper downsampling, need state - fallback to bit crush-like behavior
+                        distorted = std::round(x / (drive * 100.f)) * (drive * 100.f);
+                        break;
+        }
 
-        // Less dry blend for more crushing
-        float dryBlend = rack::math::clamp(1.f - amount * 1.3f, 0.f, 1.f);
-        return rack::math::crossfade(folded, x, dryBlend);
+        // Dry/wet blend based on amount
+        float wetAmount = rack::math::clamp(0.3f + amount * 0.7f, 0.f, 1.f);
+        return rack::math::crossfade(x, distorted, wetAmount);
 }
 
 struct RectifierStage {
@@ -294,23 +347,38 @@ struct MultiBandSaturator {
                 wHighMid /= weightSum;
                 wHigh /= weightSum;
 
-                // Much heavier saturation - Seca Ruina style
+                // Enhanced saturation with Vital-style drive scaling
                 float intensity = rack::math::clamp(0.6f + 0.8f * emphasis + smooshBoost, 0.f, 1.f);
                 auto saturateBand = [&](float sample, float weight, float softness) {
-                        // More aggressive drive curve
-                        float baseDrive = 2.f + (12.f + 28.f * weight) * (0.5f + 1.2f * emphasis + 0.8f * smooshBoost);
+                        // Vital-inspired drive curve: convert emphasis to dB range
+                        // Map emphasis (0-1) to drive range similar to Vital (-10 to +20 dB for musical range)
+                        float driveDb = -10.f + (emphasis + smooshBoost) * 30.f;
+                        float driveMagnitude = std::pow(10.f, driveDb / 20.f);
 
-                        // Hard clip before tanh for more aggression
-                        float preClip = rack::math::clamp(sample * baseDrive * 0.5f, -2.5f, 2.5f);
+                        // Weight-based emphasis for each band
+                        float bandDrive = driveMagnitude * (1.f + weight * 2.5f);
 
-                        // Asymmetric saturation for character
-                        float offset = 0.1f * weight;
-                        float shaped = std::tanh((preClip + offset) * 1.8f) - offset * 0.3f;
+                        // Pre-saturation with Vital-style soft clipping
+                        float driven = sample * bandDrive;
 
-                        // Post-gain to compensate
-                        shaped *= (1.f + 0.5f * weight);
+                        // Multi-stage saturation for richer harmonics
+                        // Stage 1: Soft clip with tanh
+                        float stage1 = std::tanh(driven * 0.8f);
 
-                        return rack::math::crossfade(sample, shaped, rack::math::clamp(intensity * softness, 0.f, 1.f));
+                        // Stage 2: Asymmetric waveshaping for character
+                        float offset = 0.08f * weight;
+                        float stage2 = std::tanh((stage1 + offset) * 1.5f) - offset * 0.4f;
+
+                        // Stage 3: Gentle hard clip to prevent excess
+                        float shaped = rack::math::clamp(stage2, -1.1f, 1.1f);
+
+                        // Adaptive makeup gain based on drive amount
+                        float makeupGain = 1.f / std::max(0.3f, std::sqrt(driveMagnitude));
+                        shaped *= makeupGain * (1.f + 0.3f * weight);
+
+                        // Blend with dry signal based on intensity and softness
+                        float wetAmount = rack::math::clamp(intensity * softness, 0.f, 1.f);
+                        return rack::math::crossfade(sample, shaped, wetAmount);
                 };
 
                 float lowSat = saturateBand(lowBand, wLow, 1.0f);
@@ -331,6 +399,7 @@ struct Leviathan : Module {
         enum ParamIds {
                 BLEND_PARAM,
                 FOLD_PARAM,
+                DIST_TYPE_PARAM,  // Vital distortion type selector
                 CENTER_PARAM,
                 DOOM_PARAM,
                 PHASE_PARAM,
@@ -346,6 +415,7 @@ struct Leviathan : Module {
                 IN_R_INPUT,
                 BLEND_CV_INPUT,
                 FOLD_CV_INPUT,
+                DIST_TYPE_CV_INPUT,  // Vital distortion type CV
                 CENTER_CV_INPUT,
                 DOOM_CV_INPUT,
                 PHASE_CV_INPUT,
@@ -389,6 +459,8 @@ struct Leviathan : Module {
 
                 configParam(BLEND_PARAM, 0.f, 1.f, 0.5f, "Blend");
                 configParam(FOLD_PARAM, 0.f, 1.f, 0.25f, "Fold");
+                configSwitch(DIST_TYPE_PARAM, 0.f, 5.f, 2.f, "Distortion Type",
+                        {"Soft Clip", "Hard Clip", "Linear Fold", "Sin Fold", "Bit Crush", "Down Sample"});
                 configParam(CENTER_PARAM, 0.f, 1.f, 0.5f, "Center");
                 configParam(DOOM_PARAM, 0.f, 1.f, 0.f, "Doom");
                 configParam(PHASE_PARAM, 0.f, 1.f, 0.f, "Phase");
@@ -402,6 +474,7 @@ struct Leviathan : Module {
                 configInput(IN_R_INPUT, "Right audio");
                 configInput(BLEND_CV_INPUT, "Blend CV");
                 configInput(FOLD_CV_INPUT, "Fold CV");
+                configInput(DIST_TYPE_CV_INPUT, "Distortion Type CV");
                 configInput(CENTER_CV_INPUT, "Center CV");
                 configInput(DOOM_CV_INPUT, "Doom CV");
                 configInput(PHASE_CV_INPUT, "Phase CV");
@@ -463,6 +536,14 @@ struct Leviathan : Module {
                 return rack::math::clamp(mode, 0, 2);
         }
 
+        int getDistTypeWithCv(int c) {
+                float base = params[DIST_TYPE_PARAM].getValue();
+                if (inputs[DIST_TYPE_CV_INPUT].isConnected())
+                        base += inputs[DIST_TYPE_CV_INPUT].getPolyVoltage(c) * 1.2f; // 0-10V -> 0-12 (covers 0-5 with headroom)
+                int distType = (int)std::round(base);
+                return rack::math::clamp(distType, 0, 5);
+        }
+
         void process(const ProcessArgs& args) override {
                 int channels = std::max(inputs[IN_L_INPUT].getChannels(), inputs[IN_R_INPUT].getChannels());
                 if (channels == 0)
@@ -481,6 +562,7 @@ struct Leviathan : Module {
                 for (int c = 0; c < channels; ++c) {
                         float blend = rack::math::clamp(blendParam + inputs[BLEND_CV_INPUT].getPolyVoltage(c) / 5.f, 0.f, 1.f);
                         float foldAmount = getParamWithCv(FOLD_PARAM, FOLD_CV_INPUT, c);
+                        int distType = getDistTypeWithCv(c);
                         float centerControl = getParamWithCv(CENTER_PARAM, CENTER_CV_INPUT, c);
                         float doomAmount = getParamWithCv(DOOM_PARAM, DOOM_CV_INPUT, c);
                         float phaseAmount = getParamWithCv(PHASE_PARAM, PHASE_CV_INPUT, c);
@@ -501,8 +583,8 @@ struct Leviathan : Module {
 
                         auto applyFlow = [&](float& left, float& right) {
                                 auto foldStage = [&](float& lx, float& rx) {
-                                        lx = applyWavefolder(lx, foldAmount);
-                                        rx = applyWavefolder(rx, foldAmount);
+                                        lx = applyVitalDistortion(lx, distType, foldAmount);
+                                        rx = applyVitalDistortion(rx, distType, foldAmount);
                                 };
                                 auto doomStage = [&](float& lx, float& rx) {
                                         lx = doomL[c].process(lx, doomAmount);
@@ -665,6 +747,9 @@ struct LeviathanWidget : ModuleWidget {
                 addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(13.0, 62.0)), module, Leviathan::RECTIFY_PARAM));
 
                 // === SWITCHES & BUTTON SECTION ===
+                // Distortion Type selector (6-position switch near FOLD)
+                addParam(createParamCentered<CKSSThreeHorizontal>(mm2px(Vec(25.4, 58.0)), module, Leviathan::DIST_TYPE_PARAM));
+
                 // FLOW / NOTCH switches (y=67mm and 75mm)
                 addParam(createParamCentered<CKSSThree>(mm2px(Vec(37.8, 63.0)), module, Leviathan::FLOW_PARAM));
                 addParam(createParamCentered<CKSSThree>(mm2px(Vec(37.8, 77.0)), module, Leviathan::NOTCH_PARAM));
@@ -677,6 +762,7 @@ struct LeviathanWidget : ModuleWidget {
                 // Row 1 CVs (y=96mm)
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.5, 92.0)), module, Leviathan::BLEND_CV_INPUT));
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(17.5, 92.0)), module, Leviathan::FOLD_CV_INPUT));
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(25.4, 92.0)), module, Leviathan::DIST_TYPE_CV_INPUT));
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(33.3, 92.0)), module, Leviathan::CENTER_CV_INPUT));
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(42.3, 92.0)), module, Leviathan::DOOM_CV_INPUT));
 
