@@ -509,13 +509,13 @@ struct SabnockOTTWidget : ModuleWidget {
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(50.f, 22.f)), module, SabnockOTT::PARAM_MIX));
 
 		// Second row: Band Gains (Low, Mid, High - 3 small knobs) - more space
-		float gainY = 38.f;
+		float gainY = 35.f;
 		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(11.f, gainY)), module, SabnockOTT::PARAM_LOW_GAIN));
 		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(30.48f, gainY)), module, SabnockOTT::PARAM_MID_GAIN));
 		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(50.f, gainY)), module, SabnockOTT::PARAM_HIGH_GAIN));
 
 		// Third row: Input and Output gain (small knobs) - more space
-		float ioGainY = 51.f;
+		float ioGainY = 45.f;
 		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(20.74f, ioGainY)), module, SabnockOTT::PARAM_INPUT));
 		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(40.74f, ioGainY)), module, SabnockOTT::PARAM_OUTPUT));
 
@@ -523,9 +523,9 @@ struct SabnockOTTWidget : ModuleWidget {
 		// TOP = Downward (compression), BOTTOM = Upward (expansion)
 		// Layout: Small knob (threshold) with Trimpot (ratio) below
 
-		float bandStartY = 63.f;  // More space from I/O gains
+		float bandStartY = 55.f;  // More space from I/O gains
 		float pairSpacing = 17.f;  // More vertical space between pairs
-		float knobToTrimOffset = 5.5f;
+		float knobToTrimOffset = 8.5f;
 
 		float lowX = 11.f;
 		float midX = 30.48f;
@@ -565,10 +565,10 @@ struct SabnockOTTWidget : ModuleWidget {
 		addParam(createParamCentered<Trimpot>(mm2px(Vec(highX, highUpY + knobToTrimOffset)), module, SabnockOTT::PARAM_HIGH_UP_RATIO));
 
 		// === CV INPUTS - Fitted to 60.96mm width ===
-		float cvStartY = 93.f;
-		float cvRowSpacing = 8.f;
-		float cvColSpacing = 7.f;  // Tighter spacing for narrower module
-		float cvStartX = 4.5f;
+		float cvStartY = 90.f;
+		float cvRowSpacing = 10.f;
+		float cvColSpacing = 8.f;  // Tighter spacing for narrower module
+		float cvStartX = 6.5f;
 
 		// Row 1: Attack, Release, Mix, In Gain, Out Gain, Low Gain, Mid Gain, High Gain
 		float row1Y = cvStartY;
@@ -604,8 +604,8 @@ struct SabnockOTTWidget : ModuleWidget {
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX, audioIOY)), module, SabnockOTT::INPUT_L));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + cvColSpacing, audioIOY)), module, SabnockOTT::INPUT_R));
 		// Outputs on the right side
-		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(cvStartX + 5*cvColSpacing, audioIOY)), module, SabnockOTT::OUTPUT_L));
-		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(cvStartX + 6*cvColSpacing, audioIOY)), module, SabnockOTT::OUTPUT_R));
+		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(cvStartX + 6*cvColSpacing, audioIOY)), module, SabnockOTT::OUTPUT_L));
+		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(cvStartX + 7*cvColSpacing, audioIOY)), module, SabnockOTT::OUTPUT_R));
 	}
 };
 
