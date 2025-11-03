@@ -356,12 +356,27 @@ struct Ahriman : Module {
                         modSignal = 0.f;
                 }
 
+                // Enhanced modulation depth scaling per response mode
                 float modSeconds = (0.0015f + sizeShaped * 0.014f) * modDepth;
                 float smoothing = 1.f;
+
+                // Enhanced LERP MODE for more dramatic and audible differences
                 if (response == 0) {
-                        smoothing = 0.0025f;
+                        // BLEND: Ultra-smooth crossfading - no pitch artifacts
+                        smoothing = 0.0008f;  // Much slower, smoother transitions
+                        // No modulation depth change - keep it natural
+
                 } else if (response == 1) {
-                        smoothing = 0.015f;
+                        // LERP: Medium-speed changes creating AUDIBLE pitch shift effects
+                        smoothing = 0.045f;  // Faster for audible pitch bending
+                        // Increase modulation depth for more dramatic pitch excursions
+                        modSeconds *= 2.5f;  // Much larger delay time changes = more pitch shift
+
+                } else {
+                        // JMP: Instant jumps - instant delay time changes
+                        smoothing = 1.f;
+                        // Slightly increase modulation for more dramatic jumps
+                        modSeconds *= 1.8f;
                 }
 
                 if (fsu) {
@@ -411,35 +426,58 @@ struct Ahriman : Module {
                         shimmerOutL = shimmerL.processOctaveUp(sampleRate);
                         shimmerOutR = shimmerR.processOctaveUp(sampleRate);
 
-                        // Blend shimmer into wet output (demonic quality)
-                        wetL = rack::math::crossfade(wetL, shimmerOutL, 0.35f);
-                        wetR = rack::math::crossfade(wetR, shimmerOutR, 0.35f);
+                        // Enhanced shimmer blend for MORE DEMONIC character
+                        // Add subtle detuning for richer, more otherworldly sound
+                        float shimmerEnhanced = 0.5f;  // More shimmer in the mix
+                        wetL = rack::math::crossfade(wetL, shimmerOutL, shimmerEnhanced);
+                        wetR = rack::math::crossfade(wetR, shimmerOutR, shimmerEnhanced);
+
+                        // Add slight stereo width to shimmer for spatial enhancement
+                        float stereoSpread = (wetL - wetR) * 0.2f;
+                        wetL += stereoSpread;
+                        wetR -= stereoSpread;
                 }
 
                 // FDN feedback with nonlinear processing per delay line
                 for (int i = 0; i < NUM_DELAY_LINES; ++i) {
                         float content = mixed[i];
 
-                        // Nonlinear processing based on mode (applied at each 4x4 mix node)
+                        // Enhanced NODE MODE with much more distinctive character
                         if (mode == 0) {
-                                // LIM: Hard limiting
-                                content = rack::math::clamp(content, -1.15f, 1.15f);
+                                // LIMIT: Clean reverb with transparent hard limiting
+                                // Very subtle compression, pristine and clean
+                                content = rack::math::clamp(content, -1.25f, 1.25f);
+
                         } else if (mode == 1) {
-                                // DST: Soft saturation/distortion
-                                content = std::tanh(content * 1.5f) * 0.9f;
+                                // DISTORT: Aggressive saturation for gritty character
+                                // Multiple stages of saturation for rich harmonic distortion
+                                content = std::tanh(content * 2.8f);  // Heavy input drive
+                                content = content * 0.85f;  // Scale back
+                                // Second stage asymmetric distortion for character
+                                if (content > 0.f) {
+                                        content = std::tanh(content * 1.4f);
+                                } else {
+                                        content = std::tanh(content * 1.6f);  // Slightly more on negative
+                                }
+                                // Add subtle bit-crushing character for digital grunge
+                                float crush = std::floor(content * 32.f) / 32.f;
+                                content = rack::math::crossfade(content, crush, 0.15f);
+
                         } else {
-                                // SHM: Lighter saturation for shimmer
-                                content = std::tanh(content * 1.2f);
+                                // SHIFT: Demonic pitch-shifting - much more prominent
+                                // Lighter saturation to preserve pitch shift clarity
+                                content = std::tanh(content * 1.1f);
                         }
 
                         // Stereo input injection
                         float stereoSpread = (i % 2 == 0) ? 1.f : -1.f;
                         float injection = inputGain * (inSum * 0.7f + inDiff * stereoSpread * 0.3f);
 
-                        // Shimmer mode: feed pitch-shifted signal back into tank
+                        // Shimmer mode: feed pitch-shifted signal back into tank with MORE INTENSITY
                         if (mode == 2) {
                                 float shimmerFeed = (i % 2 == 0) ? shimmerOutL : shimmerOutR;
-                                injection += 0.3f * shimmerFeed;
+                                // Increased shimmer feedback for more demonic, otherworldly character
+                                injection += 0.55f * shimmerFeed;
                         }
 
                         // Write to delay line with feedback and dense control
