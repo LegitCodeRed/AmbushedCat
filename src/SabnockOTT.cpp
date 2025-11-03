@@ -604,8 +604,8 @@ struct SabnockOTTWidget : ModuleWidget {
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX, audioIOY)), module, SabnockOTT::INPUT_L));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + cvColSpacing, audioIOY)), module, SabnockOTT::INPUT_R));
 		// Outputs on the right side
-		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(cvStartX + 6*cvColSpacing, audioIOY)), module, SabnockOTT::OUTPUT_L));
-		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(cvStartX + 7*cvColSpacing, audioIOY)), module, SabnockOTT::OUTPUT_R));
+		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(cvStartX + 5*cvColSpacing, audioIOY)), module, SabnockOTT::OUTPUT_L));
+		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(cvStartX + 6*cvColSpacing, audioIOY)), module, SabnockOTT::OUTPUT_R));
 	}
 };
 
