@@ -567,10 +567,10 @@ struct SabnockOTTWidget : ModuleWidget {
 		// === CV INPUTS - Fitted to 60.96mm width ===
 		float cvStartY = 90.f;
 		float cvRowSpacing = 10.f;
-		float cvColSpacing = 8.f;  // Tighter spacing for narrower module
-		float cvStartX = 6.5f;
+		float cvColSpacing = 8.5f;
+		float cvStartX = 5.8f;
 
-		// Row 1: Attack, Release, Mix, In Gain, Out Gain, Low Gain, Mid Gain, High Gain
+		// Row 1: Attack, Release, Mix, In Gain, Out Gain, Low Gain, Mid Gain (7 inputs)
 		float row1Y = cvStartY;
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX, row1Y)), module, SabnockOTT::INPUT_ATTACK_CV));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + cvColSpacing, row1Y)), module, SabnockOTT::INPUT_RELEASE_CV));
@@ -579,25 +579,25 @@ struct SabnockOTTWidget : ModuleWidget {
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 4*cvColSpacing, row1Y)), module, SabnockOTT::INPUT_OUTPUT_GAIN_CV));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 5*cvColSpacing, row1Y)), module, SabnockOTT::INPUT_LOW_GAIN_CV));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 6*cvColSpacing, row1Y)), module, SabnockOTT::INPUT_MID_GAIN_CV));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 7*cvColSpacing, row1Y)), module, SabnockOTT::INPUT_HIGH_GAIN_CV));
 
-		// Row 2: Low band controls (4) + Mid band controls (4)
+		// Row 2: High Gain + Low band controls (4) + Mid Down Thresh, Mid Down Ratio (7 inputs)
 		float row2Y = row1Y + cvRowSpacing;
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX, row2Y)), module, SabnockOTT::INPUT_LOW_DOWN_THRESH_CV));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + cvColSpacing, row2Y)), module, SabnockOTT::INPUT_LOW_DOWN_RATIO_CV));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 2*cvColSpacing, row2Y)), module, SabnockOTT::INPUT_LOW_UP_THRESH_CV));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 3*cvColSpacing, row2Y)), module, SabnockOTT::INPUT_LOW_UP_RATIO_CV));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 4*cvColSpacing, row2Y)), module, SabnockOTT::INPUT_MID_DOWN_THRESH_CV));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 5*cvColSpacing, row2Y)), module, SabnockOTT::INPUT_MID_DOWN_RATIO_CV));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 6*cvColSpacing, row2Y)), module, SabnockOTT::INPUT_MID_UP_THRESH_CV));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 7*cvColSpacing, row2Y)), module, SabnockOTT::INPUT_MID_UP_RATIO_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX, row2Y)), module, SabnockOTT::INPUT_HIGH_GAIN_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + cvColSpacing, row2Y)), module, SabnockOTT::INPUT_LOW_DOWN_THRESH_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 2*cvColSpacing, row2Y)), module, SabnockOTT::INPUT_LOW_DOWN_RATIO_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 3*cvColSpacing, row2Y)), module, SabnockOTT::INPUT_LOW_UP_THRESH_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 4*cvColSpacing, row2Y)), module, SabnockOTT::INPUT_LOW_UP_RATIO_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 5*cvColSpacing, row2Y)), module, SabnockOTT::INPUT_MID_DOWN_THRESH_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 6*cvColSpacing, row2Y)), module, SabnockOTT::INPUT_MID_DOWN_RATIO_CV));
 
-		// Row 3: High band controls (4)
+		// Row 3: Mid Up Thresh, Mid Up Ratio + High band controls (4) (6 inputs)
 		float row3Y = row2Y + cvRowSpacing;
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX, row3Y)), module, SabnockOTT::INPUT_HIGH_DOWN_THRESH_CV));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + cvColSpacing, row3Y)), module, SabnockOTT::INPUT_HIGH_DOWN_RATIO_CV));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 2*cvColSpacing, row3Y)), module, SabnockOTT::INPUT_HIGH_UP_THRESH_CV));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 3*cvColSpacing, row3Y)), module, SabnockOTT::INPUT_HIGH_UP_RATIO_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX, row3Y)), module, SabnockOTT::INPUT_MID_UP_THRESH_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + cvColSpacing, row3Y)), module, SabnockOTT::INPUT_MID_UP_RATIO_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 2*cvColSpacing, row3Y)), module, SabnockOTT::INPUT_HIGH_DOWN_THRESH_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 3*cvColSpacing, row3Y)), module, SabnockOTT::INPUT_HIGH_DOWN_RATIO_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 4*cvColSpacing, row3Y)), module, SabnockOTT::INPUT_HIGH_UP_THRESH_CV));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(cvStartX + 5*cvColSpacing, row3Y)), module, SabnockOTT::INPUT_HIGH_UP_RATIO_CV));
 
 		// === Audio I/O at bottom - INPUTS LEFT, OUTPUTS RIGHT (black) ===
 		float audioIOY = row3Y + cvRowSpacing;
