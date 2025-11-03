@@ -568,7 +568,7 @@ struct SabnockOTTWidget : ModuleWidget {
 		float cvStartY = 90.f;
 		float cvRowSpacing = 10.f;
 		float cvColSpacing = 8.5f;
-		float cvStartX = 5.8f;
+		float cvStartX = 5.6f;
 
 		// Row 1: Attack, Release, Mix, In Gain, Out Gain, Low Gain, Mid Gain (7 inputs)
 		float row1Y = cvStartY;
