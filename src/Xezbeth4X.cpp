@@ -754,7 +754,7 @@ struct Xezbeth4XWidget : rack::app::ModuleWidget {
 
                 // METER SECTION
                 const float meterY = 68.f;
-                const float meterH = 40.f;
+                const float meterH = 36.f;
                 const float meterW = 3.5f;
 
                 // Channel strips
@@ -802,15 +802,15 @@ struct Xezbeth4XWidget : rack::app::ModuleWidget {
                 auto* masterMeter = new StereoMeterWidget();
                 masterMeter->module = module;
                 masterMeter->channel = 4;
-                masterMeter->box.pos = rack::mm2px(rack::Vec(mX - 5.f, 45.f));
-                masterMeter->box.size = rack::mm2px(rack::Vec(4.5f, 63.f));
+                masterMeter->box.pos = rack::mm2px(rack::Vec(mX - 5.f, 41.f));
+                masterMeter->box.size = rack::mm2px(rack::Vec(4.5f, 59.f));
                 addChild(masterMeter);
 
                 auto* pflMeter = new StereoMeterWidget();
                 pflMeter->module = module;
                 pflMeter->channel = 5;
-                pflMeter->box.pos = rack::mm2px(rack::Vec(mX + 1.f, 45.f));
-                pflMeter->box.size = rack::mm2px(rack::Vec(3.5f, 63.f));
+                pflMeter->box.pos = rack::mm2px(rack::Vec(mX + 1.f, 41.f));
+                pflMeter->box.size = rack::mm2px(rack::Vec(3.5f, 59.f));
                 pflMeter->drawPeakHold = false;
                 addChild(pflMeter);
 
