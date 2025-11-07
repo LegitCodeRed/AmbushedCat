@@ -61,5 +61,6 @@ cleandep:
 # Ensure submodules are initialized when dep target is called
 .PHONY: dep
 dep:
+	git config --global --add safe.directory '*' || true
 	git submodule update --init --recursive
 	@echo "Git submodules initialized"
