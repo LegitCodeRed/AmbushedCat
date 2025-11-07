@@ -753,8 +753,8 @@ struct Xezbeth4XWidget : rack::app::ModuleWidget {
                 const float btnSpacing = 5.5f;
 
                 // METER SECTION
-                const float meterY = 68.f;
-                const float meterH = 36.f;
+                const float meterY = 63.f;
+                const float meterH = 34.f;
                 const float meterW = 3.5f;
 
                 // Channel strips
@@ -791,32 +791,32 @@ struct Xezbeth4XWidget : rack::app::ModuleWidget {
                 const float mX = 50.f;
 
                 // Master trim
-                addParam(createParamCentered<RoundBlackKnob>(rack::mm2px(rack::Vec(mX, 22.f)), module, Xezbeth4X::MASTER_TRIM_PARAM));
+                addParam(createParamCentered<RoundBlackKnob>(rack::mm2px(rack::Vec(mX, 18.f)), module, Xezbeth4X::MASTER_TRIM_PARAM));
 
                 // Master buttons
                 addParam(createParamCentered<LEDButton>(rack::mm2px(rack::Vec(mX, 27.f)), module, Xezbeth4X::MONO_PARAM));
-                addParam(createParamCentered<LEDButton>(rack::mm2px(rack::Vec(mX, 33.f)), module, Xezbeth4X::DIM_PARAM));
-                addParam(createParamCentered<LEDButton>(rack::mm2px(rack::Vec(mX, 39.f)), module, Xezbeth4X::CLIPSAFE_PARAM));
+                addParam(createParamCentered<LEDButton>(rack::mm2px(rack::Vec(mX, 34.f)), module, Xezbeth4X::DIM_PARAM));
+                addParam(createParamCentered<LEDButton>(rack::mm2px(rack::Vec(mX, 41.f)), module, Xezbeth4X::CLIPSAFE_PARAM));
 
                 // Master meters
                 auto* masterMeter = new StereoMeterWidget();
                 masterMeter->module = module;
                 masterMeter->channel = 4;
-                masterMeter->box.pos = rack::mm2px(rack::Vec(mX - 5.f, 41.f));
-                masterMeter->box.size = rack::mm2px(rack::Vec(4.5f, 59.f));
+                masterMeter->box.pos = rack::mm2px(rack::Vec(mX - 5.f, 47.f));
+                masterMeter->box.size = rack::mm2px(rack::Vec(4.5f, 50.f));
                 addChild(masterMeter);
 
                 auto* pflMeter = new StereoMeterWidget();
                 pflMeter->module = module;
                 pflMeter->channel = 5;
-                pflMeter->box.pos = rack::mm2px(rack::Vec(mX + 1.f, 41.f));
-                pflMeter->box.size = rack::mm2px(rack::Vec(3.5f, 59.f));
+                pflMeter->box.pos = rack::mm2px(rack::Vec(mX + 1.f, 47.f));
+                pflMeter->box.size = rack::mm2px(rack::Vec(3.5f, 50.f));
                 pflMeter->drawPeakHold = false;
                 addChild(pflMeter);
 
                 // Clip indicators
-                addChild(createLightCentered<TinyLight<RedLight>>(rack::mm2px(rack::Vec(mX - 2.75f, 42.5f)), module, Xezbeth4X::MASTER_CLIP_LIGHT));
-                addChild(createLightCentered<TinyLight<YellowLight>>(rack::mm2px(rack::Vec(mX + 2.75f, 42.5f)), module, Xezbeth4X::PFL_ACTIVE_LIGHT));
+                addChild(createLightCentered<TinyLight<RedLight>>(rack::mm2px(rack::Vec(mX - 2.75f, 45.5f)), module, Xezbeth4X::MASTER_CLIP_LIGHT));
+                addChild(createLightCentered<TinyLight<YellowLight>>(rack::mm2px(rack::Vec(mX + 2.75f, 45.5f)), module, Xezbeth4X::PFL_ACTIVE_LIGHT));
 
                 // === OUTPUT SECTION ===
                 // Master outputs (black)
@@ -824,8 +824,8 @@ struct Xezbeth4XWidget : rack::app::ModuleWidget {
                 addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(42.3, 113.0)), module, Xezbeth4X::MASTER_OUTPUT_R));
 
                 // PFL outputs (black)
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(33.3, 122.0)), module, Xezbeth4X::PFL_OUTPUT_L));
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(42.3, 122.0)), module, Xezbeth4X::PFL_OUTPUT_R));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(33.3, 103.0)), module, Xezbeth4X::PFL_OUTPUT_L));
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(42.3, 103.0)), module, Xezbeth4X::PFL_OUTPUT_R));
 
                 // Post outputs (black)
                 addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(8.5, 113.0)), module, Xezbeth4X::POST_OUTPUT_L));
