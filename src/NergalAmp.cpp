@@ -697,12 +697,12 @@ struct NergalAmpWidget : ModuleWidget {
                 addInput(createInputCentered<PJ301MPort>(mm2px(Vec(CV_X, FIRST_ROW_Y + 4 * ROW_STEP)), module, NergalAmp::OUTPUT_CV_INPUT));
 
                 // Audio I/O — stereo at bottom (2 inputs left, 2 outputs right)
-                constexpr float AUDIO_Y_TOP = 110.0f;      // top row of audio I/O
-                constexpr float AUDIO_Y_BOTTOM = 119.0f;   // bottom row of audio I/O
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(2.0f * HP, AUDIO_Y_TOP)), module, NergalAmp::SIGNAL_INPUT_L));     // L input
-                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(2.0f * HP, AUDIO_Y_BOTTOM)), module, NergalAmp::SIGNAL_INPUT_R));  // R input
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(6.0f * HP, AUDIO_Y_TOP)), module, NergalAmp::SIGNAL_OUTPUT_L));    // L output
-                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(6.0f * HP, AUDIO_Y_BOTTOM)), module, NergalAmp::SIGNAL_OUTPUT_R)); // R output
+                constexpr float AUDIO_Y_TOP = 107.0f;      // top row of audio I/O
+                constexpr float AUDIO_Y_BOTTOM = 116.0f;   // bottom row of audio I/O
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(SIDE_MARGIN, AUDIO_Y_TOP)), module, NergalAmp::SIGNAL_INPUT_L));     // L input
+                addInput(createInputCentered<PJ301MPort>(mm2px(Vec(SIDE_MARGIN, AUDIO_Y_BOTTOM)), module, NergalAmp::SIGNAL_INPUT_R));  // R input
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(W - SIDE_MARGIN - 8.0f, AUDIO_Y_TOP)), module, NergalAmp::SIGNAL_OUTPUT_L));    // L output
+                addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(W - SIDE_MARGIN - 8.0f, AUDIO_Y_BOTTOM)), module, NergalAmp::SIGNAL_OUTPUT_R)); // R output
 
         }
 

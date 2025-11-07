@@ -23,12 +23,12 @@
      inkscape:document-units="mm"
      showgrid="false"
      inkscape:zoom="2.34698"
-     inkscape:cx="139.54103"
-     inkscape:cy="38.773231"
-     inkscape:window-width="1920"
-     inkscape:window-height="1009"
-     inkscape:window-x="5112"
-     inkscape:window-y="229"
+     inkscape:cx="104.60251"
+     inkscape:cy="277.37774"
+     inkscape:window-width="2560"
+     inkscape:window-height="1369"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
      inkscape:window-maximized="1"
      inkscape:current-layer="svg263" />
   <defs
@@ -245,13 +245,6 @@
        d="m 54.623438,18.5 v -1.285156 q 0,-0.213281 0.0123,-0.410156 -0.06699,0.244726 -0.120313,0.382812 L 54.017774,18.5 h -0.183203 l -0.504492,-1.3125 -0.07656,-0.232422 -0.04512,-0.15039 0.0041,0.151757 0.0055,0.258399 V 18.5 h -0.232422 v -1.926367 h 0.343164 l 0.512696,1.335742 q 0.02734,0.08066 0.05195,0.173633 0.02598,0.0916 0.03418,0.132617 0.01094,-0.05469 0.04512,-0.16543 0.03555,-0.112109 0.04785,-0.14082 l 0.503125,-1.335742 h 0.334961 V 18.5 Z"
        id="path683" />
   </g>
-  <line
-     class="divider"
-     x1="3"
-     y1="35"
-     x2="57.96"
-     y2="35"
-     id="line203" />
   <!-- Mid controls row 1 -->
   <g
      aria-label="NOISE"
@@ -339,13 +332,6 @@
        id="path644"
        style="fill:#ffffff" />
   </g>
-  <line
-     class="divider"
-     x1="3"
-     y1="66"
-     x2="57.96"
-     y2="66"
-     id="line211" />
   <!-- Mid controls row 2 -->
   <g
      aria-label="COMB"

@@ -23,12 +23,12 @@
      inkscape:document-units="mm"
      showgrid="false"
      inkscape:zoom="1.4952534"
-     inkscape:cx="71.894169"
+     inkscape:cx="17.722749"
      inkscape:cy="278.21371"
      inkscape:window-width="2560"
      inkscape:window-height="1369"
-     inkscape:window-x="2552"
-     inkscape:window-y="212"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
      inkscape:window-maximized="1"
      inkscape:current-layer="svg14055" />
   <defs
@@ -157,17 +157,6 @@
   <!-- Controls Row 2: SPEED / INDEX -->
   <!-- Controls Row 3: SIZE / DENSE -->
   <!-- Switches Section -->
-  <rect
-     x="3.168819"
-     y="64.5"
-     width="43.754566"
-     height="22"
-     fill="#202228"
-     stroke="#3a3d46"
-     stroke-width="0.3"
-     rx="1.1276951"
-     id="rect13999"
-     style="fill:none" />
   <g
      aria-label="MODE"
      id="text14001"
@@ -206,17 +195,6 @@
   </g>
   <!-- FSU Button -->
   <!-- CV Input Section -->
-  <rect
-     x="3.257293"
-     y="87.5"
-     width="43.489143"
-     height="21.238642"
-     fill="#1a1c20"
-     stroke="#3a3d46"
-     stroke-width="0.3"
-     rx="1.1208541"
-     id="rect14021"
-     style="fill:none" />
   <!-- I/O Section -->
   <!-- Footer -->
   <g
