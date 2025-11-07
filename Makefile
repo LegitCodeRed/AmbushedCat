@@ -49,8 +49,11 @@ ifdef ARCH_MAC
 	LDFLAGS := $(patsubst -mmacosx-version-min=10.9,-mmacosx-version-min=10.15,$(LDFLAGS))
 endif
 
-# Link filesystem library (needed for C++17 std::filesystem on MinGW)
-LDFLAGS += -lstdc++fs
+# Link filesystem library (needed for C++17 std::filesystem on Windows/Linux)
+# macOS has it built into libc++ on 10.15+, doesn't need separate lib
+ifndef ARCH_MAC
+	LDFLAGS += -lstdc++fs
+endif
 # Statically link pthread to avoid DLL dependencies on Windows only
 # Must come AFTER plugin.mk to override any settings
 # On Linux, pthread must be dynamically linked for shared objects
