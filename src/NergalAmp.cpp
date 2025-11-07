@@ -728,7 +728,10 @@ struct NergalAmpWidget : ModuleWidget {
                         }
 #endif
                         if (!path.empty()) {
-                                labelText = "Model: " + std::filesystem::path(path).filename().string();
+                                // Extract filename without std::filesystem for macOS <10.15 compatibility
+                                size_t lastSlash = path.find_last_of("/\\");
+                                std::string filename = (lastSlash != std::string::npos) ? path.substr(lastSlash + 1) : path;
+                                labelText = "Model: " + filename;
                         }
                 }
                 MenuLabel* label = createMenuLabel(labelText);

@@ -40,13 +40,24 @@ include $(RACK_DIR)/plugin.mk
 CXXFLAGS := $(filter-out -std=c++11,$(CXXFLAGS))
 CXXFLAGS += -std=c++17
 
+# Override macOS deployment target for C++17 filesystem support
+# NAM library requires std::filesystem which is only available on macOS 10.15+
+ifdef ARCH_MAC
+	FLAGS := $(patsubst -mmacosx-version-min=10.9,-mmacosx-version-min=10.15,$(FLAGS))
+	CFLAGS := $(patsubst -mmacosx-version-min=10.9,-mmacosx-version-min=10.15,$(CFLAGS))
+	CXXFLAGS := $(patsubst -mmacosx-version-min=10.9,-mmacosx-version-min=10.15,$(CXXFLAGS))
+	LDFLAGS := $(patsubst -mmacosx-version-min=10.9,-mmacosx-version-min=10.15,$(LDFLAGS))
+endif
+
 # Link filesystem library (needed for C++17 std::filesystem on MinGW)
 LDFLAGS += -lstdc++fs
-# Statically link pthread to avoid DLL dependencies on Windows
+# Statically link pthread to avoid DLL dependencies on Windows only
 # Must come AFTER plugin.mk to override any settings
-# Force static linking of pthread before dynamic linking resumes
-LDFLAGS := $(filter-out -lpthread,$(LDFLAGS))
-LDFLAGS += -Wl,-Bstatic -lpthread -Wl,-Bdynamic
+# On Linux, pthread must be dynamically linked for shared objects
+ifdef ARCH_WIN
+	LDFLAGS := $(filter-out -lpthread,$(LDFLAGS))
+	LDFLAGS += -Wl,-Bstatic -lpthread -Wl,-Bdynamic
+endif
 
 # Override cleandep to prevent removal of git-tracked dependencies
 # The rack-plugin-toolchain's cleandep runs "rm -rfv dep" which would delete:
