@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120.952" height="380" viewBox="0 0 120.952 380">
+  <!-- Background -->
+  <rect width="120.952" height="380" fill="#1a1a1a" />
+  <rect x="3" y="3" width="114.952" height="374" fill="#252525" stroke="#404040" stroke-width="1.2" />
+
+  <!-- Title -->
+  <text x="60.476" y="35" font-family="Fira Sans, sans-serif" font-size="16" font-weight="bold" fill="#e0e5ef" text-anchor="middle" letter-spacing="2">SITRI</text>
+  <text x="60.476" y="46" font-family="Fira Sans, sans-serif" font-size="7" fill="#808590" text-anchor="middle">ALGORITHMIC SEQUENCER</text>
+
+  <!-- Section dividers -->
+  <line x1="12" y1="55" x2="108" y2="55" stroke="#353535" stroke-width="0.8"/>
+  <line x1="12" y1="92" x2="108" y2="92" stroke="#353535" stroke-width="0.8"/>
+  <line x1="12" y1="141" x2="108" y2="141" stroke="#353535" stroke-width="0.8"/>
+  <line x1="12" y1="190" x2="108" y2="190" stroke="#353535" stroke-width="0.8"/>
+  <line x1="12" y1="278" x2="108" y2="278" stroke="#353535" stroke-width="0.8"/>
+
+  <!-- Section labels -->
+  <text x="15" y="64" font-family="Fira Sans, sans-serif" font-size="6.5" font-weight="600" fill="#70758f" text-anchor="start">ALGORITHM</text>
+  <text x="15" y="101" font-family="Fira Sans, sans-serif" font-size="6.5" font-weight="600" fill="#70758f" text-anchor="start">SEQUENCE</text>
+  <text x="15" y="150" font-family="Fira Sans, sans-serif" font-size="6.5" font-weight="600" fill="#70758f" text-anchor="start">EXPRESSION</text>
+  <text x="15" y="199" font-family="Fira Sans, sans-serif" font-size="6.5" font-weight="600" fill="#70758f" text-anchor="start">QUANTIZER</text>
+  <text x="15" y="287" font-family="Fira Sans, sans-serif" font-size="6.5" font-weight="600" fill="#70758f" text-anchor="start">I/O</text>
+
+  <!-- Parameter labels -->
+  <text x="37.5" y="71" font-family="Fira Sans, sans-serif" font-size="6" fill="#60656f" text-anchor="middle">TYPE</text>
+  <text x="75" y="71" font-family="Fira Sans, sans-serif" font-size="6" fill="#60656f" text-anchor="middle">SEED</text>
+  <text x="60" y="84" font-family="Fira Sans, sans-serif" font-size="7" font-weight="bold" fill="#e07060" text-anchor="middle">RESEED</text>
+
+  <text x="25" y="108" font-family="Fira Sans, sans-serif" font-size="6" fill="#60656f" text-anchor="middle">STEPS</text>
+  <text x="55" y="108" font-family="Fira Sans, sans-serif" font-size="6" fill="#60656f" text-anchor="middle">OFST</text>
+  <text x="25" y="133" font-family="Fira Sans, sans-serif" font-size="6" fill="#60656f" text-anchor="middle">DIV</text>
+  <text x="55" y="133" font-family="Fira Sans, sans-serif" font-size="6" fill="#60656f" text-anchor="middle">DIR</text>
+
+  <text x="25" y="157" font-family="Fira Sans, sans-serif" font-size="6" fill="#60656f" text-anchor="middle">DENS</text>
+  <text x="55" y="157" font-family="Fira Sans, sans-serif" font-size="6" fill="#60656f" text-anchor="middle">ACNT</text>
+  <text x="25" y="182" font-family="Fira Sans, sans-serif" font-size="6" fill="#60656f" text-anchor="middle">GATE</text>
+  <text x="55" y="182" font-family="Fira Sans, sans-serif" font-size="6" fill="#60656f" text-anchor="middle">SWNG</text>
+
+  <text x="25" y="206" font-family="Fira Sans, sans-serif" font-size="6" fill="#60656f" text-anchor="middle">ROOT</text>
+  <text x="55" y="206" font-family="Fira Sans, sans-serif" font-size="6" fill="#60656f" text-anchor="middle">SCAL</text>
+  <text x="40" y="231" font-family="Fira Sans, sans-serif" font-size="6" fill="#60656f" text-anchor="middle">TRNS</text>
+
+  <!-- I/O Labels -->
+  <text x="25" y="294" font-family="Fira Sans, sans-serif" font-size="5.5" fill="#50555f" text-anchor="middle">CLK RST SED</text>
+  <text x="25" y="307" font-family="Fira Sans, sans-serif" font-size="5.5" fill="#50555f" text-anchor="middle">DEN ACC GAT</text>
+  <text x="25" y="320" font-family="Fira Sans, sans-serif" font-size="5.5" fill="#50555f" text-anchor="middle">RT TRNS</text>
+
+  <text x="70" y="294" font-family="Fira Sans, sans-serif" font-size="5.5" fill="#50555f" text-anchor="middle">PITCH</text>
+  <text x="70" y="307" font-family="Fira Sans, sans-serif" font-size="5.5" fill="#50555f" text-anchor="middle">GATE</text>
+  <text x="70" y="320" font-family="Fira Sans, sans-serif" font-size="5.5" fill="#50555f" text-anchor="middle">VEL</text>
+  <text x="55" y="320" font-family="Fira Sans, sans-serif" font-size="5.5" fill="#50555f" text-anchor="middle">EOC</text>
+
+  <!-- Footer -->
+  <text x="60.476" y="368" font-family="Fira Sans, sans-serif" font-size="6.5" fill="#40454f" text-anchor="middle">SWAPPABLE ALGORITHMS</text>
+</svg>
