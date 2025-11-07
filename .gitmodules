@@ -1,0 +1,3 @@
+[submodule "dep/vital"]
+	path = dep/vital
+	url = https://github.com/LegitCodeRed/vital.git
