@@ -16,7 +16,7 @@
     {
       "slug": "TuringMaschine",
       "name": "TuringMaschineRythm",
-      "description": "A probabilistic CV sequencer inspired by the original Music Thing Turing Machine. Generates semi-random looping sequences with adjustable probability and loop length.",
+      "description": "Controlled chaos CV sequencer. Semi-random loops that evolve organically—dial in the perfect balance between order and entropy.",
       "tags": [
         "Sequencer"
       ]
@@ -24,7 +24,7 @@
     {
       "slug": "TuringGateExpander",
       "name": "TuringGates",
-      "description": "An expander for the TuringMaschine module that outputs rhythmic gate patterns derived from the current sequence state. Useful for triggering drums, envelopes, or other events.",
+      "description": "Rhythmic gate patterns extracted from chaos. Transform your Turing sequences into polyrhythmic triggers.",
       "tags": [
         "Expander"
       ]
@@ -32,7 +32,7 @@
     {
       "slug": "TuringVoltsExpander",
       "name": "TuringFlow",
-      "description": "An expander for the TuringMaschine that provides additional CV outputs based on bits of the sequence. Allows complex modulation and control signals derived from the main sequence.",
+      "description": "Deep-dive CV extraction from the bit stream. Unlock hidden modulation dimensions lurking inside your sequences.",
       "tags": [
         "Expander"
       ]
@@ -40,7 +40,7 @@
     {
       "slug": "Tape",
       "name": "Tape Machine",
-      "description": "A detailed tape emulation module offering saturation, wow & flutter, bias shaping, and vintage tape coloration. Perfect for adding analog warmth and character to your sound.",
+      "description": "Authentic tape degradation engine. Saturate, wobble, and age your sound with mechanical imperfection.",
       "tags": [
        "Effect", "Dynamics", "Physical modeling", "Distortion"
       ]
@@ -48,7 +48,7 @@
     {
       "slug": "Kabaddon",
       "name": "Kabaddon",
-      "description": "Percussive synthesizer inspired by Basimilus Iteritas Alia with multi-mode spectral synthesis, waveshaping, and kick drum articulation.",
+      "description": "Brutal percussive synth. Spectral waveshaping meets kick drum physics for earth-shaking low end.",
       "tags": [
         "Oscillator"
       ]
@@ -56,7 +56,7 @@
     {
       "slug": "Andras",
       "name": "Andras",
-      "description": "Massive hybrid tone generator inspired by Ataraxic Iteritas Alia that fuses polyBLEP oscillators, voltage-controlled combing, and evolving LFSR textures for brutal yet controllable timbres.",
+      "description": "Hybrid beast oscillator. Fuse clean waveforms with chaotic bit textures and voltage-controlled combs for massive, evolving tones.",
       "tags": [
         "Oscillator",
         "Noise"
@@ -65,7 +65,7 @@
     {
       "slug": "Ahriman",
       "name": "Ahriman",
-      "description": "Stereo reverb inspired by Desmodus Versio with blend, tone, regen, modulation, density, and firmware-style FSU behavior for lush ambiences and haunted atmospheres.",
+      "description": "Haunted stereo reverb. Dense, modulated spaces that range from ethereal shimmer to corrupted digital decay.",
       "tags": [
         "Effect",
         "Reverb",
@@ -75,7 +75,7 @@
     {
       "slug": "Leviathan",
       "name": "Leviathan",
-      "description": "Stereo techno-focused distortion inspired by Ruina Versio with wavefolding, DOOM suboctaves, multiband saturation, octavizing, phase warping, and the infamous Smoosh drive.",
+      "description": "Techno destruction unit. Fold, crush, and octavize with DOOM subs and the legendary Smoosh algorithm.",
       "tags": [
         "Distortion",
         "Effect"
@@ -84,7 +84,7 @@
      {
       "slug": "Sitri",
       "name": "Sitri",
-      "description": "Generative algorithmic sequencer module for VCV Rack with an integrated quantizer, multiple algorithm “engines”, rich clocking/swing logic, velocity and gate shaping, and an expander bus to a right-hand module (Lilith/LilithAdvance). It outputs Pitch (V/Oct), Gate, Velocity, plus an End-Of-Cycle trigger.",
+      "description": "Algorithmic brain sequencer. Multiple generative engines with swing, quantization, and velocity shaping—expandable via Lilith modules.",
      "tags": [
         "Sequencer"
       ]
@@ -93,7 +93,7 @@
     {
       "slug": "Lilith",
       "name": "Lilith",
-      "description": "8-step expander and standalone lane for Sitri with per-step CV and gate modes.",
+      "description": "8-step companion to Sitri's brain. Per-step CV sculpting and gate logic, standalone or chained.",
       "tags": [
         "Sequencer",
         "Expander"
@@ -102,7 +102,7 @@
     {
       "slug": "LilithAdvance",
       "name": "Lilith Advance",
-      "description": "16-step expander and standalone lane for Sitri with per-step CV and gate modes.",
+      "description": "16-step evolution of Lilith. Extended per-step control for deeper sequence manipulation.",
       "tags": [
         "Sequencer",
         "Expander"
@@ -111,7 +111,7 @@
     {
       "slug": "Buer",
       "name": "Buer",
-      "description": "16HP modulation expander for Lilith with per-step CV and gate-mode attenuverters plus remote parameter updating.",
+      "description": "Per-step modulation control center. Attenuvert and remotely tweak every parameter of your Lilith sequences.",
       "tags": [
         "Expander",
         "Utility",
@@ -121,7 +121,7 @@
     {
       "slug": "NergalAmp",
       "name": "Nergal Amp",
-      "description": "Neural amp modeler with NAM model loading, drive saturation, tone shaping, dry/wet mix, and full CV control over all parameters.",
+      "description": "Neural amp modeling unleashed. Load NAM profiles, shape tone, and voltage-control every parameter for dynamic amp responses.",
       "tags": [
         "Effect",
         "Dynamics",
@@ -132,7 +132,7 @@
     {
       "slug": "SabnockOTT",
       "name": "Sabnock OTT",
-      "description": "Stereo multiband OTT-style compressor with 3-band crossover, upward/downward compression controls, per-band micro-tuning, lookahead, and extensive CV access.",
+      "description": "Surgical multiband domination. OTT-style compression with per-band upward/downward control and deep CV integration.",
       "tags": [
         "Dynamics",
         "Effect",
@@ -142,7 +142,7 @@
     {
       "slug": "Xezbeth4X",
       "name": "Xezbeth:4X",
-      "description": "High-end stereo summing mixer with flexible pan laws, switchable clean/Neve summing, harmonic drive, and comprehensive metering for hybrid workflows.",
+      "description": "Boutique summing mixer. Choose pristine clarity or Neve-style harmonics with flexible pan laws and pro metering.",
       "tags": [
         "Mixer",
         "Utility",
