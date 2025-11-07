@@ -23,8 +23,8 @@
      inkscape:document-units="mm"
      showgrid="false"
      inkscape:zoom="2.9905068"
-     inkscape:cx="86.941785"
-     inkscape:cy="189.43277"
+     inkscape:cx="104.83173"
+     inkscape:cy="35.278301"
      inkscape:window-width="1346"
      inkscape:window-height="1000"
      inkscape:window-x="710"
@@ -103,17 +103,6 @@
      id="rect23"
      style="fill:none;fill-opacity:1;stroke:#282e36;stroke-opacity:1" />
   <!-- Header -->
-  <rect
-     x="1"
-     y="1"
-     width="55"
-     height="11"
-     fill="#12151a"
-     stroke="#282e36"
-     stroke-width="0.25"
-     rx="0.6"
-     id="rect25"
-     style="fill:none" />
   <g
      aria-label="XEZBETH:4X"
      id="text27"
@@ -245,14 +234,6 @@
   <!-- Output section -->
   <!-- Input port hints (L/R staggered) -->
   <!-- Decorative accents -->
-  <rect
-     x="1"
-     y="126.5"
-     width="55"
-     height="0.8"
-     fill="#2a3038"
-     opacity="0.25"
-     id="rect135" />
   <!-- Footer -->
   <g
      aria-label="AMBUSHED CAT DSP"

@@ -363,7 +363,7 @@ struct Andras : Module {
 };
 
 struct BackgroundImage : Widget {
-	std::string imagePath = asset::plugin(pluginInstance, "res/TextureDemonMain.png");
+	std::string imagePath = asset::plugin(pluginInstance, "res/TextureDemonMainV2.png");
 	widget::SvgWidget* svgWidget;
 
 	BackgroundImage() {
