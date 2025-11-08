@@ -140,6 +140,7 @@ struct UsbSync : Module {
         midi::Message msg;
         msg.bytes[0] = 0xF8;  // MIDI Clock (System Real-Time, no channel)
         msg.setSize(1);
+        msg.setFrame(0);
         midiOutput.sendMessage(msg);
     }
 
@@ -148,6 +149,7 @@ struct UsbSync : Module {
         midi::Message msg;
         msg.bytes[0] = 0xFA;  // MIDI Start (System Real-Time, no channel)
         msg.setSize(1);
+        msg.setFrame(0);
         midiOutput.sendMessage(msg);
         clocksSinceReset = 0;
     }
@@ -157,6 +159,7 @@ struct UsbSync : Module {
         midi::Message msg;
         msg.bytes[0] = 0xFC;  // MIDI Stop (System Real-Time, no channel)
         msg.setSize(1);
+        msg.setFrame(0);
         midiOutput.sendMessage(msg);
     }
 
@@ -165,6 +168,7 @@ struct UsbSync : Module {
         midi::Message msg;
         msg.bytes[0] = 0xFB;  // MIDI Continue (System Real-Time, no channel)
         msg.setSize(1);
+        msg.setFrame(0);
         midiOutput.sendMessage(msg);
     }
 
@@ -240,19 +244,23 @@ struct UsbSync : Module {
         bool resetHigh = inputs[RESET_INPUT].getVoltage() >= 1.f;
 
         // Detect run start/stop
-        bool runRising = runTrigger.process(runHigh);
-        if (runRising && runHigh && !wasRunning) {
+        if (runHigh && !wasRunning) {
+            // Run just went high - send start
             sendMidiStart();
             running = true;
             locked = false;
             subClockPhase = 0.0;
             lastInputClockFrame = -1;
         } else if (!runHigh && wasRunning) {
+            // Run just went low - send stop
             sendMidiStop();
             running = false;
             locked = false;
         }
         wasRunning = runHigh;
+
+        // Update running state based on RUN input
+        running = runHigh;
 
         // Detect reset
         if (resetTrigger.process(resetHigh)) {
