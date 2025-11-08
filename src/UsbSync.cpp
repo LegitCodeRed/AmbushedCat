@@ -32,7 +32,7 @@ struct UsbSync : Module {
         PARAMS_LEN
     };
     enum InputId {
-        CLK_INPUT,
+        CLOCK_INPUT,   // Clock input - measures BPM from incoming clock
         RUN_INPUT,
         RESET_INPUT,
         INPUTS_LEN
@@ -69,11 +69,20 @@ struct UsbSync : Module {
     dsp::SchmittTrigger resetTrigger;
     bool wasRunning = false;
 
+    // Clock measurement for BPM detection
+    int64_t lastInputClockFrame = -1;
+    double measuredClockPeriod = 0.0;
+    double measuredBpm = 0.0;
+
+    // 24 PPQN subdivision - we need to send 24 MIDI clocks per input clock
+    double subClockPhase = 0.0;
+    int midiClocksPerBeat = 24;
+
     std::deque<PulseEvent> eventQueue;
 
     UsbSync() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
-        configInput(CLK_INPUT, "Clock (24 PPQN)");
+        configInput(CLOCK_INPUT, "Clock input (e.g., 137 BPM)");
         configInput(RUN_INPUT, "Run gate");
         configInput(RESET_INPUT, "Reset trigger");
     }
@@ -91,6 +100,10 @@ struct UsbSync : Module {
         lastSentClockFrame = -1;
         clocksSinceReset = 0;
         wasRunning = false;
+        lastInputClockFrame = -1;
+        measuredClockPeriod = 0.0;
+        measuredBpm = 0.0;
+        subClockPhase = 0.0;
         eventQueue.clear();
     }
 
@@ -125,16 +138,16 @@ struct UsbSync : Module {
     void sendMidiClock() {
         if (!vcvIsMaster || midiOutput.getDeviceId() < 0) return;
         midi::Message msg;
-        msg.setStatus(0xF);
-        msg.setChannel(0x8);  // 0xF8 = MIDI clock
+        msg.bytes[0] = 0xF8;  // MIDI Clock (System Real-Time, no channel)
+        msg.setSize(1);
         midiOutput.sendMessage(msg);
     }
 
     void sendMidiStart() {
         if (!vcvIsMaster || midiOutput.getDeviceId() < 0) return;
         midi::Message msg;
-        msg.setStatus(0xF);
-        msg.setChannel(0xA);  // 0xFA = MIDI start
+        msg.bytes[0] = 0xFA;  // MIDI Start (System Real-Time, no channel)
+        msg.setSize(1);
         midiOutput.sendMessage(msg);
         clocksSinceReset = 0;
     }
@@ -142,16 +155,16 @@ struct UsbSync : Module {
     void sendMidiStop() {
         if (!vcvIsMaster || midiOutput.getDeviceId() < 0) return;
         midi::Message msg;
-        msg.setStatus(0xF);
-        msg.setChannel(0xC);  // 0xFC = MIDI stop
+        msg.bytes[0] = 0xFC;  // MIDI Stop (System Real-Time, no channel)
+        msg.setSize(1);
         midiOutput.sendMessage(msg);
     }
 
     void sendMidiContinue() {
         if (!vcvIsMaster || midiOutput.getDeviceId() < 0) return;
         midi::Message msg;
-        msg.setStatus(0xF);
-        msg.setChannel(0xB);  // 0xFB = MIDI continue
+        msg.bytes[0] = 0xFB;  // MIDI Continue (System Real-Time, no channel)
+        msg.setSize(1);
         midiOutput.sendMessage(msg);
     }
 
@@ -222,21 +235,22 @@ struct UsbSync : Module {
 
     void processVcvMaster(const ProcessArgs& args) {
         // Read CV inputs
-        bool clockHigh = inputs[CLK_INPUT].getVoltage() >= 1.f;
+        bool clockHigh = inputs[CLOCK_INPUT].getVoltage() >= 1.f;
         bool runHigh = inputs[RUN_INPUT].getVoltage() >= 1.f;
         bool resetHigh = inputs[RESET_INPUT].getVoltage() >= 1.f;
 
         // Detect run start/stop
-        if (runTrigger.process(runHigh)) {
-            if (runHigh && !wasRunning) {
-                sendMidiStart();
-                running = true;
-                locked = true;
-            } else if (!runHigh && wasRunning) {
-                sendMidiStop();
-                running = false;
-                locked = false;
-            }
+        bool runRising = runTrigger.process(runHigh);
+        if (runRising && runHigh && !wasRunning) {
+            sendMidiStart();
+            running = true;
+            locked = false;
+            subClockPhase = 0.0;
+            lastInputClockFrame = -1;
+        } else if (!runHigh && wasRunning) {
+            sendMidiStop();
+            running = false;
+            locked = false;
         }
         wasRunning = runHigh;
 
@@ -244,23 +258,45 @@ struct UsbSync : Module {
         if (resetTrigger.process(resetHigh)) {
             sendMidiStart();
             clocksSinceReset = 0;
+            subClockPhase = 0.0;
+            lastInputClockFrame = -1;
         }
 
-        // Send clock on rising edge
+        // Detect input clock edges and measure period
         if (clockTrigger.process(clockHigh)) {
-            sendMidiClock();
-            clocksSinceReset++;
-
-            // Calculate BPM from clock timing
-            if (lastSentClockFrame >= 0) {
-                int64_t delta = args.frame - lastSentClockFrame;
+            // Rising edge of input clock (one beat)
+            if (lastInputClockFrame >= 0) {
+                // Measure the period between beats
+                int64_t delta = args.frame - lastInputClockFrame;
                 if (delta > 0) {
-                    periodSamples = (double)delta;
+                    measuredClockPeriod = (double)delta;
+                    // Calculate BPM: samples per beat -> beats per second -> beats per minute
+                    double beatsPerSecond = args.sampleRate / measuredClockPeriod;
+                    measuredBpm = beatsPerSecond * 60.0;
+                    bpm = measuredBpm;
+                    locked = true;
                     havePeriod = true;
-                    bpm = computeBpmFromSamples(delta);
                 }
             }
-            lastSentClockFrame = args.frame;
+            lastInputClockFrame = args.frame;
+            subClockPhase = 0.0;  // Reset subdivision phase on each beat
+        }
+
+        // Generate 24 MIDI clocks per input clock beat (24 PPQN subdivision)
+        if (running && measuredClockPeriod > 0.0) {
+            // Calculate how fast to advance the sub-clock phase
+            // We want to generate 24 clocks during one beat period
+            double subClockIncrement = (double)midiClocksPerBeat / measuredClockPeriod;
+
+            subClockPhase += subClockIncrement;
+
+            // Send MIDI clock every time phase crosses an integer boundary
+            while (subClockPhase >= 1.0) {
+                subClockPhase -= 1.0;
+                sendMidiClock();
+                clocksSinceReset++;
+                lastSentClockFrame = args.frame;
+            }
         }
     }
 
@@ -453,7 +489,7 @@ struct UsbSyncWidget : ModuleWidget {
                                                                UsbSync::RUN_LIGHT));
 
         // CV Inputs - positioned near the bottom
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.16f, 107.f)), module, UsbSync::CLK_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.16f, 107.f)), module, UsbSync::CLOCK_INPUT));
         addInput(createInputCentered<PJ301MPort>(mm2px(Vec(panelWidth / 2.f, 107.f)), module, UsbSync::RUN_INPUT));
         addInput(createInputCentered<PJ301MPort>(mm2px(Vec(panelWidth - 10.16f, 107.f)), module, UsbSync::RESET_INPUT));
     }
