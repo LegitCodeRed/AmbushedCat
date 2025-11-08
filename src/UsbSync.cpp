@@ -29,9 +29,6 @@ struct PulseEvent {
 
 struct UsbSync : Module {
     enum ParamId {
-        SMOOTH_PARAM,
-        OFFSET_PARAM,
-        FOLLOW_SPP_PARAM,
         PARAMS_LEN
     };
     enum OutputId {
@@ -52,26 +49,18 @@ struct UsbSync : Module {
     bool locked = false;
     int lockCounter = 0;
     int64_t lastClockFrame = -1;
-    double emaPeriodSamples = 0.0;
+    double periodSamples = 0.0;
     bool havePeriod = false;
-    double instantBpm = 0.0;
-    double smoothBpm = 0.0;
+    double bpm = 0.0;
     int clockPulseRemain = 0;
     int resetPulseRemain = 0;
     int resetPulseLength = 1;
     bool runGate = false;
 
-    int tickInBar = 0;
-    int pendingTickInBar = 0;
-    bool hasPendingSpp = false;
-
     std::deque<PulseEvent> eventQueue;
 
     UsbSync() {
         config(PARAMS_LEN, 0, OUTPUTS_LEN, LIGHTS_LEN);
-        configParam(SMOOTH_PARAM, 0.f, 200.f, 40.f, "Clock smoothing", " ms");
-        configParam(OFFSET_PARAM, -50.f, 50.f, 0.f, "Timing offset", " ms");
-        configSwitch(FOLLOW_SPP_PARAM, 0.f, 1.f, 0.f, "Follow DAW position", {"Off", "On"});
         configOutput(CLK_OUTPUT, "Clock (24 PPQN)");
         configOutput(RUN_OUTPUT, "Run gate");
         configOutput(RESET_OUTPUT, "Reset trigger");
@@ -89,21 +78,16 @@ struct UsbSync : Module {
         lockCounter = 0;
         lastClockFrame = -1;
         havePeriod = false;
-        emaPeriodSamples = 0.0;
-        instantBpm = smoothBpm = 0.0;
+        periodSamples = 0.0;
+        bpm = 0.0;
         clockPulseRemain = 0;
         resetPulseRemain = 0;
-        tickInBar = 0;
-        pendingTickInBar = 0;
-        hasPendingSpp = false;
         eventQueue.clear();
     }
 
     json_t* dataToJson() override {
         json_t* rootJ = Module::dataToJson();
         json_object_set_new(rootJ, "midiInput", midiInput.toJson());
-        json_object_set_new(rootJ, "pendingTickInBar", json_integer(pendingTickInBar));
-        json_object_set_new(rootJ, "hasPendingSpp", json_boolean(hasPendingSpp));
         return rootJ;
     }
 
@@ -113,12 +97,6 @@ struct UsbSync : Module {
         if (midiJ) {
             midiInput.fromJson(midiJ);
         }
-        json_t* tickJ = json_object_get(rootJ, "pendingTickInBar");
-        if (tickJ) {
-            pendingTickInBar = json_integer_value(tickJ);
-        }
-        json_t* sppJ = json_object_get(rootJ, "hasPendingSpp");
-        hasPendingSpp = sppJ ? json_boolean_value(sppJ) : false;
     }
 
     double sampleRate() const {
@@ -127,13 +105,6 @@ struct UsbSync : Module {
 
     void updateResetPulseLength(double sr) {
         resetPulseLength = std::max(1, (int)std::lround(sr * (RESET_PULSE_MS / 1000.0)));
-    }
-
-    int64_t applyOffsetToFrame(int64_t frame) {
-        double offsetMs = params[OFFSET_PARAM].getValue();
-        double samples = offsetMs * sampleRate() / 1000.0;
-        double shifted = frame + samples;
-        return (int64_t)std::llround(shifted);
     }
 
     void scheduleEvent(const PulseEvent& event) {
@@ -146,21 +117,21 @@ struct UsbSync : Module {
     void scheduleClockPulse(int64_t frame) {
         PulseEvent ev;
         ev.type = PulseEvent::Type::Clock;
-        ev.frame = applyOffsetToFrame(frame);
+        ev.frame = frame;
         scheduleEvent(ev);
     }
 
     void scheduleResetPulse(int64_t frame) {
         PulseEvent ev;
         ev.type = PulseEvent::Type::Reset;
-        ev.frame = applyOffsetToFrame(frame);
+        ev.frame = frame;
         scheduleEvent(ev);
     }
 
     void scheduleRunChange(int64_t frame, bool state) {
         PulseEvent ev;
         ev.type = PulseEvent::Type::Run;
-        ev.frame = applyOffsetToFrame(frame);
+        ev.frame = frame;
         ev.runState = state;
         scheduleEvent(ev);
     }
@@ -176,7 +147,6 @@ struct UsbSync : Module {
         eventQueue.clear();
         clockPulseRemain = 0;
         resetPulseRemain = 0;
-        tickInBar = hasPendingSpp ? pendingTickInBar % CLOCKS_PER_BAR : 0;
     }
 
     void handleContinue(int64_t frame) {
@@ -196,36 +166,24 @@ struct UsbSync : Module {
             return;
         }
 
+        // Calculate BPM from raw clock timing (no smoothing)
         if (lastClockFrame >= 0) {
             int64_t delta = frame - lastClockFrame;
             if (delta > 0) {
-                double smoothMs = params[SMOOTH_PARAM].getValue();
-                double tauSamples = smoothMs * sampleRate() / 1000.0;
-                double alpha = 1.0;
-                if (tauSamples > 1e-6) {
-                    alpha = 1.0 - std::exp(-(double)delta / tauSamples);
-                    alpha = static_cast<double>(rack::math::clamp(static_cast<float>(alpha), 0.f, 1.f));
-                }
-                if (!havePeriod) {
-                    emaPeriodSamples = (double)delta;
-                    havePeriod = true;
-                } else {
-                    emaPeriodSamples += alpha * ((double)delta - emaPeriodSamples);
-                }
-                instantBpm = computeBpmFromSamples(delta);
-                smoothBpm = computeBpmFromSamples(emaPeriodSamples);
+                periodSamples = (double)delta;
+                havePeriod = true;
+                bpm = computeBpmFromSamples(delta);
             }
         }
 
         lastClockFrame = frame;
-        if (havePeriod && emaPeriodSamples > 0.0) {
+        if (havePeriod && periodSamples > 0.0) {
             lockCounter = std::min(lockCounter + 1, CLOCKS_PER_BAR * 4);
             if (lockCounter >= 12) {
                 locked = true;
             }
         }
         scheduleClockPulse(frame);
-        tickInBar = (tickInBar + 1) % CLOCKS_PER_BAR;
     }
 
     double computeBpmFromSamples(double samples) const {
@@ -237,19 +195,7 @@ struct UsbSync : Module {
         return tickHz * 60.0 / CLOCKS_PER_QUARTER;
     }
 
-    void handleSpp(const midi::Message& msg, int64_t frame) {
-        uint16_t value = ((uint16_t)msg.getValue() << 7) | msg.getNote();
-        int clocks = (value * CLOCKS_PER_SPP_UNIT) % CLOCKS_PER_BAR;
-        pendingTickInBar = clocks;
-        hasPendingSpp = true;
-
-        if (running && params[FOLLOW_SPP_PARAM].getValue() > 0.5f) {
-            tickInBar = clocks;
-            locked = false;
-            lockCounter = 0;
-            scheduleResetPulse(frame);
-        }
-    }
+    // SPP (Song Position Pointer) is ignored for hardware sync
 
     void process(const ProcessArgs& args) override {
         if (resetPulseLength <= 0) {
@@ -272,16 +218,14 @@ struct UsbSync : Module {
                 case 0xc:  // stop (0xFC)
                     handleStop(msg.frame);
                     break;
-                case 0x2:  // song position pointer (0xF2)
-                    handleSpp(msg, msg.frame);
-                    break;
                 default:
                     break;
             }
         }
 
+        // Unlock if no clock received for too long (timeout detection)
         if (running && havePeriod && lastClockFrame >= 0) {
-            double threshold = emaPeriodSamples * 2.0;
+            double threshold = periodSamples * 2.0;
             if (threshold <= 0.0) {
                 threshold = sampleRate() * 0.1;
             }
@@ -430,11 +374,9 @@ struct MidiInputChoice : TransparentWidget {
 
     void onButton(const event::Button& e) override {
         if (!module) {
-            TransparentWidget::onButton(e);
             return;
         }
         if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-            e.consume(this);
             ui::Menu* menu = createMenu();
 
             menu->addChild(createMenuLabel("MIDI driver"));
@@ -462,8 +404,9 @@ struct MidiInputChoice : TransparentWidget {
                 item->text = module->midiInput.getDeviceName(deviceId);
                 menu->addChild(item);
             }
+
+            e.consume(this);
         }
-        TransparentWidget::onButton(e);
     }
 };
 
@@ -498,22 +441,17 @@ struct BpmDisplay : TransparentWidget {
         }
 
         nvgSave(args.vg);
-        nvgFontSize(args.vg, 16.f);
+        nvgFontSize(args.vg, 20.f);
         nvgFontFaceId(args.vg, font->handle);
         nvgFillColor(args.vg, nvgRGBA(230, 230, 230, 0xff));
-        nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+        nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 
-        std::string line1 = "Instant: --";
-        std::string line2 = "Smooth: --";
-        if (module->instantBpm > 0.1) {
-            line1 = string::f("Instant: %0.1f", module->instantBpm);
-        }
-        if (module->smoothBpm > 0.1) {
-            line2 = string::f("Smooth: %0.1f", module->smoothBpm);
+        std::string bpmText = "--";
+        if (module->bpm > 0.1) {
+            bpmText = string::f("%0.1f BPM", module->bpm);
         }
 
-        nvgText(args.vg, 8.f, 4.f, line1.c_str(), nullptr);
-        nvgText(args.vg, 8.f, 16.f, line2.c_str(), nullptr);
+        nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.5f, bpmText.c_str(), nullptr);
         nvgRestore(args.vg);
     }
 };
@@ -528,28 +466,27 @@ struct UsbSyncWidget : ModuleWidget {
 
         const float panelWidth = 40.64f;
 
+        // MIDI input selector - positioned higher up on the panel
         midiChoice = createWidget<MidiInputChoice>(mm2px(Vec(2.5f, 12.f)));
         midiChoice->box.size = mm2px(Vec(panelWidth - 5.f, 9.f));
         midiChoice->setModule(module);
         addChild(midiChoice);
 
-        addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(10.16f, 38.f)), module, UsbSync::SMOOTH_PARAM));
-        addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(panelWidth - 10.16f, 38.f)), module,
-                                                          UsbSync::OFFSET_PARAM));
-        addParam(createParamCentered<CKSS>(mm2px(Vec(panelWidth / 2.f, 62.f)), module, UsbSync::FOLLOW_SPP_PARAM));
-
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(10.16f, 92.f)), module, UsbSync::CLK_OUTPUT));
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(panelWidth / 2.f, 92.f)), module, UsbSync::RUN_OUTPUT));
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(panelWidth - 10.16f, 92.f)), module, UsbSync::RESET_OUTPUT));
-
-        addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(10.16f, 78.f)), module, UsbSync::LOCK_LIGHT));
-        addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(panelWidth - 10.16f, 78.f)), module,
-                                                               UsbSync::RUN_LIGHT));
-
-        bpmDisplay = createWidget<BpmDisplay>(mm2px(Vec(2.5f, 104.f)));
-        bpmDisplay->box.size = mm2px(Vec(panelWidth - 5.f, 14.f));
+        // BPM display - positioned in the middle area with proper spacing
+        bpmDisplay = createWidget<BpmDisplay>(mm2px(Vec(2.5f, 58.f)));
+        bpmDisplay->box.size = mm2px(Vec(panelWidth - 5.f, 12.f));
         bpmDisplay->module = module;
         addChild(bpmDisplay);
+
+        // Status lights - positioned above outputs
+        addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(10.16f, 90.f)), module, UsbSync::LOCK_LIGHT));
+        addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(panelWidth - 10.16f, 90.f)), module,
+                                                               UsbSync::RUN_LIGHT));
+
+        // Outputs - positioned near the bottom
+        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(10.16f, 107.f)), module, UsbSync::CLK_OUTPUT));
+        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(panelWidth / 2.f, 107.f)), module, UsbSync::RUN_OUTPUT));
+        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(panelWidth - 10.16f, 107.f)), module, UsbSync::RESET_OUTPUT));
     }
 
     void step() override {
