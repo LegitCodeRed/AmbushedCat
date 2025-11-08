@@ -105,15 +105,21 @@ The following libraries are already in the `dep/` directory:
 - Uses **C++20** (upgraded from C++17)
 
 ### Platform-Specific MIDI API Defines
-- **Windows**: `-D__WINDOWS_MM__` + link `-lwinmm`
-- **macOS**: `-D__MACOSX_CORE__` + frameworks: `-framework CoreMIDI -framework CoreAudio -framework CoreFoundation`
-- **Linux**: `-D__LINUX_ALSA__` + link `-lasound`
+- **Windows**:
+  - MIDI: `-D__WINDOWS_MM__` + link `-lwinmm`
+  - Link: `-DLINK_PLATFORM_WINDOWS` + link `-lws2_32 -liphlpapi` (for networking)
+- **macOS**:
+  - MIDI: `-D__MACOSX_CORE__` + frameworks: `-framework CoreMIDI -framework CoreAudio -framework CoreFoundation`
+  - Link: `-DLINK_PLATFORM_MACOSX`
+- **Linux**:
+  - MIDI: `-D__LINUX_ALSA__` + link `-lasound`
+  - Link: `-DLINK_PLATFORM_LINUX`
 
 ### Additional Flags
-- `-DASIO_STANDALONE`: Use ASIO without Boost
-- `-Idep/link/include`: Link SDK headers
-- `-Idep/link/modules/asio-standalone/asio/include`: ASIO headers
-- `-Idep/rtmidi`: RtMidi headers
+- Link SDK headers: `-Idep/link/include`
+- ASIO standalone headers: `-Idep/link/modules/asio-standalone/asio/include`
+- RtMidi headers: `-Idep/rtmidi`
+- **Note**: ASIO standalone is configured automatically by Link's `AsioWrapper.hpp`
 
 ## Architecture
 
@@ -196,6 +202,21 @@ cd ../..
 ```
 
 Then rebuild:
+```bash
+mingw32-make clean  # or 'make clean' on macOS/Linux
+mingw32-make -j4    # or 'make -j4' on macOS/Linux
+```
+
+### Build Error: "'class ableton::Link' has no member named 'enable'"
+
+**Problem:** Link requires platform-specific macros to be defined.
+
+**Solution:** The Makefile now automatically defines the correct platform macro:
+- Windows: `-DLINK_PLATFORM_WINDOWS`
+- macOS: `-DLINK_PLATFORM_MACOSX`
+- Linux: `-DLINK_PLATFORM_LINUX`
+
+If you still see this error, ensure you're building with the updated Makefile. Run:
 ```bash
 mingw32-make clean  # or 'make clean' on macOS/Linux
 mingw32-make -j4    # or 'make -j4' on macOS/Linux

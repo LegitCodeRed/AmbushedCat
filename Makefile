@@ -16,28 +16,6 @@ CXXFLAGS += -Idep/rtmidi
 # Static libraries are fine, but they should be added to this plugin's build system.
 LDFLAGS +=
 
-# Platform-specific MIDI API flags
-ifdef ARCH_WIN
-	# Windows: Use WinMM MIDI API
-	CXXFLAGS += -D__WINDOWS_MM__
-	LDFLAGS += -lwinmm
-endif
-ifdef ARCH_MAC
-	# macOS: Use CoreMIDI
-	CXXFLAGS += -D__MACOSX_CORE__
-	LDFLAGS += -framework CoreMIDI -framework CoreAudio -framework CoreFoundation
-endif
-ifdef ARCH_LIN
-	# Linux: Use ALSA
-	CXXFLAGS += -D__LINUX_ALSA__
-	LDFLAGS += -lasound
-endif
-
-# ASIO standalone (header-only, no linking needed)
-CXXFLAGS += -DASIO_STANDALONE
-
-# Link requires threading support (handled separately for Windows below)
-
 # Add .cpp files to the build
 SOURCES += $(wildcard src/*.cpp)
 SOURCES += $(wildcard src/dsp/*.cpp)
@@ -63,6 +41,33 @@ DISTRIBUTABLES += $(wildcard presets)
 
 # Include the Rack plugin Makefile framework
 include $(RACK_DIR)/plugin.mk
+
+# Platform-specific MIDI API flags and Link platform detection
+# IMPORTANT: Must come AFTER plugin.mk include (which defines ARCH_WIN, ARCH_MAC, ARCH_LIN)
+ifdef ARCH_WIN
+	# Windows: Use WinMM MIDI API
+	CXXFLAGS += -D__WINDOWS_MM__
+	LDFLAGS += -lwinmm
+	# Link platform detection
+	CXXFLAGS += -DLINK_PLATFORM_WINDOWS
+	LDFLAGS += -lws2_32 -liphlpapi
+endif
+ifdef ARCH_MAC
+	# macOS: Use CoreMIDI
+	CXXFLAGS += -D__MACOSX_CORE__
+	LDFLAGS += -framework CoreMIDI -framework CoreAudio -framework CoreFoundation
+	# Link platform detection
+	CXXFLAGS += -DLINK_PLATFORM_MACOSX
+endif
+ifdef ARCH_LIN
+	# Linux: Use ALSA
+	CXXFLAGS += -D__LINUX_ALSA__
+	LDFLAGS += -lasound
+	# Link platform detection
+	CXXFLAGS += -DLINK_PLATFORM_LINUX
+endif
+
+# Upgrade to C++20
 CXXFLAGS := $(filter-out -std=c++11,$(CXXFLAGS))
 CXXFLAGS := $(filter-out -std=c++17,$(CXXFLAGS))
 CXXFLAGS += -std=c++20
