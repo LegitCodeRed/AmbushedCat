@@ -23,6 +23,7 @@ extern Model* modelNergalAmp;
 extern Model* modelBuer;
 extern Model* modelXezbeth4X;
 extern Model* modelSabnockOTT;
+extern Model* modelUsbSync;
 
 struct TuringVoltsExpanderMessage {
 	uint8_t bits = 0;
