@@ -455,6 +455,10 @@ struct BpmDisplay : TransparentWidget {
             bpmText = string::f("%0.1f BPM", module->bpm);
         }
 
+        // Show mode indicator
+        std::string modeText = module->vcvIsMaster ? " [VCV>HW]" : " [HW>VCV]";
+        bpmText += modeText;
+
         nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.5f, bpmText.c_str(), nullptr);
         nvgRestore(args.vg);
     }
