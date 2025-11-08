@@ -8,11 +8,35 @@ CXXFLAGS += -Idep -Idep/NeuralAmpModelerCore -Idep/NeuralAmpModelerCore/NAM -Ide
 CXXFLAGS += -Idep/eigen3 -I$(RACK_DIR)/dep/include -I$(RACK_DIR)/dep/include/eigen3
 CXXFLAGS += -Idep/vital/src/synthesis -Idep/vital/src/synthesis/framework -Idep/vital/src/synthesis/effects -Idep/vital/src/synthesis/filters -Idep/vital/src/synthesis/utilities -Idep/vital/src/common
 CXXFLAGS += -Idep/vital/headless/JuceLibraryCode
+CXXFLAGS += -Idep/link/include -Idep/link/modules/asio-standalone/asio/include
+CXXFLAGS += -Idep/rtmidi
 
 
 # Careful about linking to shared libraries, since you can't assume much about the user's environment and library search path.
 # Static libraries are fine, but they should be added to this plugin's build system.
 LDFLAGS +=
+
+# Platform-specific MIDI API flags
+ifdef ARCH_WIN
+	# Windows: Use WinMM MIDI API
+	CXXFLAGS += -D__WINDOWS_MM__
+	LDFLAGS += -lwinmm
+endif
+ifdef ARCH_MAC
+	# macOS: Use CoreMIDI
+	CXXFLAGS += -D__MACOSX_CORE__
+	LDFLAGS += -framework CoreMIDI -framework CoreAudio -framework CoreFoundation
+endif
+ifdef ARCH_LIN
+	# Linux: Use ALSA
+	CXXFLAGS += -D__LINUX_ALSA__
+	LDFLAGS += -lasound
+endif
+
+# ASIO standalone (header-only, no linking needed)
+CXXFLAGS += -DASIO_STANDALONE
+
+# Link requires threading support (handled separately for Windows below)
 
 # Add .cpp files to the build
 SOURCES += $(wildcard src/*.cpp)
@@ -28,6 +52,8 @@ SOURCES += dep/vital/src/synthesis/framework/utils.cpp
 SOURCES += dep/vital/src/synthesis/framework/value.cpp
 SOURCES += dep/vital/src/synthesis/filters/linkwitz_riley_filter.cpp
 SOURCES += dep/vital/src/synthesis/utilities/smooth_value.cpp
+# RtMidi sources
+SOURCES += dep/rtmidi/RtMidi.cpp
 
 # Add files to the ZIP package when running `make dist`
 # The compiled plugin and "plugin.json" are automatically added.
@@ -38,7 +64,8 @@ DISTRIBUTABLES += $(wildcard presets)
 # Include the Rack plugin Makefile framework
 include $(RACK_DIR)/plugin.mk
 CXXFLAGS := $(filter-out -std=c++11,$(CXXFLAGS))
-CXXFLAGS += -std=c++17
+CXXFLAGS := $(filter-out -std=c++17,$(CXXFLAGS))
+CXXFLAGS += -std=c++20
 
 # Override macOS deployment target for C++17 filesystem support
 # NAM library requires std::filesystem which is only available on macOS 10.15+

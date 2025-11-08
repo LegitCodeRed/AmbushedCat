@@ -1,362 +1,480 @@
 #include "plugin.hpp"
 
+#include <ableton/Link.hpp>
+#include <RtMidi.h>
+
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <deque>
 #include <memory>
+#include <mutex>
+#include <thread>
+#include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace {
-constexpr float CLOCK_VOLTAGE = 10.f;
-constexpr float GATE_VOLTAGE = 10.f;
-constexpr float RESET_VOLTAGE = 10.f;
-constexpr float RESET_PULSE_MS = 1.f;
-constexpr int CLOCKS_PER_QUARTER = 24;
-constexpr int CLOCKS_PER_BAR = CLOCKS_PER_QUARTER * 4;  // Assume 4/4
-constexpr int CLOCKS_PER_SPP_UNIT = 6;                  // 24 PPQN / 4
+constexpr int CLOCKS_PER_QUARTER = 24;  // MIDI Clock is 24 PPQN
+constexpr double MAX_PLL_CORRECTION_MS = 0.2;  // ±0.2ms max correction per tick
+constexpr int JITTER_HISTORY_SIZE = 96;  // Track last 96 ticks (4 beats at 24 PPQN)
 
-struct PulseEvent {
-    enum class Type {
-        Clock,
-        Reset,
-        Run,
-    };
+// MIDI Real-Time messages
+constexpr uint8_t MIDI_CLOCK = 0xF8;
+constexpr uint8_t MIDI_START = 0xFA;
+constexpr uint8_t MIDI_CONTINUE = 0xFB;
+constexpr uint8_t MIDI_STOP = 0xFC;
+constexpr uint8_t MIDI_SPP = 0xF2;
 
-    Type type = Type::Clock;
-    int64_t frame = 0;
-    bool runState = false;
+// Jitter statistics tracking
+struct JitterStats {
+    double avgMs = 0.0;
+    double p95Ms = 0.0;
+    std::deque<double> history;
+
+    void addSample(double jitterMs) {
+        history.push_back(jitterMs);
+        if (history.size() > JITTER_HISTORY_SIZE) {
+            history.pop_front();
+        }
+
+        if (history.empty()) return;
+
+        // Calculate average
+        double sum = 0.0;
+        for (double j : history) {
+            sum += std::abs(j);
+        }
+        avgMs = sum / history.size();
+
+        // Calculate 95th percentile
+        std::vector<double> sorted(history.begin(), history.end());
+        for (auto& v : sorted) v = std::abs(v);
+        std::sort(sorted.begin(), sorted.end());
+        size_t idx = static_cast<size_t>(sorted.size() * 0.95);
+        if (idx >= sorted.size()) idx = sorted.size() - 1;
+        p95Ms = sorted[idx];
+    }
+
+    void clear() {
+        history.clear();
+        avgMs = 0.0;
+        p95Ms = 0.0;
+    }
 };
+
 }  // namespace
 
 struct UsbSync : Module {
     enum ParamId {
+        LINK_ENABLE_PARAM,
+        FOLLOW_TRANSPORT_PARAM,
         PARAMS_LEN
     };
     enum InputId {
-        CLOCK_INPUT,   // Clock input - measures BPM from incoming clock
-        RUN_INPUT,
-        RESET_INPUT,
         INPUTS_LEN
     };
     enum OutputId {
         OUTPUTS_LEN
     };
     enum LightId {
-        LOCK_LIGHT,
-        RUN_LIGHT,
+        LINK_ENABLED_LIGHT,
+        LINK_CONNECTED_LIGHT,
+        TRANSPORT_LIGHT,
         LIGHTS_LEN
     };
 
-    midi::InputQueue midiInput;
-    midi::Output midiOutput;
+    // Link instance
+    std::unique_ptr<ableton::Link> link;
 
-    // Mode: true = VCV is master (send to hardware), false = Hardware is master (receive from hardware)
-    bool vcvIsMaster = true;
+    // RtMidi output
+    std::unique_ptr<RtMidiOut> midiOut;
+    int selectedMidiPort = -1;
+    std::vector<std::string> midiPortNames;
+    std::mutex midiMutex;
 
-    // For Hardware Master mode (receiving)
-    bool running = false;
-    bool locked = false;
-    int lockCounter = 0;
-    int64_t lastClockFrame = -1;
-    double periodSamples = 0.0;
-    bool havePeriod = false;
-    double bpm = 0.0;
+    // Clock thread
+    std::unique_ptr<std::thread> clockThread;
+    std::atomic<bool> clockThreadRunning{false};
+    std::atomic<bool> clockThreadShouldStop{false};
 
-    // For VCV Master mode (sending)
-    int64_t lastSentClockFrame = -1;
-    int clocksSinceReset = 0;
-    dsp::SchmittTrigger clockTrigger;
-    dsp::SchmittTrigger runTrigger;
-    dsp::SchmittTrigger resetTrigger;
-    bool wasRunning = false;
+    // Configuration (atomic for thread-safe access)
+    std::atomic<bool> linkEnabled{false};
+    std::atomic<bool> followTransport{true};
+    std::atomic<double> quantum{4.0};  // 4 beats per bar
+    std::atomic<double> offsetMs{0.0};  // User-adjustable offset
 
-    // Clock measurement for BPM detection
-    int64_t lastInputClockFrame = -1;
-    double measuredClockPeriod = 0.0;
-    double measuredBpm = 0.0;
+    // Status (atomic for thread-safe reads from UI)
+    std::atomic<double> currentBpm{120.0};
+    std::atomic<size_t> numPeers{0};
+    std::atomic<bool> isPlaying{false};
+    std::atomic<int64_t> tickCount{0};
 
-    // 24 PPQN subdivision - we need to send 24 MIDI clocks per input clock
-    double subClockPhase = 0.0;
-    int midiClocksPerBeat = 24;
-
-    std::deque<PulseEvent> eventQueue;
+    // Jitter tracking (protected by mutex)
+    std::mutex jitterMutex;
+    JitterStats jitterStats;
 
     UsbSync() {
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
-        configInput(CLOCK_INPUT, "Clock input (e.g., 137 BPM)");
-        configInput(RUN_INPUT, "Run gate");
-        configInput(RESET_INPUT, "Reset trigger");
+        configButton(LINK_ENABLE_PARAM, "Enable Link");
+        configButton(FOLLOW_TRANSPORT_PARAM, "Follow Transport Start/Stop");
+
+        // Initialize Link with default 120 BPM
+        link = std::make_unique<ableton::Link>(120.0);
+        link->enable(false);  // Start disabled
+
+        // Set up Link callbacks
+        link->setNumPeersCallback([this](std::size_t peers) {
+            numPeers.store(peers);
+        });
+
+        link->setTempoCallback([this](double bpm) {
+            currentBpm.store(bpm);
+        });
+
+        link->setStartStopCallback([this](bool playing) {
+            isPlaying.store(playing);
+        });
+
+        // Initialize RtMidi
+        try {
+            midiOut = std::make_unique<RtMidiOut>();
+            scanMidiPorts();
+        } catch (RtMidiError& error) {
+            // Log error but don't crash
+        }
+    }
+
+    ~UsbSync() {
+        stopClockThread();
+        if (link) {
+            link->enable(false);
+        }
+        if (midiOut && midiOut->isPortOpen()) {
+            midiOut->closePort();
+        }
     }
 
     void onReset() override {
-        midiInput.reset();
-        midiOutput.reset();
-        running = false;
-        locked = false;
-        lockCounter = 0;
-        lastClockFrame = -1;
-        havePeriod = false;
-        periodSamples = 0.0;
-        bpm = 0.0;
-        lastSentClockFrame = -1;
-        clocksSinceReset = 0;
-        wasRunning = false;
-        lastInputClockFrame = -1;
-        measuredClockPeriod = 0.0;
-        measuredBpm = 0.0;
-        subClockPhase = 0.0;
-        eventQueue.clear();
+        stopClockThread();
+        linkEnabled.store(false);
+        followTransport.store(true);
+        if (link) {
+            link->enable(false);
+        }
+        std::lock_guard<std::mutex> lock(jitterMutex);
+        jitterStats.clear();
     }
 
     json_t* dataToJson() override {
         json_t* rootJ = Module::dataToJson();
-        json_object_set_new(rootJ, "midiInput", midiInput.toJson());
-        json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
-        json_object_set_new(rootJ, "vcvIsMaster", json_boolean(vcvIsMaster));
+        json_object_set_new(rootJ, "linkEnabled", json_boolean(linkEnabled.load()));
+        json_object_set_new(rootJ, "followTransport", json_boolean(followTransport.load()));
+        json_object_set_new(rootJ, "quantum", json_real(quantum.load()));
+        json_object_set_new(rootJ, "offsetMs", json_real(offsetMs.load()));
+        json_object_set_new(rootJ, "selectedMidiPort", json_integer(selectedMidiPort));
         return rootJ;
     }
 
     void dataFromJson(json_t* rootJ) override {
         Module::dataFromJson(rootJ);
-        json_t* midiInJ = json_object_get(rootJ, "midiInput");
-        if (midiInJ) {
-            midiInput.fromJson(midiInJ);
-        }
-        json_t* midiOutJ = json_object_get(rootJ, "midiOutput");
-        if (midiOutJ) {
-            midiOutput.fromJson(midiOutJ);
-        }
-        json_t* modeJ = json_object_get(rootJ, "vcvIsMaster");
-        if (modeJ) {
-            vcvIsMaster = json_boolean_value(modeJ);
-        }
-    }
 
-    double sampleRate() const {
-        return APP ? APP->engine->getSampleRate() : 44100.0;
-    }
-
-    void sendMidiClock() {
-        if (!vcvIsMaster || midiOutput.getDeviceId() < 0) return;
-        midi::Message msg;
-        msg.bytes[0] = 0xF8;  // MIDI Clock (System Real-Time, no channel)
-        msg.setSize(1);
-        msg.setFrame(0);
-        midiOutput.sendMessage(msg);
-    }
-
-    void sendMidiStart() {
-        if (!vcvIsMaster || midiOutput.getDeviceId() < 0) return;
-        midi::Message msg;
-        msg.bytes[0] = 0xFA;  // MIDI Start (System Real-Time, no channel)
-        msg.setSize(1);
-        msg.setFrame(0);
-        midiOutput.sendMessage(msg);
-        clocksSinceReset = 0;
-    }
-
-    void sendMidiStop() {
-        if (!vcvIsMaster || midiOutput.getDeviceId() < 0) return;
-        midi::Message msg;
-        msg.bytes[0] = 0xFC;  // MIDI Stop (System Real-Time, no channel)
-        msg.setSize(1);
-        msg.setFrame(0);
-        midiOutput.sendMessage(msg);
-    }
-
-    void sendMidiContinue() {
-        if (!vcvIsMaster || midiOutput.getDeviceId() < 0) return;
-        midi::Message msg;
-        msg.bytes[0] = 0xFB;  // MIDI Continue (System Real-Time, no channel)
-        msg.setSize(1);
-        msg.setFrame(0);
-        midiOutput.sendMessage(msg);
-    }
-
-    // Hardware Master mode - receive from hardware
-    void handleStart(int64_t frame) {
-        running = true;
-        lockCounter = 0;
-        locked = false;
-        lastClockFrame = -1;
-        havePeriod = false;
-    }
-
-    void handleContinue(int64_t frame) {
-        running = true;
-    }
-
-    void handleStop(int64_t frame) {
-        running = false;
-        lockCounter = 0;
-        locked = false;
-    }
-
-    void handleClock(int64_t frame) {
-        if (!running) {
-            return;
+        json_t* linkEnabledJ = json_object_get(rootJ, "linkEnabled");
+        if (linkEnabledJ) {
+            bool enabled = json_boolean_value(linkEnabledJ);
+            linkEnabled.store(enabled);
+            if (link) link->enable(enabled);
+            if (enabled) startClockThread();
         }
 
-        // Calculate BPM from raw clock timing (no smoothing)
-        if (lastClockFrame >= 0) {
-            int64_t delta = frame - lastClockFrame;
-            if (delta > 0) {
-                periodSamples = (double)delta;
-                havePeriod = true;
-                bpm = computeBpmFromSamples(delta);
-            }
+        json_t* followTransportJ = json_object_get(rootJ, "followTransport");
+        if (followTransportJ) {
+            followTransport.store(json_boolean_value(followTransportJ));
+            if (link) link->enableStartStopSync(followTransport.load());
         }
 
-        lastClockFrame = frame;
-        if (havePeriod && periodSamples > 0.0) {
-            lockCounter = std::min(lockCounter + 1, CLOCKS_PER_BAR * 4);
-            if (lockCounter >= 12) {
-                locked = true;
+        json_t* quantumJ = json_object_get(rootJ, "quantum");
+        if (quantumJ) {
+            quantum.store(json_real_value(quantumJ));
+        }
+
+        json_t* offsetMsJ = json_object_get(rootJ, "offsetMs");
+        if (offsetMsJ) {
+            offsetMs.store(json_real_value(offsetMsJ));
+        }
+
+        json_t* portJ = json_object_get(rootJ, "selectedMidiPort");
+        if (portJ) {
+            int port = json_integer_value(portJ);
+            selectMidiPort(port);
+        }
+    }
+
+    void scanMidiPorts() {
+        std::lock_guard<std::mutex> lock(midiMutex);
+        midiPortNames.clear();
+
+        if (!midiOut) return;
+
+        unsigned int portCount = midiOut->getPortCount();
+        for (unsigned int i = 0; i < portCount; i++) {
+            try {
+                std::string name = midiOut->getPortName(i);
+                midiPortNames.push_back(name);
+            } catch (RtMidiError& error) {
+                midiPortNames.push_back("(Error reading port)");
             }
         }
     }
 
-    double computeBpmFromSamples(double samples) const {
-        double sr = sampleRate();
-        if (samples <= 0.0 || sr <= 0.0) {
-            return 0.0;
+    void selectMidiPort(int port) {
+        std::lock_guard<std::mutex> lock(midiMutex);
+
+        if (!midiOut) return;
+
+        // Close current port
+        if (midiOut->isPortOpen()) {
+            midiOut->closePort();
         }
-        double tickHz = sr / samples;
-        return tickHz * 60.0 / CLOCKS_PER_QUARTER;
+
+        selectedMidiPort = port;
+
+        // Open new port
+        if (port >= 0 && port < (int)midiOut->getPortCount()) {
+            try {
+                midiOut->openPort(port, "VCV Rack - Link to MIDI Clock");
+            } catch (RtMidiError& error) {
+                selectedMidiPort = -1;
+            }
+        }
+    }
+
+    void sendMidiMessage(uint8_t status) {
+        std::lock_guard<std::mutex> lock(midiMutex);
+        if (!midiOut || !midiOut->isPortOpen()) return;
+
+        try {
+            std::vector<unsigned char> message = {status};
+            midiOut->sendMessage(&message);
+        } catch (RtMidiError& error) {
+            // Ignore errors during send
+        }
+    }
+
+    void sendMidiSPP(int position) {
+        std::lock_guard<std::mutex> lock(midiMutex);
+        if (!midiOut || !midiOut->isPortOpen()) return;
+
+        try {
+            // SPP position is in "MIDI beats" (1 MIDI beat = 6 MIDI clocks)
+            uint8_t lsb = position & 0x7F;
+            uint8_t msb = (position >> 7) & 0x7F;
+            std::vector<unsigned char> message = {MIDI_SPP, lsb, msb};
+            midiOut->sendMessage(&message);
+        } catch (RtMidiError& error) {
+            // Ignore errors during send
+        }
+    }
+
+    void startClockThread() {
+        if (clockThreadRunning.load()) return;
+
+        clockThreadShouldStop.store(false);
+        clockThreadRunning.store(true);
+
+        clockThread = std::make_unique<std::thread>([this]() {
+            this->clockThreadFunc();
+        });
+    }
+
+    void stopClockThread() {
+        if (!clockThreadRunning.load()) return;
+
+        clockThreadShouldStop.store(true);
+        if (clockThread && clockThread->joinable()) {
+            clockThread->join();
+        }
+        clockThreadRunning.store(false);
+    }
+
+    void clockThreadFunc() {
+        // Set thread priority (platform-specific)
+#ifdef _WIN32
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+#elif defined(__APPLE__)
+        // macOS: set realtime priority
+        struct sched_param param;
+        param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+        pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+#elif defined(__linux__)
+        // Linux: set realtime priority
+        struct sched_param param;
+        param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+        pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+#endif
+
+        using Clock = std::chrono::steady_clock;
+        using TimePoint = std::chrono::time_point<Clock>;
+        using Micros = std::chrono::microseconds;
+
+        bool wasPlaying = false;
+        int64_t ticksSinceStart = 0;
+
+        // PLL state for phase correction
+        double pllError = 0.0;
+
+        while (!clockThreadShouldStop.load()) {
+            if (!link || !linkEnabled.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+
+            // Capture Link session state
+            auto sessionState = link->captureAppSessionState();
+            double tempo = sessionState.tempo();
+            bool playing = followTransport.load() ? sessionState.isPlaying() : true;
+
+            currentBpm.store(tempo);
+            isPlaying.store(playing);
+
+            // Handle transport changes
+            if (playing && !wasPlaying) {
+                // Just started playing
+                sendMidiMessage(MIDI_START);
+                ticksSinceStart = 0;
+                pllError = 0.0;
+
+                std::lock_guard<std::mutex> lock(jitterMutex);
+                jitterStats.clear();
+            } else if (!playing && wasPlaying) {
+                // Just stopped playing
+                sendMidiMessage(MIDI_STOP);
+            }
+            wasPlaying = playing;
+
+            if (!playing) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+
+            // Calculate tick interval in microseconds
+            // tempo is in BPM, we need 24 ticks per beat
+            double tickIntervalUs = (60.0 * 1000000.0) / (tempo * CLOCKS_PER_QUARTER);
+
+            // Get current Link time
+            auto linkTime = link->clock().micros();
+
+            // Get current phase within the quantum
+            double phase = sessionState.phaseAtTime(linkTime, quantum.load());
+            double beat = sessionState.beatAtTime(linkTime, quantum.load());
+
+            // Calculate what tick we should be at based on Link phase
+            double idealTick = beat * CLOCKS_PER_QUARTER;
+
+            // Calculate next tick time
+            double nextTick = std::floor(idealTick) + 1.0;
+            double beatsUntilNextTick = (nextTick / CLOCKS_PER_QUARTER) - beat;
+            double usUntilNextTick = beatsUntilNextTick * (60.0 * 1000000.0) / tempo;
+
+            // Apply user offset
+            usUntilNextTick += offsetMs.load() * 1000.0;
+
+            // Apply PLL correction (clamp to max correction)
+            double correctionUs = std::clamp(pllError,
+                                            -MAX_PLL_CORRECTION_MS * 1000.0,
+                                            MAX_PLL_CORRECTION_MS * 1000.0);
+            usUntilNextTick += correctionUs;
+
+            if (usUntilNextTick > 0) {
+                // Sleep until next tick
+                auto wakeTime = Clock::now() + Micros(static_cast<int64_t>(usUntilNextTick));
+                std::this_thread::sleep_until(wakeTime);
+
+                // Send MIDI clock
+                sendMidiMessage(MIDI_CLOCK);
+                tickCount.fetch_add(1);
+                ticksSinceStart++;
+
+                // Update PLL error for next iteration
+                auto actualTime = link->clock().micros();
+                auto sessionState2 = link->captureAppSessionState();
+                double actualBeat = sessionState2.beatAtTime(actualTime, quantum.load());
+                double expectedTick = nextTick;
+                double actualTick = actualBeat * CLOCKS_PER_QUARTER;
+                double tickError = actualTick - expectedTick;
+                double timeErrorUs = tickError * tickIntervalUs;
+
+                pllError = -timeErrorUs * 0.1;  // Proportional gain of 0.1
+
+                // Track jitter
+                std::lock_guard<std::mutex> lock(jitterMutex);
+                jitterStats.addSample(timeErrorUs / 1000.0);  // Convert to ms
+            } else {
+                // We're behind schedule, send immediately
+                sendMidiMessage(MIDI_CLOCK);
+                tickCount.fetch_add(1);
+                ticksSinceStart++;
+            }
+        }
     }
 
     void process(const ProcessArgs& args) override {
-        if (vcvIsMaster) {
-            // VCV Master Mode: Send MIDI clock to hardware based on CV inputs
-            processVcvMaster(args);
-        } else {
-            // Hardware Master Mode: Receive MIDI clock from hardware
-            processHardwareMaster(args);
+        // Handle Link enable button
+        if (params[LINK_ENABLE_PARAM].getValue() > 0.5f) {
+            bool enabled = !linkEnabled.load();
+            linkEnabled.store(enabled);
+            if (link) {
+                link->enable(enabled);
+            }
+
+            if (enabled) {
+                startClockThread();
+            } else {
+                stopClockThread();
+            }
+
+            params[LINK_ENABLE_PARAM].setValue(0.f);
         }
 
-        lights[RUN_LIGHT].setBrightness(running ? 1.f : 0.f);
-        lights[LOCK_LIGHT].setBrightness(locked ? 1.f : 0.f);
+        // Handle transport follow button
+        if (params[FOLLOW_TRANSPORT_PARAM].getValue() > 0.5f) {
+            bool follow = !followTransport.load();
+            followTransport.store(follow);
+            if (link) {
+                link->enableStartStopSync(follow);
+            }
+            params[FOLLOW_TRANSPORT_PARAM].setValue(0.f);
+        }
+
+        // Update lights
+        lights[LINK_ENABLED_LIGHT].setBrightness(linkEnabled.load() ? 1.f : 0.f);
+        lights[LINK_CONNECTED_LIGHT].setBrightness(numPeers.load() > 0 ? 1.f : 0.f);
+        lights[TRANSPORT_LIGHT].setBrightness(isPlaying.load() ? 1.f : 0.f);
     }
 
-    void processVcvMaster(const ProcessArgs& args) {
-        // Read CV inputs
-        bool clockHigh = inputs[CLOCK_INPUT].getVoltage() >= 1.f;
-        bool runHigh = inputs[RUN_INPUT].getVoltage() >= 1.f;
-        bool resetHigh = inputs[RESET_INPUT].getVoltage() >= 1.f;
-
-        // Detect run start/stop
-        if (runHigh && !wasRunning) {
-            // Run just went high - send start
-            sendMidiStart();
-            running = true;
-            locked = false;
-            subClockPhase = 0.0;
-            lastInputClockFrame = -1;
-        } else if (!runHigh && wasRunning) {
-            // Run just went low - send stop
-            sendMidiStop();
-            running = false;
-            locked = false;
-        }
-        wasRunning = runHigh;
-
-        // Update running state based on RUN input
-        running = runHigh;
-
-        // Detect reset
-        if (resetTrigger.process(resetHigh)) {
-            sendMidiStart();
-            clocksSinceReset = 0;
-            subClockPhase = 0.0;
-            lastInputClockFrame = -1;
-        }
-
-        // Detect input clock edges and measure period
-        if (clockTrigger.process(clockHigh)) {
-            // Rising edge of input clock (one beat)
-            if (lastInputClockFrame >= 0) {
-                // Measure the period between beats
-                int64_t delta = args.frame - lastInputClockFrame;
-                if (delta > 0) {
-                    measuredClockPeriod = (double)delta;
-                    // Calculate BPM: samples per beat -> beats per second -> beats per minute
-                    double beatsPerSecond = args.sampleRate / measuredClockPeriod;
-                    measuredBpm = beatsPerSecond * 60.0;
-                    bpm = measuredBpm;
-                    locked = true;
-                    havePeriod = true;
-                }
-            }
-            lastInputClockFrame = args.frame;
-            subClockPhase = 0.0;  // Reset subdivision phase on each beat
-        }
-
-        // Generate 24 MIDI clocks per input clock beat (24 PPQN subdivision)
-        if (running && measuredClockPeriod > 0.0) {
-            // Calculate how fast to advance the sub-clock phase
-            // We want to generate 24 clocks during one beat period
-            double subClockIncrement = (double)midiClocksPerBeat / measuredClockPeriod;
-
-            subClockPhase += subClockIncrement;
-
-            // Send MIDI clock every time phase crosses an integer boundary
-            while (subClockPhase >= 1.0) {
-                subClockPhase -= 1.0;
-                sendMidiClock();
-                clocksSinceReset++;
-                lastSentClockFrame = args.frame;
-            }
-        }
+    // Accessors for UI
+    std::vector<std::string> getMidiPortNames() {
+        std::lock_guard<std::mutex> lock(midiMutex);
+        return midiPortNames;
     }
 
-    void processHardwareMaster(const ProcessArgs& args) {
-        // Receive MIDI clock from hardware
-        midi::Message msg;
-        while (midiInput.tryPop(&msg, args.frame)) {
-            uint8_t status = msg.getStatus();
-            switch (status) {
-                case 0x8:  // timing clock (0xF8)
-                    handleClock(msg.frame);
-                    break;
-                case 0xa:  // start (0xFA)
-                    handleStart(msg.frame);
-                    break;
-                case 0xb:  // continue (0xFB)
-                    handleContinue(msg.frame);
-                    break;
-                case 0xc:  // stop (0xFC)
-                    handleStop(msg.frame);
-                    break;
-                default:
-                    break;
-            }
-        }
+    int getSelectedMidiPort() const {
+        return selectedMidiPort;
+    }
 
-        // Unlock if no clock received for too long (timeout detection)
-        if (running && havePeriod && lastClockFrame >= 0) {
-            double threshold = periodSamples * 2.0;
-            if (threshold <= 0.0) {
-                threshold = sampleRate() * 0.1;
-            }
-            double framesSinceClock = (double)args.frame - (double)lastClockFrame;
-            if (framesSinceClock > threshold) {
-                locked = false;
-                lockCounter = 0;
-            }
-        }
+    JitterStats getJitterStats() {
+        std::lock_guard<std::mutex> lock(jitterMutex);
+        return jitterStats;
     }
 };
 
-struct MidiDeviceDisplay : LedDisplay {
+// UI Widgets
+
+struct MidiPortDisplay : LedDisplay {
     UsbSync* module = nullptr;
-    bool isOutput = false;  // true for output, false for input
-
-    void setModule(UsbSync* m) {
-        module = m;
-    }
-
-    void step() override {
-        LedDisplay::step();
-    }
 
     void draw(const DrawArgs& args) override {
         nvgScissor(args.vg, RECT_ARGS(args.clipBox));
@@ -381,12 +499,14 @@ struct MidiDeviceDisplay : LedDisplay {
             nvgFontSize(args.vg, 11);
             nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 
-            std::string text = "(No device)";
+            std::string text = "(No MIDI device)";
             if (module) {
-                if (isOutput) {
-                    text = module->midiOutput.getDeviceName(module->midiOutput.deviceId);
-                } else {
-                    text = module->midiInput.getDeviceName(module->midiInput.deviceId);
+                int port = module->getSelectedMidiPort();
+                if (port >= 0) {
+                    auto names = module->getMidiPortNames();
+                    if (port < (int)names.size()) {
+                        text = names[port];
+                    }
                 }
             }
             nvgText(args.vg, box.size.x / 2, box.size.y / 2, text.c_str(), NULL);
@@ -397,16 +517,29 @@ struct MidiDeviceDisplay : LedDisplay {
 
     void onButton(const event::Button& e) override {
         if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-            if (!module) {
-                return;
-            }
+            if (!module) return;
 
             ui::Menu* menu = createMenu();
+            menu->addChild(createMenuLabel("MIDI Output Port"));
 
-            if (isOutput) {
-                appendMidiMenu(menu, &module->midiOutput);
-            } else {
-                appendMidiMenu(menu, &module->midiInput);
+            module->scanMidiPorts();
+            auto portNames = module->getMidiPortNames();
+
+            for (size_t i = 0; i < portNames.size(); i++) {
+                struct PortItem : MenuItem {
+                    UsbSync* module;
+                    int port;
+                    void onAction(const event::Action& e) override {
+                        module->selectMidiPort(port);
+                    }
+                };
+
+                PortItem* item = new PortItem;
+                item->text = portNames[i];
+                item->module = module;
+                item->port = i;
+                item->rightText = CHECKMARK(module->getSelectedMidiPort() == (int)i);
+                menu->addChild(item);
             }
 
             e.consume(this);
@@ -414,12 +547,12 @@ struct MidiDeviceDisplay : LedDisplay {
     }
 };
 
-struct BpmDisplay : TransparentWidget {
+struct LinkStatusDisplay : TransparentWidget {
     UsbSync* module = nullptr;
     std::shared_ptr<window::Font> font;
 
-    BpmDisplay() {
-        box.size = Vec(140.f, 30.f);
+    LinkStatusDisplay() {
+        box.size = Vec(140.f, 50.f);
     }
 
     void draw(const DrawArgs& args) override {
@@ -433,41 +566,42 @@ struct BpmDisplay : TransparentWidget {
         nvgStroke(args.vg);
         nvgRestore(args.vg);
 
-        if (!module) {
-            return;
-        }
+        if (!module) return;
 
         if (!font) {
             font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
         }
-        if (!font) {
-            return;
-        }
+        if (!font) return;
 
         nvgSave(args.vg);
-        nvgFontSize(args.vg, 20.f);
+        nvgFontSize(args.vg, 12.f);
         nvgFontFaceId(args.vg, font->handle);
         nvgFillColor(args.vg, nvgRGBA(230, 230, 230, 0xff));
-        nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
 
-        std::string bpmText = "--";
-        if (module->bpm > 0.1) {
-            bpmText = string::f("%0.1f BPM", module->bpm);
-        }
+        // Line 1: BPM and peers
+        double bpm = module->currentBpm.load();
+        size_t peers = module->numPeers.load();
+        std::string line1 = string::f("%.1f BPM | %zu peer%s", bpm, peers, peers == 1 ? "" : "s");
+        nvgText(args.vg, box.size.x * 0.5f, 5.f, line1.c_str(), nullptr);
 
-        // Show mode indicator
-        std::string modeText = module->vcvIsMaster ? " [VCV>HW]" : " [HW>VCV]";
-        bpmText += modeText;
+        // Line 2: Ticks
+        int64_t ticks = module->tickCount.load();
+        std::string line2 = string::f("Ticks: %lld", (long long)ticks);
+        nvgText(args.vg, box.size.x * 0.5f, 20.f, line2.c_str(), nullptr);
 
-        nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.5f, bpmText.c_str(), nullptr);
+        // Line 3: Jitter stats
+        auto jitter = module->getJitterStats();
+        std::string line3 = string::f("Jitter: %.3f / %.3f ms", jitter.avgMs, jitter.p95Ms);
+        nvgText(args.vg, box.size.x * 0.5f, 35.f, line3.c_str(), nullptr);
+
         nvgRestore(args.vg);
     }
 };
 
 struct UsbSyncWidget : ModuleWidget {
-    MidiDeviceDisplay* midiOutDisplay = nullptr;
-    MidiDeviceDisplay* midiInDisplay = nullptr;
-    BpmDisplay* bpmDisplay = nullptr;
+    MidiPortDisplay* midiPortDisplay = nullptr;
+    LinkStatusDisplay* linkStatusDisplay = nullptr;
 
     UsbSyncWidget(UsbSync* module) {
         setModule(module);
@@ -475,35 +609,35 @@ struct UsbSyncWidget : ModuleWidget {
 
         const float panelWidth = 40.64f;
 
-        // MIDI output selector (VCV -> Hardware)
-        midiOutDisplay = createWidget<MidiDeviceDisplay>(mm2px(Vec(2.5f, 12.f)));
-        midiOutDisplay->box.size = mm2px(Vec(panelWidth - 5.f, 7.f));
-        midiOutDisplay->setModule(module);
-        midiOutDisplay->isOutput = true;
-        addChild(midiOutDisplay);
+        // MIDI port selector
+        midiPortDisplay = createWidget<MidiPortDisplay>(mm2px(Vec(2.5f, 12.f)));
+        midiPortDisplay->box.size = mm2px(Vec(panelWidth - 5.f, 7.f));
+        midiPortDisplay->module = module;
+        addChild(midiPortDisplay);
 
-        // MIDI input selector (Hardware -> VCV)
-        midiInDisplay = createWidget<MidiDeviceDisplay>(mm2px(Vec(2.5f, 21.f)));
-        midiInDisplay->box.size = mm2px(Vec(panelWidth - 5.f, 7.f));
-        midiInDisplay->setModule(module);
-        midiInDisplay->isOutput = false;
-        addChild(midiInDisplay);
+        // Link status display
+        linkStatusDisplay = createWidget<LinkStatusDisplay>(mm2px(Vec(2.5f, 25.f)));
+        linkStatusDisplay->box.size = mm2px(Vec(panelWidth - 5.f, 20.f));
+        linkStatusDisplay->module = module;
+        addChild(linkStatusDisplay);
 
-        // BPM display - positioned in the middle area with proper spacing
-        bpmDisplay = createWidget<BpmDisplay>(mm2px(Vec(2.5f, 58.f)));
-        bpmDisplay->box.size = mm2px(Vec(panelWidth - 5.f, 12.f));
-        bpmDisplay->module = module;
-        addChild(bpmDisplay);
+        // Status lights
+        addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(10.16f, 55.f)), module, UsbSync::LINK_ENABLED_LIGHT));
+        addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(panelWidth / 2.f, 55.f)), module, UsbSync::LINK_CONNECTED_LIGHT));
+        addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(panelWidth - 10.16f, 55.f)), module, UsbSync::TRANSPORT_LIGHT));
 
-        // Status lights - positioned above inputs
-        addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(10.16f, 90.f)), module, UsbSync::LOCK_LIGHT));
-        addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(panelWidth - 10.16f, 90.f)), module,
-                                                               UsbSync::RUN_LIGHT));
+        // Control buttons
+        addParam(createLightParamCentered<VCVLightButton<MediumSimpleLight<GreenLight>>>(
+            mm2px(Vec(panelWidth / 2.f - 7.f, 70.f)),
+            module,
+            UsbSync::LINK_ENABLE_PARAM,
+            UsbSync::LINK_ENABLED_LIGHT));
 
-        // CV Inputs - positioned near the bottom
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.16f, 107.f)), module, UsbSync::CLOCK_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(panelWidth / 2.f, 107.f)), module, UsbSync::RUN_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(panelWidth - 10.16f, 107.f)), module, UsbSync::RESET_INPUT));
+        addParam(createLightParamCentered<VCVLightButton<MediumSimpleLight<YellowLight>>>(
+            mm2px(Vec(panelWidth / 2.f + 7.f, 70.f)),
+            module,
+            UsbSync::FOLLOW_TRANSPORT_PARAM,
+            UsbSync::TRANSPORT_LIGHT));
     }
 
     void appendContextMenu(Menu* menu) override {
@@ -511,44 +645,71 @@ struct UsbSyncWidget : ModuleWidget {
         if (!usbSync) return;
 
         menu->addChild(new MenuSeparator);
-        menu->addChild(createMenuLabel("Sync Mode"));
+        menu->addChild(createMenuLabel("Link Settings"));
 
-        struct ModeItem : MenuItem {
+        // Quantum selector
+        struct QuantumItem : MenuItem {
             UsbSync* module;
-            bool vcvMaster;
+            double quantum;
             void onAction(const event::Action& e) override {
-                module->vcvIsMaster = vcvMaster;
+                module->quantum.store(quantum);
             }
         };
 
-        ModeItem* vcvMasterItem = new ModeItem;
-        vcvMasterItem->text = "VCV is Master (send to hardware)";
-        vcvMasterItem->rightText = CHECKMARK(usbSync->vcvIsMaster);
-        vcvMasterItem->module = usbSync;
-        vcvMasterItem->vcvMaster = true;
-        menu->addChild(vcvMasterItem);
+        menu->addChild(createMenuLabel("Quantum (beats per bar)"));
+        for (double q : {1.0, 2.0, 4.0, 8.0, 16.0}) {
+            QuantumItem* item = new QuantumItem;
+            item->text = string::f("%.0f beats", q);
+            item->module = usbSync;
+            item->quantum = q;
+            item->rightText = CHECKMARK(std::abs(usbSync->quantum.load() - q) < 0.01);
+            menu->addChild(item);
+        }
 
-        ModeItem* hwMasterItem = new ModeItem;
-        hwMasterItem->text = "Hardware is Master (receive from hardware)";
-        hwMasterItem->rightText = CHECKMARK(!usbSync->vcvIsMaster);
-        hwMasterItem->module = usbSync;
-        hwMasterItem->vcvMaster = false;
-        menu->addChild(hwMasterItem);
+        // Offset slider
+        menu->addChild(createMenuLabel("Offset"));
+        struct OffsetSlider : ui::Slider {
+            UsbSync* module;
+            void onAction(const event::Action& e) override {
+                if (module) {
+                    module->offsetMs.store(quantity->getValue());
+                }
+            }
+        };
+
+        struct OffsetQuantity : Quantity {
+            UsbSync* module;
+            OffsetQuantity(UsbSync* m) : module(m) {}
+            void setValue(float value) override {
+                if (module) module->offsetMs.store(value);
+            }
+            float getValue() override {
+                return module ? module->offsetMs.load() : 0.f;
+            }
+            float getMinValue() override { return -10.f; }
+            float getMaxValue() override { return 10.f; }
+            float getDefaultValue() override { return 0.f; }
+            std::string getLabel() override { return "Offset"; }
+            std::string getUnit() override { return " ms"; }
+            int getDisplayPrecision() override { return 2; }
+        };
+
+        OffsetSlider* slider = new OffsetSlider;
+        slider->module = usbSync;
+        slider->quantity = new OffsetQuantity(usbSync);
+        slider->box.size.x = 200.f;
+        menu->addChild(slider);
     }
 
     void step() override {
         ModuleWidget::step();
-        if (midiOutDisplay) {
-            midiOutDisplay->setModule(static_cast<UsbSync*>(module));
+        if (midiPortDisplay) {
+            midiPortDisplay->module = static_cast<UsbSync*>(module);
         }
-        if (midiInDisplay) {
-            midiInDisplay->setModule(static_cast<UsbSync*>(module));
-        }
-        if (bpmDisplay) {
-            bpmDisplay->module = static_cast<UsbSync*>(module);
+        if (linkStatusDisplay) {
+            linkStatusDisplay->module = static_cast<UsbSync*>(module);
         }
     }
 };
 
 Model* modelUsbSync = createModel<UsbSync, UsbSyncWidget>("UsbSync");
-
