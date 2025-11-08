@@ -148,6 +148,16 @@
         "Utility",
         "Dynamics"
       ]
+    },
+    {
+      "slug": "UsbSync",
+      "name": "UsbSync",
+      "description": "USB MIDI sync receiver. Lock Rack to DAW transport with Ableton-style timing, jitter smoothing, and offset control.",
+      "tags": [
+        "Clock",
+        "MIDI",
+        "Utility"
+      ]
     }
   ]
 }

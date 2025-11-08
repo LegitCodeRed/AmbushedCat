@@ -20,6 +20,7 @@ void init(Plugin* p) {
         p->addModel(modelNergalAmp);
         p->addModel(modelXezbeth4X);
         p->addModel(modelSabnockOTT);
+        p->addModel(modelUsbSync);
         // Add modules here
         // p->addModel(modelMyModule);
 

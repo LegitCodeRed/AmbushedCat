@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="40.64mm" height="128.5mm" viewBox="0 0 40.64 128.5">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#14141b" />
+      <stop offset="100%" stop-color="#0c0c11" />
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="40.64" height="128.5" fill="url(#bg)" />
+  <rect x="1.2" y="10.5" width="38.24" height="13" rx="2" ry="2" fill="#1f1f28" stroke="#4c4c58" stroke-width="0.4" />
+  <rect x="1.2" y="102" width="38.24" height="17" rx="2" ry="2" fill="#1f1f28" stroke="#4c4c58" stroke-width="0.4" />
+  <text x="20.32" y="8" font-size="4" text-anchor="middle" fill="#f0f0f0" font-family="Share Tech Mono, monospace">AMBUSHEDCAT</text>
+  <text x="20.32" y="20" font-size="4.5" text-anchor="middle" fill="#f0f0f0" font-family="Share Tech Mono, monospace">MIDI IN</text>
+  <text x="20.32" y="34" font-size="3.4" text-anchor="middle" fill="#bfbfd6" font-family="Share Tech Mono, monospace">USB SYNC</text>
+  <text x="8.5" y="49" font-size="3" text-anchor="middle" fill="#e0e0f0" font-family="Share Tech Mono, monospace">SMOOTH</text>
+  <text x="32.1" y="49" font-size="3" text-anchor="middle" fill="#e0e0f0" font-family="Share Tech Mono, monospace">OFFSET</text>
+  <text x="20.32" y="69" font-size="2.8" text-anchor="middle" fill="#d0d0e0" font-family="Share Tech Mono, monospace">FOLLOW SPP</text>
+  <text x="8.5" y="81.5" font-size="2.8" text-anchor="middle" fill="#90ff90" font-family="Share Tech Mono, monospace">LOCK</text>
+  <text x="32.1" y="81.5" font-size="2.8" text-anchor="middle" fill="#ffd27a" font-family="Share Tech Mono, monospace">RUN</text>
+  <text x="8.5" y="106.5" font-size="3" text-anchor="middle" fill="#e0e0f0" font-family="Share Tech Mono, monospace">BPM</text>
+  <text x="8.5" y="121.5" font-size="3" text-anchor="middle" fill="#e0e0f0" font-family="Share Tech Mono, monospace">CLK</text>
+  <text x="20.32" y="121.5" font-size="3" text-anchor="middle" fill="#e0e0f0" font-family="Share Tech Mono, monospace">RUN</text>
+  <text x="32.1" y="121.5" font-size="3" text-anchor="middle" fill="#e0e0f0" font-family="Share Tech Mono, monospace">RESET</text>
+</svg>
