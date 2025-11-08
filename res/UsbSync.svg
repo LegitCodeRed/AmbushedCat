@@ -8,32 +8,38 @@
   </defs>
   <rect x="0" y="0" width="40.64" height="128.5" fill="url(#bg)" />
 
-  <!-- MIDI Input Box -->
-  <rect x="1.2" y="10.5" width="38.24" height="13" rx="2" ry="2" fill="#1f1f28" stroke="#4c4c58" stroke-width="0.4" />
+  <!-- MIDI Output Box (VCV->Hardware) -->
+  <rect x="1.2" y="10.5" width="38.24" height="9" rx="2" ry="2" fill="#1f1f28" stroke="#4c4c58" stroke-width="0.4" />
+
+  <!-- MIDI Input Box (Hardware->VCV) -->
+  <rect x="1.2" y="19.8" width="38.24" height="9" rx="2" ry="2" fill="#1f1f28" stroke="#4c4c58" stroke-width="0.4" />
 
   <!-- BPM Display Box -->
   <rect x="1.2" y="56" width="38.24" height="15" rx="2" ry="2" fill="#1f1f28" stroke="#4c4c58" stroke-width="0.4" />
 
   <!-- Branding -->
-  <text x="20.32" y="8" font-size="4" text-anchor="middle" fill="#f0f0f0" font-family="Share Tech Mono, monospace">AMBUSHEDCAT</text>
+  <text x="20.32" y="8" font-size="3.5" text-anchor="middle" fill="#f0f0f0" font-family="Share Tech Mono, monospace">AMBUSHEDCAT</text>
+
+  <!-- MIDI OUT label -->
+  <text x="3" y="16.2" font-size="2.5" text-anchor="start" fill="#ff9999" font-family="Share Tech Mono, monospace">OUT</text>
 
   <!-- MIDI IN label -->
-  <text x="20.32" y="20" font-size="4.5" text-anchor="middle" fill="#f0f0f0" font-family="Share Tech Mono, monospace">MIDI IN</text>
+  <text x="3" y="25.5" font-size="2.5" text-anchor="start" fill="#99ff99" font-family="Share Tech Mono, monospace">IN</text>
 
   <!-- USB SYNC Title -->
-  <text x="20.32" y="34" font-size="4.2" text-anchor="middle" fill="#bfbfd6" font-family="Share Tech Mono, monospace" font-weight="bold">USB SYNC</text>
+  <text x="20.32" y="38" font-size="4.2" text-anchor="middle" fill="#bfbfd6" font-family="Share Tech Mono, monospace" font-weight="bold">USB SYNC</text>
 
   <!-- Decorative line -->
-  <line x1="5" y1="42" x2="35.64" y2="42" stroke="#4c4c58" stroke-width="0.3"/>
+  <line x1="5" y1="46" x2="35.64" y2="46" stroke="#4c4c58" stroke-width="0.3"/>
 
   <!-- BPM label above display -->
-  <text x="20.32" y="51" font-size="3.2" text-anchor="middle" fill="#c0c0d0" font-family="Share Tech Mono, monospace">TEMPO</text>
+  <text x="20.32" y="53" font-size="3.2" text-anchor="middle" fill="#c0c0d0" font-family="Share Tech Mono, monospace">TEMPO</text>
 
   <!-- Status light labels -->
   <text x="10.16" y="95" font-size="2.8" text-anchor="middle" fill="#90ff90" font-family="Share Tech Mono, monospace">LOCK</text>
   <text x="30.48" y="95" font-size="2.8" text-anchor="middle" fill="#ffd27a" font-family="Share Tech Mono, monospace">RUN</text>
 
-  <!-- Output labels -->
+  <!-- Input labels -->
   <text x="10.16" y="120" font-size="3" text-anchor="middle" fill="#e0e0f0" font-family="Share Tech Mono, monospace">CLK</text>
   <text x="20.32" y="120" font-size="3" text-anchor="middle" fill="#e0e0f0" font-family="Share Tech Mono, monospace">RUN</text>
   <text x="30.48" y="120" font-size="3" text-anchor="middle" fill="#e0e0f0" font-family="Share Tech Mono, monospace">RESET</text>
