@@ -2,7 +2,7 @@
 RACK_DIR ?= ../../rack-sdk
 
 # FLAGS will be passed to both the C and C++ compiler
-FLAGS +=
+FLAGS += -pipe
 CFLAGS +=
 CXXFLAGS += -Idep -Idep/NeuralAmpModelerCore -Idep/NeuralAmpModelerCore/NAM -Idep/NeuralAmpModelerCore/Dependencies -Idep/NeuralAmpModelerCore/Dependencies/nlohmann
 CXXFLAGS += -Idep/eigen3 -I$(RACK_DIR)/dep/include -I$(RACK_DIR)/dep/include/eigen3
@@ -83,16 +83,14 @@ endif
 
 # Link filesystem library (needed for C++17 std::filesystem on Windows/Linux)
 # macOS has it built into libc++ on 10.15+, doesn't need separate lib
-ifndef ARCH_MAC
-	LDFLAGS += -lstdc++fs
-endif
-# Statically link pthread to avoid DLL dependencies on Windows only
-# Must come AFTER plugin.mk to override any settings
-# On Linux, pthread must be dynamically linked for shared objects
-ifdef ARCH_WIN
-	LDFLAGS := $(filter-out -lpthread,$(LDFLAGS))
-	LDFLAGS += -Wl,-Bstatic -lpthread -Wl,-Bdynamic
-endif
+# DISABLED: With C++20 and modern GCC, filesystem is integrated into libstdc++
+# The separate -lstdc++fs causes c0000139 errors in VCV Rack environment
+# ifndef ARCH_MAC
+# 	LDFLAGS += -lstdc++fs
+# endif
+# Note: plugin.mk already sets -static-libstdc++ for Windows
+# We rely on Rack's bundled runtime DLLs (libgcc_s_seh-1.dll, libwinpthread-1.dll)
+# which are loaded from the Rack.exe directory when the plugin loads
 
 # Override cleandep to prevent removal of git-tracked dependencies
 # The rack-plugin-toolchain's cleandep runs "rm -rfv dep" which would delete:

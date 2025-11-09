@@ -1,0 +1,3 @@
+Makefile:101: warning: overriding recipe for target 'cleandep'
+../../rack-sdk/dep.mk:81: warning: ignoring old recipe for target 'cleandep'
+make: Nothing to be done for 'all'.
