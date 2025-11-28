@@ -64,23 +64,10 @@ endif
 
 # Override cleandep to prevent removal of git-tracked dependencies
 # The rack-plugin-toolchain's cleandep runs "rm -rfv dep" which would delete:
-# - dep/vital (git submodule)
+# - dep/vital (vendored dependency)
 # - dep/NeuralAmpModelerCore (vendored dependency)
 # - dep/eigen3 (vendored dependency)
 # Since all our deps are in git, we skip cleandep entirely
 .PHONY: cleandep
 cleandep:
 	@echo "Skipping cleandep: all dependencies are tracked in git (dep/vital, dep/NeuralAmpModelerCore, dep/eigen3)"
-
-# Ensure submodules are initialized when dep target is called
-# In the VCV Rack Plugin Toolchain, dependencies are already included
-# so we only run git submodule commands if .git directory exists
-.PHONY: dep
-dep:
-	@if [ -d .git ]; then \
-		git config --global --add safe.directory '*' || true; \
-		git submodule update --init --recursive; \
-		echo "Git submodules initialized"; \
-	else \
-		echo "No .git directory found, skipping submodule initialization (dependencies already present)"; \
-	fi
