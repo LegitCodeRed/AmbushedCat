@@ -73,8 +73,14 @@ cleandep:
 	@echo "Skipping cleandep: all dependencies are tracked in git (dep/vital, dep/NeuralAmpModelerCore, dep/eigen3)"
 
 # Ensure submodules are initialized when dep target is called
+# In the VCV Rack Plugin Toolchain, dependencies are already included
+# so we only run git submodule commands if .git directory exists
 .PHONY: dep
 dep:
-	git config --global --add safe.directory '*' || true
-	git submodule update --init --recursive
-	@echo "Git submodules initialized"
+	@if [ -d .git ]; then \
+		git config --global --add safe.directory '*' || true; \
+		git submodule update --init --recursive; \
+		echo "Git submodules initialized"; \
+	else \
+		echo "No .git directory found, skipping submodule initialization (dependencies already present)"; \
+	fi
