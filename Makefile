@@ -4,10 +4,10 @@ RACK_DIR ?= ../../rack-sdk
 # FLAGS will be passed to both the C and C++ compiler
 FLAGS +=
 CFLAGS +=
-CXXFLAGS += -Idep -Idep/NeuralAmpModelerCore -Idep/NeuralAmpModelerCore/NAM -Idep/NeuralAmpModelerCore/Dependencies -Idep/NeuralAmpModelerCore/Dependencies/nlohmann
-CXXFLAGS += -Idep/eigen3 -I$(RACK_DIR)/dep/include -I$(RACK_DIR)/dep/include/eigen3
-CXXFLAGS += -Idep/vital/src/synthesis -Idep/vital/src/synthesis/framework -Idep/vital/src/synthesis/effects -Idep/vital/src/synthesis/filters -Idep/vital/src/synthesis/utilities -Idep/vital/src/common
-CXXFLAGS += -Idep/vital/headless/JuceLibraryCode
+CXXFLAGS += -Isrc/compiledDepencies -Isrc/compiledDepencies/NeuralAmpModelerCore -Isrc/compiledDepencies/NeuralAmpModelerCore/NAM -Isrc/compiledDepencies/NeuralAmpModelerCore/Dependencies -Isrc/compiledDepencies/NeuralAmpModelerCore/Dependencies/nlohmann
+CXXFLAGS += -Isrc/compiledDepencies/eigen3 -I$(RACK_DIR)/dep/include -I$(RACK_DIR)/dep/include/eigen3
+CXXFLAGS += -Isrc/compiledDepencies/vital/src/synthesis -Isrc/compiledDepencies/vital/src/synthesis/framework -Isrc/compiledDepencies/vital/src/synthesis/effects -Isrc/compiledDepencies/vital/src/synthesis/filters -Isrc/compiledDepencies/vital/src/synthesis/utilities -Isrc/compiledDepencies/vital/src/common
+CXXFLAGS += -Isrc/compiledDepencies/vital/headless/JuceLibraryCode
 
 
 # Careful about linking to shared libraries, since you can't assume much about the user's environment and library search path.
@@ -17,17 +17,17 @@ LDFLAGS +=
 # Add .cpp files to the build
 SOURCES += $(wildcard src/*.cpp)
 SOURCES += $(wildcard src/dsp/*.cpp)
-SOURCES += $(wildcard dep/NeuralAmpModelerCore/NAM/*.cpp)
+SOURCES += $(wildcard src/compiledDepencies/NeuralAmpModelerCore/NAM/*.cpp)
 # Vital DSP sources
-SOURCES += dep/vital/src/synthesis/effects/compressor.cpp
-SOURCES += dep/vital/src/synthesis/effects/distortion.cpp
-SOURCES += dep/vital/src/synthesis/framework/operators.cpp
-SOURCES += dep/vital/src/synthesis/framework/processor.cpp
-SOURCES += dep/vital/src/synthesis/framework/processor_router.cpp
-SOURCES += dep/vital/src/synthesis/framework/utils.cpp
-SOURCES += dep/vital/src/synthesis/framework/value.cpp
-SOURCES += dep/vital/src/synthesis/filters/linkwitz_riley_filter.cpp
-SOURCES += dep/vital/src/synthesis/utilities/smooth_value.cpp
+SOURCES += src/compiledDepencies/vital/src/synthesis/effects/compressor.cpp
+SOURCES += src/compiledDepencies/vital/src/synthesis/effects/distortion.cpp
+SOURCES += src/compiledDepencies/vital/src/synthesis/framework/operators.cpp
+SOURCES += src/compiledDepencies/vital/src/synthesis/framework/processor.cpp
+SOURCES += src/compiledDepencies/vital/src/synthesis/framework/processor_router.cpp
+SOURCES += src/compiledDepencies/vital/src/synthesis/framework/utils.cpp
+SOURCES += src/compiledDepencies/vital/src/synthesis/framework/value.cpp
+SOURCES += src/compiledDepencies/vital/src/synthesis/filters/linkwitz_riley_filter.cpp
+SOURCES += src/compiledDepencies/vital/src/synthesis/utilities/smooth_value.cpp
 
 # Add files to the ZIP package when running `make dist`
 # The compiled plugin and "plugin.json" are automatically added.
@@ -63,11 +63,12 @@ ifdef ARCH_WIN
 endif
 
 # Override cleandep to prevent removal of git-tracked dependencies
-# The rack-plugin-toolchain's cleandep runs "rm -rfv dep" which would delete:
-# - dep/vital (vendored dependency)
-# - dep/NeuralAmpModelerCore (vendored dependency)
-# - dep/eigen3 (vendored dependency)
+# The rack-plugin-toolchain's cleandep runs "rm -rfv dep" which would delete our dependencies
+# All our deps are now in src/compiledDepencies and tracked in git:
+# - src/compiledDepencies/vital (vendored dependency)
+# - src/compiledDepencies/NeuralAmpModelerCore (vendored dependency)
+# - src/compiledDepencies/eigen3 (vendored dependency)
 # Since all our deps are in git, we skip cleandep entirely
 .PHONY: cleandep
 cleandep:
-	@echo "Skipping cleandep: all dependencies are tracked in git (dep/vital, dep/NeuralAmpModelerCore, dep/eigen3)"
+	@echo "Skipping cleandep: all dependencies are tracked in git under src/compiledDepencies/"
