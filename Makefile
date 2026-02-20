@@ -23,6 +23,7 @@ SOURCES += src/compiledDepencies/vital/src/synthesis/effects/compressor.cpp
 SOURCES += src/compiledDepencies/vital/src/synthesis/effects/distortion.cpp
 SOURCES += src/compiledDepencies/vital/src/synthesis/framework/operators.cpp
 SOURCES += src/compiledDepencies/vital/src/synthesis/framework/processor.cpp
+SOURCES += src/compiledDepencies/vital/src/synthesis/framework/feedback.cpp
 SOURCES += src/compiledDepencies/vital/src/synthesis/framework/processor_router.cpp
 SOURCES += src/compiledDepencies/vital/src/synthesis/framework/utils.cpp
 SOURCES += src/compiledDepencies/vital/src/synthesis/framework/value.cpp
