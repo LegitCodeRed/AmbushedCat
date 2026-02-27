@@ -524,6 +524,7 @@ struct Ahriman : Module {
         }
 };
 
+namespace {
 struct BackgroundImage : Widget {
 	std::string imagePath = asset::plugin(pluginInstance, "res/TextureDemonMainV2.png");
 	widget::SvgWidget* svgWidget;
@@ -562,6 +563,7 @@ struct BackgroundImage : Widget {
 		Widget::draw(args);
 	}
 };
+} // namespace
 
 struct AhrimanWidget : ModuleWidget {
         AhrimanWidget(Ahriman *module) {

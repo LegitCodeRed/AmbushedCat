@@ -671,6 +671,7 @@ struct Tape : Module {
         }
 };
 
+namespace {
 struct BackgroundImage : Widget {
 	std::string imagePath = asset::plugin(pluginInstance, "res/Rack_Tape.png");
 
@@ -688,6 +689,7 @@ struct BackgroundImage : Widget {
 		}
 	}
 };
+} // namespace
 
 struct TapeWidget : ModuleWidget {
 	TapeWidget(Tape* module) {

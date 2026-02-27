@@ -156,6 +156,7 @@ struct TuringGateExpander : Module {
         }
 };
 
+namespace {
 struct BackgroundImage : Widget {
 	std::string imagePath = asset::plugin(pluginInstance, "res/TuringMaschine-2.png");
 
@@ -173,6 +174,7 @@ struct BackgroundImage : Widget {
 		}
 	}
 };
+} // namespace
 
 
 struct TuringGateExpanderWidget : ModuleWidget {

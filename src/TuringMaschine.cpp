@@ -361,6 +361,7 @@ struct TuringMaschine : Module {
         }
 };
 
+namespace {
 struct BackgroundImage : Widget {
 	std::string imagePath = asset::plugin(pluginInstance, "res/TuringMaschine-1.png");
 
@@ -378,6 +379,7 @@ struct BackgroundImage : Widget {
 		}
 	}
 };
+} // namespace
 
 struct TuringMaschineWidget : ModuleWidget {
 	TuringMaschineWidget(TuringMaschine* module) {
