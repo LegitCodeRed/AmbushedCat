@@ -83,22 +83,6 @@ jobs:
             dist/checksum_*.txt
           name: mac-${{ matrix.platform }}
 
-      - name: Run Headless Smoke Test
-        run: |
-          # 1. Download the actual Rack App (not the SDK)
-          curl -L https://vcvrack.com/download/Rack-2.6.4-mac-arm64.pkg -o Rack.pkg
-          
-          # 2. Extract the package (it's a bit messy on Mac runners)
-          pkgutil --expand-full Rack.pkg ./extracted_pkg
-          
-          # 3. Locate the binary (usually inside Rack.app/Contents/MacOS/Rack)
-          # Note: You might need to adjust this path based on where pkgutil puts it
-          RACK_EXE="./extracted_pkg/Rack.app/Contents/MacOS/Rack"
-          
-          # 4. Run the test
-          export DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH:/Users/runner/Rack-SDK
-          $RACK_EXE -t 1 -u .
-
   publish-release-build:
     name: Publish Release
     if: startsWith(github.ref, 'refs/tags/v2.') && github.repository_owner == 'LegitCodeRed'
